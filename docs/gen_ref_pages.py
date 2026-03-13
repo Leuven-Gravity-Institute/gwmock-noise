@@ -6,7 +6,7 @@ from pathlib import Path
 
 import mkdocs_gen_files
 
-PACKAGE_NAME = "python_package_template"
+PACKAGE_NAME = "gwsim_noise"
 
 src = Path(__file__).parent.parent / "src"
 root_dir = Path(__file__).parent.parent

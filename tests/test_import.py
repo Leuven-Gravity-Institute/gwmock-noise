@@ -1,4 +1,4 @@
-"""Test importing the python-python_package_template package and its modules."""
+"""Test importing the gwsim-noise package and its modules."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import pkgutil
 
 import pytest
 
-import python_package_template
+import gwsim_noise
 
 
 def get_all_submodules(package):
@@ -23,12 +23,12 @@ def get_all_submodules(package):
 
 
 def test_import_main_package():
-    """Test that the main python_package_template package can be imported."""
-    assert hasattr(python_package_template, "__version__")
-    assert python_package_template.__version__ is not None
+    """Test that the main gwsim_noise package can be imported."""
+    assert hasattr(gwsim_noise, "__version__")
+    assert gwsim_noise.__version__ is not None
 
 
-@pytest.mark.parametrize("module_name", get_all_submodules(python_package_template))
+@pytest.mark.parametrize("module_name", get_all_submodules(gwsim_noise))
 def test_import_submodule(module_name):
     """Test that all submodules can be imported."""
     __import__(module_name)

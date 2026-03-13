@@ -3,13 +3,12 @@
 <!-- prettier-ignore-start -->
 
 !!!warning
-    This is an example installation guide page for a Python package template.
     Adjust the content as needed for your specific package.
 
 <!-- prettier-ignore-end -->
 
 We recommend using `uv` to manage virtual environments for installing
-`python_package_template`.
+`gwsim-noise`.
 
 If you don't have `uv` installed, you can install it with pip. See the project
 pages for more details:
@@ -21,35 +20,27 @@ pages for more details:
 
 ## Requirements
 
-- Python 3.10 or higher
+- Python 3.12 or higher
 - Operating System: Linux, macOS, or Windows
 
 <!-- prettier-ignore-start -->
 !!!note
-    The package is built and tested against Python 3.10-3.12. When creating a virtual environment with `uv`,
+    The package is built and tested against Python 3.12-3.14. When creating a virtual environment with `uv`,
     specify the Python version to ensure compatibility:
-    `uv venv --python 3.10` (replace `3.10` with your preferred version in the 3.10-3.12 range).
+    `uv venv --python 3.12` (replace `3.12` with your preferred version in the 3.12-3.14 range).
     This avoids potential issues with unsupported Python versions.
 
 <!-- prettier-ignore-end -->
 
 ## Install from PyPI
 
-<!-- prettier-ignore-start -->
-
-!!!warning
-    The package is NOT published to PyPI.
-    This section is for demonstration purposes only.
-
-<!-- prettier-ignore-end -->
-
-The recommended way to install `python_package_template` is from PyPI:
+The recommended way to install `gwsim-noise` is from PyPI:
 
 ```bash
 # Create a virtual environment (recommended with uv)
-uv venv --python 3.10
+uv venv --python 3.12
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv pip install python_package_template
+uv pip install gwsim-noise
 ```
 
 ### Optional Dependencies
@@ -58,13 +49,13 @@ For development or specific features:
 
 ```bash
 # Development dependencies (testing, linting, etc.)
-uv pip install python_package_template[dev]
+uv pip install gwsim-noise[dev]
 
 # Documentation dependencies
-uv pip install python_package_template[docs]
+uv pip install gwsim-noise[docs]
 
 # All dependencies
-uv pip install python_package_template[dev,docs]
+uv pip install gwsim-noise[dev,docs]
 ```
 
 ## Install from Source
@@ -72,10 +63,10 @@ uv pip install python_package_template[dev,docs]
 For the latest development version:
 
 ```bash
-git clone git@github.com:isaac-cf-wong/python-package-template.git
-cd python-package-template
+git clone git@github.com:isaac-cf-wong/gwsim_noise.git
+cd gwsim_noise
 # Create a virtual environment (recommended with uv)
-uv venv --python 3.10
+uv venv --python 3.12
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install .
 ```
@@ -85,11 +76,11 @@ uv pip install .
 To set up for development:
 
 ```bash
-git clone git@github.com:isaac-cf-wong/python-package-template.git
-cd python-package-template
+git clone git@github.com:isaac-cf-wong/gwsim_noise.git
+cd gwsim_noise
 
 # Create a virtual environment (recommended with uv)
-uv venv --python 3.10
+uv venv --python 3.12
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install ".[dev]"
 
@@ -103,14 +94,14 @@ pre-commit install --hook-type commit-msg
 
 ## Verify Installation
 
-Check that `python_package_template` is installed correctly:
+Check that `gwsim-noise` is installed correctly:
 
 ```bash
-python_package_template --help
+gwsim-noise --help
 ```
 
 ```bash
-python -c "import python_package_template; print(python_package_template.__version__)"
+python -c "import gwsim_noise; print(gwsim_noise.__version__)"
 ```
 
 ## Dependencies
@@ -124,7 +115,7 @@ python -c "import python_package_template; print(python_package_template.__versi
 <!-- prettier-ignore-start -->
 
 1. Check the [troubleshooting guide](../dev/troubleshooting.md)
-2. Search existing [issues](https://github.com/isaac-cf-wong/python-package-template/issues)
+2. Search existing [issues](https://github.com/isaac-cf-wong/gwsim_noise/issues)
 3. Create a new issue with:
     - Your operating system and Python version
     - Full error message

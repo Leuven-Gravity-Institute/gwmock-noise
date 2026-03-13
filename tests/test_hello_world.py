@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from python_package_template.hello_world import goodbye_world, hello_goodbye, hello_world, say_goodbye, say_hello
+from gwsim_noise.hello_world import goodbye_world, hello_goodbye, hello_world, say_goodbye, say_hello
 
 
 def test_goodbye_world(capsys):

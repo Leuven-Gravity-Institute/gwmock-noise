@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 title:
-    'python-package-template: A GitHub template repository for a Python package'
+    'gwsim_noise: Simulate gravitational wave detector noise'
 license: 'MIT'
 type: software
 authors:
@@ -9,6 +9,6 @@ authors:
       affiliation: KU Leuven
       orcid: 'https://orcid.org/0000-0003-2166-0027'
 keywords:
-    - python
-    - github
-    - template
+    - gravitational-waves
+    - noise
+    - simulation
