@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "gwsim-noise"
 authors = [{ name = "Isaac C. F. Wong" }]
-description = "Simulate gravitational wave detector noise"
+description = "A Python package for simulating instrumental noise."
 readme = "README.md"
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -39,11 +39,11 @@ build = ["hatch>=1.16.5"]
 gwsim-noise = "gwsim_noise.cli.main:app"
 
 [project.urls]
-Documentation = "https://isaac-cf-wong.github.io/gwsim_noise"
-Source = "https://github.com/isaac-cf-wong/gwsim_noise"
-Tracker = "https://github.com/isaac-cf-wong/gwsim_noise/issues"
-Home = "https://github.com/isaac-cf-wong/gwsim_noise"
-"Release Notes" = "https://github.com/isaac-cf-wong/gwsim_noise/releases"
+Documentation = "https://leuven-gravity-institute.github.io/gwsim_noise"
+Source = "https://github.com/Leuven-Gravity-Institute/gwsim_noise"
+Tracker = "https://github.com/Leuven-Gravity-Institute/gwsim_noise/issues"
+Home = "https://github.com/Leuven-Gravity-Institute/gwsim_noise"
+"Release Notes" = "https://github.com/Leuven-Gravity-Institute/gwsim_noise/releases"
 
 [tool.hatch.version]
 source = "vcs"
