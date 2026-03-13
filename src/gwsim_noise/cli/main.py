@@ -1,4 +1,3 @@
-# ruff: noqa PL0415
 """Main entry point for the gwsim_noise CLI application."""
 
 from __future__ import annotations
@@ -34,10 +33,10 @@ def setup_logging(level: LoggingLevel = LoggingLevel.INFO) -> None:
     Args:
         level: Logging level.
     """
-    import logging
+    import logging  # noqa: PLC0415
 
-    from rich.console import Console
-    from rich.logging import RichHandler
+    from rich.console import Console  # noqa: PLC0415
+    from rich.logging import RichHandler  # noqa: PLC0415
 
     logger = logging.getLogger("gwsim_noise")
 
@@ -74,7 +73,7 @@ def main(
         typer.Option("--verbose", "-v", help="Set verbosity level."),
     ] = LoggingLevel.INFO,
 ) -> None:
-    """Main entry point for the CLI application.
+    """Implement the main entry point for the CLI application.
 
     Args:
         verbose: Verbosity level for logging.
@@ -84,9 +83,6 @@ def main(
 
 def register_commands() -> None:
     """Register CLI commands."""
-    from gwsim_noise.cli.hello import hello_command
-
-    app.command(name="hello")(hello_command)
 
 
 register_commands()
