@@ -23,8 +23,10 @@ pip install gwsim-noise
 
 ## Quick Start
 
-For detailed documentation and examples, see the [official documentation](https://isaac-cf-wong.github.io/gwsim_noise/).
+For detailed documentation and examples, see the
+[official documentation](https://isaac-cf-wong.github.io/gwsim_noise/).
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for
+guidelines.

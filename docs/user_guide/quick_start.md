@@ -1,6 +1,7 @@
 # Quick Start
 
-Welcome to **gwsim_noise**! This package provides tools for simulating gravitational wave detector noise.
+Welcome to **gwsim_noise**! This package provides tools for simulating
+gravitational wave detector noise.
 
 ## Getting Started
 
@@ -39,7 +40,9 @@ uv pip install -e ".[dev,docs,test]"
 
 ### 3. Install Pre-commit Hooks and Commit Message Validation
 
-The project uses pre-commit hooks and commitlint to maintain code quality and follow the [conventional commits](https://www.conventionalcommits.org/) standard.
+The project uses pre-commit hooks and commitlint to maintain code quality and
+follow the [conventional commits](https://www.conventionalcommits.org/)
+standard.
 
 **Install commitlint dependencies:**
 
@@ -72,7 +75,8 @@ Generate and view the documentation:
 zensical serve
 ```
 
-Open [http://localhost:8000](http://localhost:8000) in your browser to see the docs.
+Open [http://localhost:8000](http://localhost:8000) in your browser to see the
+docs.
 
 ## Development Workflow
 
@@ -86,7 +90,8 @@ Your package code is in `src/gwsim_noise/`:
 
 ### Writing Code
 
-1. **Follow the Style**: Code is automatically formatted with Ruff (120 char line length)
+1. **Follow the Style**: Code is automatically formatted with Ruff (120 char
+   line length)
 2. **Add Type Hints**: Use modern Python typing
 3. **Write Tests**: Add tests in `tests/` directory
 4. **Update Docs**: Add docstrings for API documentation
@@ -108,15 +113,18 @@ gwsim-noise --help
 When ready to release:
 
 1. Run tests and checks locally: `pytest && pre-commit run --all-files`
-2. Create a git tag for the new version: `git tag v1.0.0` (replace with your version)
+2. Create a git tag for the new version: `git tag v1.0.0` (replace with your
+   version)
 3. Push the tag to the remote repository: `git push origin v1.0.0`
-4. The GitHub Actions workflow will automatically create a release and publish to PyPI
+4. The GitHub Actions workflow will automatically create a release and publish
+   to PyPI
 
 ## Key Configurations
 
 - **pyproject.toml**: Package metadata, dependencies, tool configs
 - **.pre-commit-config.yaml**: Pre-commit hooks for code quality
-- **cliff.toml**: Configuration for automatic changelog generation using git-cliff
+- **cliff.toml**: Configuration for automatic changelog generation using
+  git-cliff
 - **zensical.toml**: Documentation configuration
 - **.github/workflows/**: CI/CD pipelines
 

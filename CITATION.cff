@@ -1,6 +1,5 @@
 cff-version: 1.2.0
-title:
-    'gwsim_noise: Simulate gravitational wave detector noise'
+title: 'gwsim_noise: Simulate gravitational wave detector noise'
 license: 'MIT'
 type: software
 authors:
