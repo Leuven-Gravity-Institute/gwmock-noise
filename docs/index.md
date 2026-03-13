@@ -1,6 +1,6 @@
-# Python package template
+# gwsim_noise
 
-This is the documentation for using this Python package template.
+This is the documentation for using this package.
 
 ## Next Steps
 
