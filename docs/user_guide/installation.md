@@ -1,12 +1,5 @@
 # Installation
 
-<!-- prettier-ignore-start -->
-
-!!!warning
-    Adjust the content as needed for your specific package.
-
-<!-- prettier-ignore-end -->
-
 We recommend using `uv` to manage virtual environments for installing
 `gwsim-noise`.
 
@@ -49,13 +42,10 @@ For development or specific features:
 
 ```bash
 # Development dependencies (testing, linting, etc.)
-uv pip install gwsim-noise[dev]
+uv pip install "gwsim-noise[dev]"
 
 # Documentation dependencies
-uv pip install gwsim-noise[docs]
-
-# All dependencies
-uv pip install gwsim-noise[dev,docs]
+uv pip install "gwsim-noise[docs]"
 ```
 
 ## Install from Source
@@ -63,7 +53,7 @@ uv pip install gwsim-noise[dev,docs]
 For the latest development version:
 
 ```bash
-git clone git@github.com:isaac-cf-wong/gwsim_noise.git
+git clone git@github.com:Leuven-Gravity-Institute/gwsim_noise.git
 cd gwsim_noise
 # Create a virtual environment (recommended with uv)
 uv venv --python 3.12
@@ -76,20 +66,20 @@ uv pip install .
 To set up for development:
 
 ```bash
-git clone git@github.com:isaac-cf-wong/gwsim_noise.git
+git clone git@github.com:Leuven-Gravity-Institute/gwsim_noise.git
 cd gwsim_noise
 
 # Create a virtual environment (recommended with uv)
 uv venv --python 3.12
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv pip install ".[dev]"
+uv sync --extra dev
 
 # Install the commitlint dependencies
-npm install
+npm ci
 
 # Install pre-commit hooks
-pre-commit install
-pre-commit install --hook-type commit-msg
+uv run pre-commit install
+uv run pre-commit install --hook-type commit-msg
 ```
 
 ## Verify Installation
@@ -115,7 +105,7 @@ python -c "import gwsim_noise; print(gwsim_noise.__version__)"
 <!-- prettier-ignore-start -->
 
 1. Check the [troubleshooting guide](../dev/troubleshooting.md)
-2. Search existing [issues](https://github.com/isaac-cf-wong/gwsim_noise/issues)
+2. Search existing [issues](https://github.com/Leuven-Gravity-Institute/gwsim_noise/issues)
 3. Create a new issue with:
     - Your operating system and Python version
     - Full error message

@@ -25,7 +25,7 @@ If you're contributing or developing:
 
 ```bash
 # Clone the repository
-git clone git@github.com:isaac-cf-wong/gwsim_noise.git
+git clone git@github.com:Leuven-Gravity-Institute/gwsim_noise.git
 cd gwsim_noise
 
 # Create a virtual environment

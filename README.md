@@ -1,9 +1,9 @@
 # gwsim_noise
 
-[![Python CI](https://github.com/isaac-cf-wong/gwsim_noise/actions/workflows/ci.yml/badge.svg)](https://github.com/isaac-cf-wong/gwsim_noise/actions/workflows/ci.yml)
-[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/isaac-cf-wong/gwsim_noise/main.svg)](https://results.pre-commit.ci/latest/github/isaac-cf-wong/gwsim_noise/main)
-[![Documentation Status](https://github.com/isaac-cf-wong/gwsim_noise/actions/workflows/documentation.yml/badge.svg)](https://isaac-cf-wong.github.io/gwsim_noise/)
-[![codecov](https://codecov.io/gh/isaac-cf-wong/gwsim_noise/graph/badge.svg?token=COF8341N60)](https://codecov.io/gh/isaac-cf-wong/gwsim_noise)
+[![Python CI](https://github.com/Leuven-Gravity-Institute/gwsim_noise/actions/workflows/ci.yml/badge.svg)](https://github.com/Leuven-Gravity-Institute/gwsim_noise/actions/workflows/ci.yml)
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/Leuven-Gravity-Institute/gwsim_noise/main.svg)](https://results.pre-commit.ci/latest/github/Leuven-Gravity-Institute/gwsim_noise/main)
+[![Documentation Status](https://github.com/Leuven-Gravity-Institute/gwsim_noise/actions/workflows/documentation.yml/badge.svg)](https://leuven-gravity-institute.github.io/gwsim_noise/)
+[![codecov](https://codecov.io/gh/Leuven-Gravity-Institute/gwsim_noise/graph/badge.svg?token=COF8341N60)](https://codecov.io/gh/Leuven-Gravity-Institute/gwsim_noise)
 [![PyPI Version](https://img.shields.io/pypi/v/gwsim-noise)](https://pypi.org/project/gwsim-noise/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/gwsim-noise)](https://pypi.org/project/gwsim-noise/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -24,7 +24,7 @@ pip install gwsim-noise
 ## Quick Start
 
 For detailed documentation and examples, see the
-[official documentation](https://isaac-cf-wong.github.io/gwsim_noise/).
+[official documentation](https://Leuven-Gravity-Institute.github.io/gwsim_noise/).
 
 ## Contributing
 
