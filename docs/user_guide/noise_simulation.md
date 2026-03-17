@@ -1,7 +1,7 @@
 # Noise simulation
 
 This page shows how to run a basic noise simulation with `gwsim-noise`, using
-the simulator interface and the configuration-file based CLI.
+the simulator interface and the configuration-file-based CLI.
 
 ## Quick example (CLI, TOML)
 
