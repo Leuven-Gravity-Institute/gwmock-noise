@@ -1,4 +1,4 @@
-# gwsim_noise
+# gwsim-noise
 
 [![Python CI](https://github.com/Leuven-Gravity-Institute/gwsim_noise/actions/workflows/ci.yml/badge.svg)](https://github.com/Leuven-Gravity-Institute/gwsim_noise/actions/workflows/ci.yml)
 [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/Leuven-Gravity-Institute/gwsim_noise/main.svg)](https://results.pre-commit.ci/latest/github/Leuven-Gravity-Institute/gwsim_noise/main)
@@ -15,18 +15,134 @@ A Python package for simulating gravitational wave detector noise.
 
 ## Installation
 
-Install from PyPI:
+We recommend using `uv` to manage virtual environments for installing
+`gwsim_noise`.
+
+If you don't have `uv` installed, you can install it with pip. See the project
+pages for more details:
+
+- Install via pip: `pip install --upgrade pip && pip install uv`
+- Project pages: [uv on PyPI](https://pypi.org/project/uv/) |
+  [uv on GitHub](https://github.com/astral-sh/uv)
+- Full documentation and usage guide: [uv docs](https://docs.astral.sh/uv/)
+
+### Requirements
+
+- Python 3.11 or higher
+- Operating System: Linux, macOS, or Windows
+
+**Note:** The package is built and tested against Python 3.11-3.14. When
+creating a virtual environment with `uv`, specify the Python version to ensure
+compatibility: `uv venv --python 3.11` (replace `3.11` with your preferred
+version in the 3.11-3.14 range). This avoids potential issues with unsupported
+Python versions.
+
+### Install from PyPI
+
+The recommended way to install `gwsim-noise` is from PyPI:
 
 ```bash
-pip install gwsim-noise
+# Create a virtual environment (recommended with uv)
+uv venv --python 3.11
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv pip install gwsim-noise
 ```
 
-## Quick Start
+#### Optional Dependencies
 
-For detailed documentation and examples, see the
-[official documentation](https://Leuven-Gravity-Institute.github.io/gwsim_noise/).
+For development or specific features:
+
+```bash
+# Development dependencies (testing, linting, etc.)
+uv pip install gwsim-noise[dev]
+
+# Documentation dependencies
+uv pip install gwsim-noise[docs]
+```
+
+### Install from Source
+
+For the latest development version:
+
+```bash
+git clone git@github.com:Leuven-Gravity-Institute/gwsim_noise.git
+cd gwsim_noise
+# Create a virtual environment (recommended with uv)
+uv venv --python 3.11
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv sync
+```
+
+#### Development Installation
+
+To set up for development:
+
+```bash
+git clone git@github.com:Leuven-Gravity-Institute/gwsim_noise.git
+cd gwsim_noise
+
+# Create a virtual environment (recommended with uv)
+uv venv --python 3.11
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv sync --extra dev
+
+# Install the commitlint dependencies
+npm ci
+
+# Install pre-commit hooks
+uv run pre-commit install
+uv run pre-commit install --hook-type commit-msg
+```
+
+### Verify Installation
+
+Check that `gwsim-noise` is installed correctly:
+
+```bash
+gwsim-noise --help
+```
+
+```bash
+python -c "import gwsim_noise; print(gwsim_noise.__version__)"
+```
+
+## Documentation
+
+Full documentation to be available at
+[https://leuven-gravity-institute.github.io/gwsim_noise](https://leuven-gravity-institute.github.io/gwsim_noise).
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for
-guidelines.
+Contributions are welcome!
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
+
+### Release Schedule
+
+Releases follow a fixed schedule: every Tuesday at 00:00 UTC, unless an emergent
+bugfix is required. This ensures predictable updates while allowing flexibility
+for critical issues. Users can view upcoming changes in the draft release on the
+[GitHub Releases page](https://github.com/Leuven-Gravity-Institute/gwsim_noise/releases).
+
+## Testing
+
+Run the test suite:
+
+```bash
+uv run pytest
+```
+
+## License
+
+This project is licensed under the 3-Clause BSD License - see the
+[LICENSE](LICENSE) file for details.
+
+## Support
+
+For questions or issues, please open an issue on
+[GitHub](https://github.com/Leuven-Gravity-Institute/gwsim_noise/issues/new) or
+contact the maintainers.
