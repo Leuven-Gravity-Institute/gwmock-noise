@@ -13,7 +13,7 @@ def simulate(
     config_path: Annotated[
         Path,
         typer.Argument(
-            help="Path to the configuration file (YAML or JSON).",
+            help="Path to the configuration file (TOML, YAML, or JSON).",
         ),
     ],
 ) -> None:
