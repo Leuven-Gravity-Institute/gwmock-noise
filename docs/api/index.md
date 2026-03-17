@@ -1,11 +1,21 @@
 ---
 title: API Reference
-description: Complete reference for the gwsim_signal package.
+description: Public API for the gwsim-noise package.
 icon: material/api
 ---
 
-This section documents the public API of the gwsim_signal package.
+This section is built automatically from the docstrings in the `gwsim_noise`
+package using mkdocstrings. Public classes and functions should be documented
+via their Python docstrings.
 
-## Main Sections
+## Top-level package
 
-- **[Utility](utils)** – Utility functions.
+::: gwsim_noise
+
+## Configuration
+
+::: gwsim_noise.config
+
+## Simulators
+
+::: gwsim_noise.simulators

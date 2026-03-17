@@ -83,6 +83,9 @@ def main(
 
 def register_commands() -> None:
     """Register CLI commands."""
+    from gwsim_noise.cli.simulate import simulate  # noqa: PLC0415
+
+    app.command()(simulate)
 
 
 register_commands()
