@@ -11,13 +11,13 @@
 # The site_name is shown in the page header and the browser window title
 #
 # Read more: https://zensical.org/docs/setup/basics/#site_name
-site_name = "gwsim_noise Documentation"
+site_name = "gwsim-noise Documentation"
 
 # The site_description is included in the HTML head and should contain a
 # meaningful description of the site content for use by search engines.
 #
 # Read more: https://zensical.org/docs/setup/basics/#site_description
-site_description = "Simulate gravitational wave detector noise"
+site_description = "A Python package for simulating gravitaitonal wave instrumental noise"
 
 # The site_author attribute. This is used in the HTML head element.
 #
