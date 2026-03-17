@@ -1,6 +1,8 @@
 cff-version: 1.2.0
-title: 'gwsim_noise: Simulate gravitational wave detector noise'
-license: 'MIT'
+title:
+    'gwsim-noise: A Python pacakge for simulating gravitational wave detector
+    noise'
+license: '3-Clause BSD'
 type: software
 authors:
     - given-names: Isaac C. F.
