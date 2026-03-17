@@ -39,4 +39,3 @@ class BaseNoiseSimulator(ABC):
         Returns:
             Result containing paths to generated outputs and the config used.
         """
-        pass
