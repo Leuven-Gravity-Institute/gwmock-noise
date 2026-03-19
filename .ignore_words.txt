@@ -70,4 +70,5 @@ xunit
 pycln
 taplo
 Zensical
+gwmock
 gwsim

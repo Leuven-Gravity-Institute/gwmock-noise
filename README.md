@@ -1,11 +1,11 @@
-# gwsim-noise
+# gwmock-noise
 
-[![Python CI](https://github.com/Leuven-Gravity-Institute/gwsim_noise/actions/workflows/ci.yml/badge.svg)](https://github.com/Leuven-Gravity-Institute/gwsim_noise/actions/workflows/ci.yml)
-[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/Leuven-Gravity-Institute/gwsim_noise/main.svg)](https://results.pre-commit.ci/latest/github/Leuven-Gravity-Institute/gwsim_noise/main)
-[![Documentation Status](https://github.com/Leuven-Gravity-Institute/gwsim_noise/actions/workflows/documentation.yml/badge.svg)](https://leuven-gravity-institute.github.io/gwsim_noise/)
-[![codecov](https://codecov.io/gh/Leuven-Gravity-Institute/gwsim_noise/graph/badge.svg?token=COF8341N60)](https://codecov.io/gh/Leuven-Gravity-Institute/gwsim_noise)
-[![PyPI Version](https://img.shields.io/pypi/v/gwsim-noise)](https://pypi.org/project/gwsim-noise/)
-[![Python Versions](https://img.shields.io/pypi/pyversions/gwsim-noise)](https://pypi.org/project/gwsim-noise/)
+[![Python CI](https://github.com/Leuven-Gravity-Institute/gwmock_noise/actions/workflows/ci.yml/badge.svg)](https://github.com/Leuven-Gravity-Institute/gwmock_noise/actions/workflows/ci.yml)
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/Leuven-Gravity-Institute/gwmock_noise/main.svg)](https://results.pre-commit.ci/latest/github/Leuven-Gravity-Institute/gwmock_noise/main)
+[![Documentation Status](https://github.com/Leuven-Gravity-Institute/gwmock_noise/actions/workflows/documentation.yml/badge.svg)](https://leuven-gravity-institute.github.io/gwmock_noise/)
+[![codecov](https://codecov.io/gh/Leuven-Gravity-Institute/gwmock_noise/graph/badge.svg?token=COF8341N60)](https://codecov.io/gh/Leuven-Gravity-Institute/gwmock_noise)
+[![PyPI Version](https://img.shields.io/pypi/v/gwmock-noise)](https://pypi.org/project/gwmock-noise/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/gwmock-noise)](https://pypi.org/project/gwmock-noise/)
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![DOI](https://zenodo.org/badge/924023559.svg)](https://doi.org/10.5281/zenodo.18017404)
@@ -16,7 +16,7 @@ A Python package for simulating gravitational wave detector noise.
 ## Installation
 
 We recommend using `uv` to manage virtual environments for installing
-`gwsim_noise`.
+`gwmock_noise`.
 
 If you don't have `uv` installed, you can install it with pip. See the project
 pages for more details:
@@ -39,13 +39,13 @@ Python versions.
 
 ### Install from PyPI
 
-The recommended way to install `gwsim-noise` is from PyPI:
+The recommended way to install `gwmock-noise` is from PyPI:
 
 ```bash
 # Create a virtual environment (recommended with uv)
 uv venv --python 3.11
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv pip install gwsim-noise
+uv pip install gwmock-noise
 ```
 
 #### Optional Dependencies
@@ -54,10 +54,10 @@ For development or specific features:
 
 ```bash
 # Development dependencies (testing, linting, etc.)
-uv pip install gwsim-noise[dev]
+uv pip install gwmock-noise[dev]
 
 # Documentation dependencies
-uv pip install gwsim-noise[docs]
+uv pip install gwmock-noise[docs]
 ```
 
 ### Install from Source
@@ -65,8 +65,8 @@ uv pip install gwsim-noise[docs]
 For the latest development version:
 
 ```bash
-git clone git@github.com:Leuven-Gravity-Institute/gwsim_noise.git
-cd gwsim_noise
+git clone git@github.com:Leuven-Gravity-Institute/gwmock_noise.git
+cd gwmock_noise
 # Create a virtual environment (recommended with uv)
 uv venv --python 3.11
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
@@ -78,8 +78,8 @@ uv sync
 To set up for development:
 
 ```bash
-git clone git@github.com:Leuven-Gravity-Institute/gwsim_noise.git
-cd gwsim_noise
+git clone git@github.com:Leuven-Gravity-Institute/gwmock_noise.git
+cd gwmock_noise
 
 # Create a virtual environment (recommended with uv)
 uv venv --python 3.11
@@ -96,20 +96,20 @@ uv run pre-commit install --hook-type commit-msg
 
 ### Verify Installation
 
-Check that `gwsim-noise` is installed correctly:
+Check that `gwmock-noise` is installed correctly:
 
 ```bash
-gwsim-noise --help
+gwmock-noise --help
 ```
 
 ```bash
-python -c "import gwsim_noise; print(gwsim_noise.__version__)"
+python -c "import gwmock_noise; print(gwmock_noise.__version__)"
 ```
 
 ## Documentation
 
 Full documentation to be available at
-[https://leuven-gravity-institute.github.io/gwsim_noise](https://leuven-gravity-institute.github.io/gwsim_noise).
+[https://leuven-gravity-institute.github.io/gwmock_noise](https://leuven-gravity-institute.github.io/gwmock_noise).
 
 ## Contributing
 
@@ -126,7 +126,7 @@ Contributions are welcome!
 Releases follow a fixed schedule: every Tuesday at 00:00 UTC, unless an emergent
 bugfix is required. This ensures predictable updates while allowing flexibility
 for critical issues. Users can view upcoming changes in the draft release on the
-[GitHub Releases page](https://github.com/Leuven-Gravity-Institute/gwsim_noise/releases).
+[GitHub Releases page](https://github.com/Leuven-Gravity-Institute/gwmock_noise/releases).
 
 ## Testing
 
@@ -144,5 +144,5 @@ This project is licensed under the 3-Clause BSD License - see the
 ## Support
 
 For questions or issues, please open an issue on
-[GitHub](https://github.com/Leuven-Gravity-Institute/gwsim_noise/issues/new) or
+[GitHub](https://github.com/Leuven-Gravity-Institute/gwmock_noise/issues/new) or
 contact the maintainers.

@@ -5,7 +5,7 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("gwsim-noise")
+    __version__ = version("gwmock-noise")
 except PackageNotFoundError:
     # Fallback for source checkouts or environments without installed metadata.
     __version__ = "0+unknown"

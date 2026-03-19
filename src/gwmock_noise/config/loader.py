@@ -8,7 +8,7 @@ from pathlib import Path
 import tomllib
 import yaml
 
-from gwsim_noise.config.models import NoiseConfig
+from gwmock_noise.config.models import NoiseConfig
 
 
 def load_config(path: Path | str) -> NoiseConfig:

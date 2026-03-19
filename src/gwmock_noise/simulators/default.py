@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from gwsim_noise.config import NoiseConfig
-from gwsim_noise.simulators.base import BaseNoiseSimulator, SimulationResult
+from gwmock_noise.config import NoiseConfig
+from gwmock_noise.simulators.base import BaseNoiseSimulator, SimulationResult
 
 
 class DefaultNoiseSimulator(BaseNoiseSimulator):

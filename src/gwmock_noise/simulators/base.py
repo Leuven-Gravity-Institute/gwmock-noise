@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
-from gwsim_noise.config import NoiseConfig
+from gwmock_noise.config import NoiseConfig
 
 
 @dataclass
@@ -25,8 +25,8 @@ class SimulationResult:
 class BaseNoiseSimulator(ABC):
     """Abstract base class for noise simulators.
 
-    This interface is the stable API through which the upstream gwsim package
-    interacts with gwsim_noise. Implementations must override :meth:`run`.
+    This interface is the stable API through which the upstream gwmock package
+    interacts with gwmock_noise. Implementations must override :meth:`run`.
     """
 
     @abstractmethod

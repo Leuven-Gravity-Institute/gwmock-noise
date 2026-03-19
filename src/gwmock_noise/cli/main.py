@@ -1,4 +1,4 @@
-"""Main entry point for the gwsim_noise CLI application."""
+"""Main entry point for the gwmock_noise CLI application."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ class LoggingLevel(str, enum.Enum):
 
 # Create the main Typer app
 app = typer.Typer(
-    name="gwsim-noise",
-    help="Main CLI for gwsim-noise.",
+    name="gwmock-noise",
+    help="Main CLI for gwmock-noise.",
     rich_markup_mode="rich",
 )
 
@@ -38,7 +38,7 @@ def setup_logging(level: LoggingLevel = LoggingLevel.INFO) -> None:
     from rich.console import Console  # noqa: PLC0415
     from rich.logging import RichHandler  # noqa: PLC0415
 
-    logger = logging.getLogger("gwsim_noise")
+    logger = logging.getLogger("gwmock_noise")
 
     logger.setLevel(level.value)
 
@@ -83,7 +83,7 @@ def main(
 
 def register_commands() -> None:
     """Register CLI commands."""
-    from gwsim_noise.cli.simulate import simulate  # noqa: PLC0415
+    from gwmock_noise.cli.simulate import simulate  # noqa: PLC0415
 
     app.command()(simulate)
 

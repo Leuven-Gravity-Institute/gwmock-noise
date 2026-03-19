@@ -22,10 +22,10 @@ def simulate(
     Loads the configuration, validates it, and runs the noise simulator.
     Output files are written to the directory specified in the config.
     """
-    from gwsim_noise.config import load_config  # noqa: PLC0415
-    from gwsim_noise.simulators import DefaultNoiseSimulator  # noqa: PLC0415
+    from gwmock_noise.config import load_config  # noqa: PLC0415
+    from gwmock_noise.simulators import DefaultNoiseSimulator  # noqa: PLC0415
 
-    logger = logging.getLogger("gwsim_noise")
+    logger = logging.getLogger("gwmock_noise")
     logger.info("Loading configuration from %s", config_path)
     config = load_config(config_path)
     logger.info("Running noise simulation for detectors: %s", config.detectors)

@@ -423,7 +423,7 @@ wheels = [
 ]
 
 [[package]]
-name = "gwsim-noise"
+name = "gwmock-noise"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },

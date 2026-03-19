@@ -6,7 +6,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from gwsim_noise.cli.main import app
+from gwmock_noise.cli.main import app
 
 runner = CliRunner()
 

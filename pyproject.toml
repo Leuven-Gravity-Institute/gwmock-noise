@@ -3,7 +3,7 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
-name = "gwsim-noise"
+name = "gwmock-noise"
 authors = [{ name = "Isaac C. F. Wong" }]
 description = "A Python package for simulating instrumental noise."
 readme = "README.md"
@@ -31,25 +31,25 @@ test = [
   "pytest>=9.0.2",
 ]
 ci = ["pytest-github-actions-annotate-failures>=0.4.0"]
-dev = ["gwsim-noise[test,docs]"]
+dev = ["gwmock-noise[test,docs]"]
 docs = ["zensical>=0.0.27", "mkdocstrings-python>=2.0.3"]
 build = ["hatch>=1.16.5"]
 
 [project.scripts]
-gwsim-noise = "gwsim_noise.cli.main:app"
+gwmock-noise = "gwmock_noise.cli.main:app"
 
 [project.urls]
-Documentation = "https://leuven-gravity-institute.github.io/gwsim_noise"
-Source = "https://github.com/Leuven-Gravity-Institute/gwsim_noise"
-Tracker = "https://github.com/Leuven-Gravity-Institute/gwsim_noise/issues"
-Home = "https://github.com/Leuven-Gravity-Institute/gwsim_noise"
-"Release Notes" = "https://github.com/Leuven-Gravity-Institute/gwsim_noise/releases"
+Documentation = "https://leuven-gravity-institute.github.io/gwmock_noise"
+Source = "https://github.com/Leuven-Gravity-Institute/gwmock_noise"
+Tracker = "https://github.com/Leuven-Gravity-Institute/gwmock_noise/issues"
+Home = "https://github.com/Leuven-Gravity-Institute/gwmock_noise"
+"Release Notes" = "https://github.com/Leuven-Gravity-Institute/gwmock_noise/releases"
 
 [tool.hatch.version]
 source = "vcs"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/gwsim_noise"]
+packages = ["src/gwmock_noise"]
 
 [tool.bandit]
 exclude_dirs = ["build", "dist", "tests", "scripts"]

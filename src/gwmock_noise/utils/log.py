@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from gwsim_noise.version import __version__
+from gwmock_noise.version import __version__
 
 
 def get_version_information() -> str:
@@ -38,7 +38,7 @@ def setup_logger(
     else:
         level = int(log_level)
 
-    logger = logging.getLogger("gwsim-noise")
+    logger = logging.getLogger("gwmock-noise")
     logger.propagate = False
     logger.setLevel(level)
 
@@ -67,4 +67,4 @@ def setup_logger(
 
     if print_version:
         version = get_version_information()
-        logger.info("Running gwsim-noise version: %s", version)
+        logger.info("Running gwmock-noise version: %s", version)

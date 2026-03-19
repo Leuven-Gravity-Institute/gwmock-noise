@@ -1,5 +1,5 @@
-# Example noise simulation configuration for gwsim_noise (TOML)
-# Use with: gwsim-noise simulate examples/noise_config_example.toml
+# Example noise simulation configuration for gwmock_noise (TOML)
+# Use with: gwmock-noise simulate examples/noise_config_example.toml
 
 detectors = ["H1", "L1"]
 duration = 4.0

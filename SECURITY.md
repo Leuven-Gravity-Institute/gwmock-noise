@@ -1,6 +1,6 @@
 # Security Policy
 
-We will support the latest stable release of `gwsim-noise`. Please ensure you
+We will support the latest stable release of `gwmock-noise`. Please ensure you
 are using the most recent version before reporting a security issue.
 
 | Version | Supported |
@@ -16,12 +16,12 @@ are using the most recent version before reporting a security issue.
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in `gwsim-noise`, please report it
+If you discover a security vulnerability in `gwmock-noise`, please report it
 using **GitHub's private vulnerability reporting feature**:
 
 <!-- prettier-ignore-start -->
 
-1. Go to the [Security](https://github.com/Leuven-Gravity-Institute/gwsim_noise/security) tab of this repository
+1. Go to the [Security](https://github.com/Leuven-Gravity-Institute/gwmock_noise/security) tab of this repository
 2. Click **"Report a vulnerability"**
 3. Fill out the vulnerability report form with:
     - A description of the vulnerability
@@ -50,4 +50,4 @@ We aim to:
 ## Thanks
 
 We value the security of our users and appreciate responsible disclosures. Thank
-you for helping make `gwsim-noise` better and safer!
+you for helping make `gwmock-noise` better and safer!

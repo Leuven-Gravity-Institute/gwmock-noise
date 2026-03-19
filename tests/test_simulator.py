@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from gwsim_noise.config import NoiseConfig, OutputConfig
-from gwsim_noise.simulators import BaseNoiseSimulator, DefaultNoiseSimulator, SimulationResult
+from gwmock_noise.config import NoiseConfig, OutputConfig
+from gwmock_noise.simulators import BaseNoiseSimulator, DefaultNoiseSimulator, SimulationResult
 
 
 def test_default_simulator_run(tmp_path: Path) -> None:

@@ -1,6 +1,6 @@
 # Noise simulation
 
-This page shows how to run a basic noise simulation with `gwsim-noise`, using
+This page shows how to run a basic noise simulation with `gwmock-noise`, using
 the simulator interface and the configuration-file-based CLI.
 
 ## Quick example (CLI, TOML)
@@ -23,7 +23,7 @@ seed = 42
 Then run:
 
 ```bash
-gwsim-noise simulate examples/noise_config_example.toml
+gwmock-noise simulate examples/noise_config_example.toml
 ```
 
 This will create one JSON metadata file per detector in the configured output
@@ -34,7 +34,7 @@ time series.
 ## Configuration
 
 Noise simulations are configured with a Pydantic model
-`gwsim_noise.NoiseConfig`. When using the CLI, the configuration is loaded from
+`gwmock_noise.NoiseConfig`. When using the CLI, the configuration is loaded from
 TOML, YAML, or JSON into the same model.
 
 Supported top-level fields:
@@ -48,7 +48,7 @@ Supported top-level fields:
 | `output.prefix`      | str         | Prefix for output file names                            |
 | `seed`               | int or null | Optional random seed for reproducibility                |
 
-For integration with the upstream `gwsim` package, the same structure can be
+For integration with the upstream `gwmock` package, the same structure can be
 nested under a `noise` key inside a larger configuration file. In that case the
 CLI still works; it automatically looks for a `noise` section if present.
 
@@ -60,7 +60,7 @@ Python:
 ```python
 from pathlib import Path
 
-from gwsim_noise import DefaultNoiseSimulator, NoiseConfig, OutputConfig
+from gwmock_noise import DefaultNoiseSimulator, NoiseConfig, OutputConfig
 
 config = NoiseConfig(
     detectors=["H1", "L1"],
@@ -77,6 +77,6 @@ for detector, path in result.output_paths.items():
     print(detector, "->", path)
 ```
 
-The upstream `gwsim` package is expected to import and compose
-`gwsim_noise.NoiseConfig` into its own configuration model and to drive a noise
-simulator that implements the `gwsim_noise.BaseNoiseSimulator` interface.
+The upstream `gwmock` package is expected to import and compose
+`gwmock_noise.NoiseConfig` into its own configuration model and to drive a noise
+simulator that implements the `gwmock_noise.BaseNoiseSimulator` interface.

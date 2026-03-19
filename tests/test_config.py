@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from gwsim_noise.config import NoiseConfig, OutputConfig, load_config
+from gwmock_noise.config import NoiseConfig, OutputConfig, load_config
 
 
 def test_noise_config_defaults() -> None:

@@ -1,6 +1,6 @@
 # Quick Start
 
-Welcome to **gwsim_noise**! This package provides tools for simulating
+Welcome to **gwmock_noise**! This package provides tools for simulating
 gravitational wave detector noise.
 
 ## Getting Started
@@ -10,13 +10,13 @@ gravitational wave detector noise.
 Install the package from PyPI:
 
 ```bash
-pip install gwsim-noise
+pip install gwmock-noise
 ```
 
 Or using `uv`:
 
 ```bash
-uv pip install gwsim-noise
+uv pip install gwmock-noise
 ```
 
 ### 2. Set Up Your Development Environment
@@ -25,8 +25,8 @@ If you're contributing or developing:
 
 ```bash
 # Clone the repository
-git clone git@github.com:Leuven-Gravity-Institute/gwsim_noise.git
-cd gwsim_noise
+git clone git@github.com:Leuven-Gravity-Institute/gwmock_noise.git
+cd gwmock_noise
 
 # Create a virtual environment
 uv venv --python 3.12
@@ -82,10 +82,10 @@ docs.
 
 ### Code Structure
 
-Your package code is in `src/gwsim_noise/`:
+Your package code is in `src/gwmock_noise/`:
 
-- `src/gwsim_noise/__init__.py`: Package initialization and exports
-- `src/gwsim_noise/__main__.py`: Entry point for `python -m gwsim_noise`
+- `src/gwmock_noise/__init__.py`: Package initialization and exports
+- `src/gwmock_noise/__main__.py`: Entry point for `python -m gwmock_noise`
 - Add your modules in subdirectories as needed
 
 ### Writing Code
@@ -102,10 +102,10 @@ Try the included example:
 
 ```bash
 # Run as a module
-python -m gwsim_noise
+python -m gwmock_noise
 
 # Or use the CLI
-gwsim-noise --help
+gwmock-noise --help
 ```
 
 ### Building and Publishing

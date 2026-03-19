@@ -18,7 +18,7 @@ class NoiseConfig(BaseModel):
     """Configuration for gravitational wave detector noise simulation.
 
     This model is designed to be imported and composed into larger configuration
-    structures by upstream packages (e.g., gwsim).
+    structures by upstream packages (e.g., gwmock).
     """
 
     detectors: list[str] = Field(
