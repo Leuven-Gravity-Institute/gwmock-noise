@@ -24,7 +24,7 @@ dependencies = ["pydantic>=2.12.5", "pyyaml>=6.0.3", "typer>=0.24.1"]
 [project.optional-dependencies]
 test = [
   "bandit[toml]>=1.9.4",
-  "ruff>=0.15.6",
+  "ruff>=0.15.7",
   "pre-commit>=4.5.1",
   "pytest-cov>=7.0.0",
   "pytest-mock>=3.15.1",
@@ -32,7 +32,7 @@ test = [
 ]
 ci = ["pytest-github-actions-annotate-failures>=0.4.0"]
 dev = ["gwmock-noise[test,docs]"]
-docs = ["zensical>=0.0.27", "mkdocstrings-python>=2.0.3"]
+docs = ["zensical>=0.0.28", "mkdocstrings-python>=2.0.3"]
 build = ["hatch>=1.16.5"]
 
 [project.scripts]
