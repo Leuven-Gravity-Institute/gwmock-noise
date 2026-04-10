@@ -32,7 +32,7 @@ test = [
 ]
 ci = ["pytest-github-actions-annotate-failures>=0.4.0"]
 dev = ["gwmock-noise[test,docs]"]
-docs = ["zensical>=0.0.31", "mkdocstrings-python>=2.0.3"]
+docs = ["zensical>=0.0.32", "mkdocstrings-python>=2.0.3"]
 build = ["hatch>=1.16.5"]
 
 [project.scripts]
