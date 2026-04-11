@@ -32,7 +32,7 @@ jobs:
 
             - name: Check for new commits
               id: check_commits
-              uses: isaac-cf-wong/detect-git-changes-action@6e775a629e68504f6c5116248b5d519e8db2f194 # v0.0.6
+              uses: isaac-cf-wong/detect-git-changes-action@fc6c3247a627b517542043b7c8e3aacf9d7a4a9e # v0.0.7
 
             - name: Bump version and push tag
               if: steps.check_commits.outputs.has-changes == 'true'
@@ -118,6 +118,6 @@ jobs:
                   subject-path: dist/*
 
             - name: Publish to PyPI
-              uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+              uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
               with:
                   packages-dir: dist/
