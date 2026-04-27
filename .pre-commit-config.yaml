@@ -46,7 +46,7 @@ repos:
             stages: [pre-commit]
 
     - repo: https://github.com/streetsidesoftware/cspell-cli
-      rev: v9.8.0 # Keep this version or update to the latest stable
+      rev: v10.0.0 # Keep this version or update to the latest stable
       hooks:
           - id: cspell
             name: Check spelling in Python, reSt, and Markdown files.
@@ -121,6 +121,6 @@ repos:
           - id: uv-lock
 
     - repo: https://github.com/gitleaks/gitleaks
-      rev: v8.30.1
+      rev: v8.30.0
       hooks:
           - id: gitleaks
