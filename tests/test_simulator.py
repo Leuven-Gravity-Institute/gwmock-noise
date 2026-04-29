@@ -10,7 +10,13 @@ import pytest
 
 import gwmock_noise
 from gwmock_noise.config import NoiseConfig, OutputConfig
-from gwmock_noise.simulators import BaseNoiseSimulator, DefaultNoiseSimulator, NoiseSimulator, SimulationResult
+from gwmock_noise.simulators import (
+    BaseNoiseSimulator,
+    ColoredNoiseSimulator,
+    DefaultNoiseSimulator,
+    NoiseSimulator,
+    SimulationResult,
+)
 
 
 class DuckNoiseSimulator:
@@ -96,3 +102,8 @@ def test_default_simulator_satisfies_noise_protocol() -> None:
 def test_protocol_is_importable_from_top_level_package() -> None:
     """NoiseSimulator is re-exported from the top-level package."""
     assert gwmock_noise.NoiseSimulator is NoiseSimulator
+
+
+def test_colored_simulator_is_importable_from_top_level_package() -> None:
+    """ColoredNoiseSimulator is re-exported from the top-level package."""
+    assert gwmock_noise.ColoredNoiseSimulator is ColoredNoiseSimulator

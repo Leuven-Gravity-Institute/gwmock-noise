@@ -10,6 +10,7 @@ import numpy as np
 
 from gwmock_noise.config import NoiseConfig
 from gwmock_noise.simulators.base import BaseNoiseSimulator, SimulationResult
+from gwmock_noise.simulators.colored import ColoredNoiseSimulator
 
 
 class DefaultNoiseSimulator(BaseNoiseSimulator):
@@ -33,16 +34,18 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         self.sampling_frequency = sampling_frequency
         self.detectors = list(detectors) if detectors is not None else ["H1", "L1"]
         self.seed = seed
+        self._active_metadata: dict[str, Any] | None = None
 
     @property
     def metadata(self) -> dict[str, Any]:
         """Return metadata describing the current simulator state."""
-        return {
+        base_metadata = {
             "duration": self.duration,
             "sampling_frequency": self.sampling_frequency,
             "detectors": list(self.detectors),
             "seed": self.seed,
         }
+        return base_metadata if self._active_metadata is None else base_metadata | self._active_metadata
 
     def generate(
         self,
@@ -56,6 +59,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         self.sampling_frequency = sampling_frequency
         self.detectors = list(detectors)
         self.seed = seed
+        self._active_metadata = None
         return {detector: np.array([], dtype=float) for detector in detectors}
 
     def run(self, config: NoiseConfig) -> SimulationResult:
@@ -67,12 +71,35 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         Returns:
             Result containing paths to generated outputs and the config used.
         """
-        self.generate(
-            duration=config.duration,
-            sampling_frequency=config.sampling_frequency,
-            detectors=config.detectors,
-            seed=config.seed,
-        )
+        if config.psd_file is None:
+            self.generate(
+                duration=config.duration,
+                sampling_frequency=config.sampling_frequency,
+                detectors=config.detectors,
+                seed=config.seed,
+            )
+        else:
+            colored_simulator = ColoredNoiseSimulator(
+                psd_file=config.psd_file,
+                detectors=config.detectors,
+                duration=config.duration,
+                sampling_frequency=config.sampling_frequency,
+                seed=config.seed,
+                low_frequency_cutoff=config.low_frequency_cutoff,
+                high_frequency_cutoff=config.high_frequency_cutoff,
+            )
+            colored_simulator.generate(
+                duration=config.duration,
+                sampling_frequency=config.sampling_frequency,
+                detectors=config.detectors,
+                seed=config.seed,
+            )
+            self.duration = config.duration
+            self.sampling_frequency = config.sampling_frequency
+            self.detectors = list(config.detectors)
+            self.seed = config.seed
+            self._active_metadata = colored_simulator.metadata
+
         out_dir = Path(config.output.directory)
         out_dir.mkdir(parents=True, exist_ok=True)
         prefix = config.output.prefix

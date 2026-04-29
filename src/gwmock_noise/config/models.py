@@ -44,5 +44,19 @@ class NoiseConfig(BaseModel):
         default=None,
         description="Random seed for reproducibility. If None, use system entropy.",
     )
+    psd_file: Path | None = Field(
+        default=None,
+        description="Optional PSD file for FFT-based colored-noise simulation.",
+    )
+    low_frequency_cutoff: float = Field(
+        default=2.0,
+        ge=0,
+        description="Lower frequency cutoff applied during colored-noise generation.",
+    )
+    high_frequency_cutoff: float | None = Field(
+        default=None,
+        gt=0,
+        description="Upper frequency cutoff applied during colored-noise generation.",
+    )
 
     model_config = {"frozen": False, "extra": "ignore"}
