@@ -8,7 +8,7 @@ from typing import Annotated
 import typer
 
 
-class LoggingLevel(str, enum.Enum):
+class LoggingLevel(enum.StrEnum):
     """Logging levels for the CLI."""
 
     NOTSET = "NOTSET"
