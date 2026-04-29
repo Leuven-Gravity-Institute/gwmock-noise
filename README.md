@@ -53,7 +53,7 @@ uv pip install gwmock-noise
 For the latest development version:
 
 ```bash
-git clone git@github.com:Leuven-Gravity-Institute/gwmock_noise.git
+git clone git@github.com:Leuven-Gravity-Institute/gwmock-noise.git
 cd gwmock_noise
 # Create a virtual environment (recommended with uv)
 uv venv --python 3.12
@@ -66,7 +66,7 @@ uv sync
 To set up for development:
 
 ```bash
-git clone git@github.com:Leuven-Gravity-Institute/gwmock_noise.git
+git clone git@github.com:Leuven-Gravity-Institute/gwmock-noise.git
 cd gwmock_noise
 
 # Create a virtual environment (recommended with uv)
