@@ -2,7 +2,7 @@
 
 [![Python CI](https://github.com/Leuven-Gravity-Institute/gwmock-noise/actions/workflows/ci.yml/badge.svg)](https://github.com/Leuven-Gravity-Institute/gwmock-noise/actions/workflows/ci.yml)
 [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/Leuven-Gravity-Institute/gwmock-noise/main.svg)](https://results.pre-commit.ci/latest/github/Leuven-Gravity-Institute/gwmock-noise/main)
-[![Documentation Status](https://github.com/Leuven-Gravity-Institute/gwmock_noise/actions/workflows/documentation.yml/badge.svg)](https://leuven-gravity-institute.github.io/gwmock-noise/)
+[![Documentation Status](https://github.com/Leuven-Gravity-Institute/gwmock-noise/actions/workflows/documentation.yml/badge.svg)](https://leuven-gravity-institute.github.io/gwmock-noise/)
 [![codecov](https://codecov.io/gh/Leuven-Gravity-Institute/gwmock-noise/graph/badge.svg?token=COF8341N60)](https://codecov.io/gh/Leuven-Gravity-Institute/gwmock-noise)
 [![PyPI Version](https://img.shields.io/pypi/v/gwmock-noise)](https://pypi.org/project/gwmock-noise/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/gwmock-noise)](https://pypi.org/project/gwmock-noise/)
