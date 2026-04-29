@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling", "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
 [project]
@@ -10,28 +10,26 @@ readme = "README.md"
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: BSD License",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dynamic = ["version"]
 dependencies = ["pydantic>=2.13.3", "pyyaml>=6.0.3", "typer>=0.25.0"]
 
-[project.optional-dependencies]
-test = [
+[dependency-groups]
+dev = [
   "bandit[toml]>=1.9.4",
   "ruff>=0.15.12",
   "pre-commit>=4.6.0",
   "pytest-cov>=7.1.0",
   "pytest-mock>=3.15.1",
   "pytest>=9.0.3",
+  "pytest-github-actions-annotate-failures>=0.4.0"
 ]
-ci = ["pytest-github-actions-annotate-failures>=0.4.0"]
-dev = ["gwmock-noise[test,docs]"]
 docs = ["zensical>=0.0.36", "mkdocstrings-python>=2.0.3"]
 build = ["hatch>=1.16.5"]
 
@@ -45,8 +43,12 @@ Tracker = "https://github.com/Leuven-Gravity-Institute/gwmock_noise/issues"
 Home = "https://github.com/Leuven-Gravity-Institute/gwmock_noise"
 "Release Notes" = "https://github.com/Leuven-Gravity-Institute/gwmock_noise/releases"
 
+[tool.uv-dynamic-versioning]
+vcs = "git"      # default
+style = "semver" # or pep440, semver, etc.
+
 [tool.hatch.version]
-source = "vcs"
+source = "uv-dynamic-versioning"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gwmock_noise"]
@@ -77,39 +79,9 @@ markers = [
   "unit: fast offline tests",
 ]
 
-[tool.tox]
-legacy_tox_ini = """
-[tox]
-envlist = py, integration, spark, all
-
-[testenv]
-commands =
-    pytest -m "not integration and not spark" {posargs}
-
-[testenv:integration]
-commands =
-    pytest -m "integration" {posargs}
-
-[testenv:spark]
-extras = spark
-setenv =
-       PYSPARK_DRIVER_PYTHON = {envpython}
-       PYSPARK_PYTHON = {envpython}
-commands =
-    pytest -m "spark" {posargs}
-
-[testenv:all]
-extras = all
-setenv =
-       PYSPARK_DRIVER_PYTHON = {envpython}
-       PYSPARK_PYTHON = {envpython}
-commands =
-    pytest {posargs}
-"""
-
 [tool.ruff]
 line-length = 120 # Matches Black's default
-target-version = "py310" # Align with CI (3.10–3.12) and requires-python (>=3.10)
+target-version = "py312" # Align with CI (3.12–3.14) and requires-python (>=3.12)
 lint.extend-select = [
   "E",
   "F",
@@ -146,3 +118,9 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["PLR2004"]
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true

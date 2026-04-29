@@ -28,12 +28,12 @@ pages for more details:
 
 ### Requirements
 
-- Python 3.11 or higher
+- Python 3.12 or higher
 - Operating System: Linux, macOS, or Windows
 
-**Note:** The package is built and tested against Python 3.11-3.14. When
+**Note:** The package is built and tested against Python 3.12-3.14. When
 creating a virtual environment with `uv`, specify the Python version to ensure
-compatibility: `uv venv --python 3.11` (replace `3.11` with your preferred
+compatibility: `uv venv --python 3.12` (replace `3.12` with your preferred
 version in the 3.11-3.14 range). This avoids potential issues with unsupported
 Python versions.
 
@@ -43,21 +43,9 @@ The recommended way to install `gwmock-noise` is from PyPI:
 
 ```bash
 # Create a virtual environment (recommended with uv)
-uv venv --python 3.11
+uv venv --python 3.12
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install gwmock-noise
-```
-
-#### Optional Dependencies
-
-For development or specific features:
-
-```bash
-# Development dependencies (testing, linting, etc.)
-uv pip install gwmock-noise[dev]
-
-# Documentation dependencies
-uv pip install gwmock-noise[docs]
 ```
 
 ### Install from Source
@@ -82,12 +70,9 @@ git clone git@github.com:Leuven-Gravity-Institute/gwmock_noise.git
 cd gwmock_noise
 
 # Create a virtual environment (recommended with uv)
-uv venv --python 3.11
+uv venv --python 3.12
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv sync --extra dev
-
-# Install the commitlint dependencies
-npm ci
+uv sync --group dev
 
 # Install pre-commit hooks
 uv run pre-commit install
