@@ -1,9 +1,9 @@
 # gwmock-noise
 
-[![Python CI](https://github.com/Leuven-Gravity-Institute/gwmock_noise/actions/workflows/ci.yml/badge.svg)](https://github.com/Leuven-Gravity-Institute/gwmock_noise/actions/workflows/ci.yml)
-[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/Leuven-Gravity-Institute/gwmock_noise/main.svg)](https://results.pre-commit.ci/latest/github/Leuven-Gravity-Institute/gwmock_noise/main)
-[![Documentation Status](https://github.com/Leuven-Gravity-Institute/gwmock_noise/actions/workflows/documentation.yml/badge.svg)](https://leuven-gravity-institute.github.io/gwmock_noise/)
-[![codecov](https://codecov.io/gh/Leuven-Gravity-Institute/gwmock_noise/graph/badge.svg?token=COF8341N60)](https://codecov.io/gh/Leuven-Gravity-Institute/gwmock_noise)
+[![Python CI](https://github.com/Leuven-Gravity-Institute/gwmock-noise/actions/workflows/ci.yml/badge.svg)](https://github.com/Leuven-Gravity-Institute/gwmock-noise/actions/workflows/ci.yml)
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/Leuven-Gravity-Institute/gwmock-noise/main.svg)](https://results.pre-commit.ci/latest/github/Leuven-Gravity-Institute/gwmock-noise/main)
+[![Documentation Status](https://github.com/Leuven-Gravity-Institute/gwmock_noise/actions/workflows/documentation.yml/badge.svg)](https://leuven-gravity-institute.github.io/gwmock-noise/)
+[![codecov](https://codecov.io/gh/Leuven-Gravity-Institute/gwmock-noise/graph/badge.svg?token=COF8341N60)](https://codecov.io/gh/Leuven-Gravity-Institute/gwmock-noise)
 [![PyPI Version](https://img.shields.io/pypi/v/gwmock-noise)](https://pypi.org/project/gwmock-noise/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/gwmock-noise)](https://pypi.org/project/gwmock-noise/)
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
@@ -34,7 +34,7 @@ pages for more details:
 **Note:** The package is built and tested against Python 3.12-3.14. When
 creating a virtual environment with `uv`, specify the Python version to ensure
 compatibility: `uv venv --python 3.12` (replace `3.12` with your preferred
-version in the 3.11-3.14 range). This avoids potential issues with unsupported
+version in the 3.12-3.14 range). This avoids potential issues with unsupported
 Python versions.
 
 ### Install from PyPI
@@ -56,7 +56,7 @@ For the latest development version:
 git clone git@github.com:Leuven-Gravity-Institute/gwmock_noise.git
 cd gwmock_noise
 # Create a virtual environment (recommended with uv)
-uv venv --python 3.11
+uv venv --python 3.12
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv sync
 ```
