@@ -49,7 +49,7 @@ repos:
                 - .markdownlint.yaml
 
     - repo: https://github.com/astral-sh/uv-pre-commit
-      rev: 0.10.6
+      rev: 0.11.8
       hooks:
           # Update the uv lockfile
           - id: uv-lock
