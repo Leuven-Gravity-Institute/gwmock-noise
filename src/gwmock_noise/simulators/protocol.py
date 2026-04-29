@@ -1,0 +1,30 @@
+"""Structural protocol for noise simulators."""
+
+from __future__ import annotations
+
+from typing import Any, Protocol, runtime_checkable
+
+import numpy as np
+
+
+@runtime_checkable
+class NoiseSimulator(Protocol):
+    """Structural interface for downstream noise simulators."""
+
+    duration: float
+    sampling_frequency: float
+    detectors: list[str]
+    seed: int | None
+
+    def generate(
+        self,
+        duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> dict[str, np.ndarray]:
+        """Generate per-detector strain arrays."""
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Return simulator metadata."""

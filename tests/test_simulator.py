@@ -3,11 +3,44 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
+import numpy as np
 import pytest
 
+import gwmock_noise
 from gwmock_noise.config import NoiseConfig, OutputConfig
-from gwmock_noise.simulators import BaseNoiseSimulator, DefaultNoiseSimulator, SimulationResult
+from gwmock_noise.simulators import BaseNoiseSimulator, DefaultNoiseSimulator, NoiseSimulator, SimulationResult
+
+
+class DuckNoiseSimulator:
+    """Minimal duck-typed simulator for protocol checks."""
+
+    def __init__(self) -> None:
+        """Set the protocol-required attributes."""
+        self.duration = 1.0
+        self.sampling_frequency = 1024.0
+        self.detectors = ["H1"]
+        self.seed = 7
+
+    def generate(
+        self,
+        duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> dict[str, np.ndarray]:
+        """Return minimal per-detector arrays."""
+        self.duration = duration
+        self.sampling_frequency = sampling_frequency
+        self.detectors = list(detectors)
+        self.seed = seed
+        return {detector: np.zeros(1) for detector in detectors}
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Return representative metadata."""
+        return {"implementation": "duck"}
 
 
 def test_default_simulator_run(tmp_path: Path) -> None:
@@ -44,3 +77,22 @@ def test_base_simulator_is_abstract() -> None:
     """BaseNoiseSimulator cannot be instantiated directly."""
     with pytest.raises(TypeError):
         BaseNoiseSimulator()
+
+
+def test_runtime_protocol_accepts_duck_typed_simulator() -> None:
+    """Runtime protocol checks accept duck-typed simulators."""
+    simulator = DuckNoiseSimulator()
+
+    assert isinstance(simulator, NoiseSimulator)
+
+
+def test_default_simulator_satisfies_noise_protocol() -> None:
+    """DefaultNoiseSimulator satisfies the runtime-checkable protocol."""
+    simulator = DefaultNoiseSimulator()
+
+    assert isinstance(simulator, NoiseSimulator)
+
+
+def test_protocol_is_importable_from_top_level_package() -> None:
+    """NoiseSimulator is re-exported from the top-level package."""
+    assert gwmock_noise.NoiseSimulator is NoiseSimulator

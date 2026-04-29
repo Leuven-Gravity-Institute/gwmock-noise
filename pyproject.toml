@@ -18,7 +18,12 @@ classifiers = [
 ]
 requires-python = ">=3.12"
 dynamic = ["version"]
-dependencies = ["pydantic>=2.13.3", "pyyaml>=6.0.3", "typer>=0.25.0"]
+dependencies = [
+    "numpy>=2.4.4",
+    "pydantic>=2.13.3",
+    "pyyaml>=6.0.3",
+    "typer>=0.25.0",
+]
 
 [dependency-groups]
 dev = [
@@ -105,8 +110,8 @@ lint.ignore = [
   "E501", # Line length (handled by formatter)
   "C901", # Disable overly strict complexity checks (optional, adjust as needed)
 ]
-fix = true # Enable autofix
 lint.unfixable = [] # List rules that should not be autofixed, if any
+fix = true # Enable autofix
 
 [tool.ruff.format]
 quote-style = "double"       # Use double quotes for strings
