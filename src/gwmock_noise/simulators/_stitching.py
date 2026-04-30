@@ -22,6 +22,12 @@ class OverlapAddStitcher:
     ) -> None:
         self.window_size = window_size
         self.overlap_size = overlap_size
+        if self.window_size <= 0:
+            raise ValueError("window_size must be a positive integer.")
+        if self.overlap_size <= 0:
+            raise ValueError("overlap_size must be a positive integer.")
+        if self.overlap_size >= self.window_size:
+            raise ValueError("overlap_size must be smaller than window_size.")
         self.previous_strain: dict[str, np.ndarray] = {}
         self._window_out = np.cos(np.linspace(0.0, np.pi / 2.0, overlap_size))
         self._window_in = np.sin(np.linspace(0.0, np.pi / 2.0, overlap_size))
