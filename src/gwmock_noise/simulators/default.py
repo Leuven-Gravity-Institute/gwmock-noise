@@ -11,6 +11,7 @@ import numpy as np
 from gwmock_noise.config import NoiseConfig
 from gwmock_noise.simulators.base import BaseNoiseSimulator, SimulationResult
 from gwmock_noise.simulators.colored import ColoredNoiseSimulator
+from gwmock_noise.simulators.correlated import CorrelatedNoiseSimulator, parse_csd_file_map
 
 
 class DefaultNoiseSimulator(BaseNoiseSimulator):
@@ -71,7 +72,29 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         Returns:
             Result containing paths to generated outputs and the config used.
         """
-        if config.psd_file is None:
+        if config.psd_files is not None or config.csd_files is not None:
+            correlated_simulator = CorrelatedNoiseSimulator(
+                psd_files=config.psd_files or {},
+                csd_files=parse_csd_file_map(config.csd_files),
+                detectors=config.detectors,
+                duration=config.duration,
+                sampling_frequency=config.sampling_frequency,
+                seed=config.seed,
+                low_frequency_cutoff=config.low_frequency_cutoff,
+                high_frequency_cutoff=config.high_frequency_cutoff,
+            )
+            correlated_simulator.generate(
+                duration=config.duration,
+                sampling_frequency=config.sampling_frequency,
+                detectors=config.detectors,
+                seed=config.seed,
+            )
+            self.duration = config.duration
+            self.sampling_frequency = config.sampling_frequency
+            self.detectors = list(config.detectors)
+            self.seed = config.seed
+            self._active_metadata = correlated_simulator.metadata
+        elif config.psd_file is None:
             self.generate(
                 duration=config.duration,
                 sampling_frequency=config.sampling_frequency,

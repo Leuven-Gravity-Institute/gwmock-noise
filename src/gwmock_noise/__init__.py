@@ -6,6 +6,7 @@ from gwmock_noise.config import NoiseConfig, OutputConfig, load_config
 from gwmock_noise.simulators import (
     BaseNoiseSimulator,
     ColoredNoiseSimulator,
+    CorrelatedNoiseSimulator,
     DefaultNoiseSimulator,
     NoiseSimulator,
     SimulationResult,
@@ -15,6 +16,7 @@ from gwmock_noise.version import __version__
 __all__ = [
     "BaseNoiseSimulator",
     "ColoredNoiseSimulator",
+    "CorrelatedNoiseSimulator",
     "DefaultNoiseSimulator",
     "NoiseConfig",
     "NoiseSimulator",

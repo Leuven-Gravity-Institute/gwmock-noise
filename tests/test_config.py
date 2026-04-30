@@ -21,6 +21,8 @@ def test_noise_config_defaults() -> None:
     assert config.output.prefix == "noise"
     assert config.seed is None
     assert config.psd_file is None
+    assert config.psd_files is None
+    assert config.csd_files is None
     assert config.low_frequency_cutoff == 2.0
     assert config.high_frequency_cutoff is None
 
@@ -33,7 +35,12 @@ def test_noise_config_custom_values() -> None:
         sampling_frequency=2048.0,
         output=OutputConfig(directory=Path("out"), prefix="run1"),
         seed=123,
-        psd_file=Path("psd.txt"),
+        psd_files={"H1": Path("h1_psd.txt"), "L1": Path("l1_psd.txt"), "V1": Path("v1_psd.txt")},
+        csd_files={
+            "H1-L1": Path("h1_l1_csd.txt"),
+            "H1-V1": Path("h1_v1_csd.txt"),
+            "L1-V1": Path("l1_v1_csd.txt"),
+        },
         low_frequency_cutoff=8.0,
         high_frequency_cutoff=512.0,
     )
@@ -43,7 +50,13 @@ def test_noise_config_custom_values() -> None:
     assert config.output.directory == Path("out")
     assert config.output.prefix == "run1"
     assert config.seed == 123
-    assert config.psd_file == Path("psd.txt")
+    assert config.psd_file is None
+    assert config.psd_files == {"H1": Path("h1_psd.txt"), "L1": Path("l1_psd.txt"), "V1": Path("v1_psd.txt")}
+    assert config.csd_files == {
+        "H1-L1": Path("h1_l1_csd.txt"),
+        "H1-V1": Path("h1_v1_csd.txt"),
+        "L1-V1": Path("l1_v1_csd.txt"),
+    }
     assert config.low_frequency_cutoff == 8.0
     assert config.high_frequency_cutoff == 512.0
 
@@ -85,6 +98,56 @@ def test_noise_config_validates_cutoffs_are_not_above_nyquist() -> None:
         )
 
 
+def test_noise_config_rejects_mixed_single_and_multi_detector_psd_inputs() -> None:
+    """NoiseConfig rejects simultaneous psd_file and psd_files inputs."""
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        NoiseConfig(
+            detectors=["H1"],
+            psd_file=Path("shared_psd.txt"),
+            psd_files={"H1": Path("h1_psd.txt")},
+        )
+
+
+def test_noise_config_requires_per_detector_psds_for_csd_inputs() -> None:
+    """NoiseConfig requires psd_files when csd_files are configured."""
+    with pytest.raises(ValidationError, match="requires psd_files"):
+        NoiseConfig(
+            detectors=["H1", "L1"],
+            csd_files={"H1-L1": Path("h1_l1_csd.txt")},
+        )
+
+
+def test_noise_config_validates_psd_file_keys_match_detectors() -> None:
+    """NoiseConfig requires psd_files keys to exactly match detectors."""
+    with pytest.raises(ValidationError, match="must exactly match detectors"):
+        NoiseConfig(
+            detectors=["H1", "L1"],
+            psd_files={"H1": Path("h1_psd.txt")},
+        )
+
+
+@pytest.mark.parametrize(
+    ("csd_files", "message"),
+    [
+        ({"badkey": Path("bad.txt")}, "DET1-DET2"),
+        ({"H1-H1": Path("duplicate.txt")}, "two distinct detectors"),
+        ({"H1-L1": Path("one.txt"), "L1-H1": Path("two.txt")}, "duplicate detector pairs"),
+        ({"H1-V1": Path("missing.txt")}, "configured detectors"),
+    ],
+)
+def test_noise_config_validates_csd_file_keys(
+    csd_files: dict[str, Path],
+    message: str,
+) -> None:
+    """NoiseConfig validates CSD detector-pair keys."""
+    with pytest.raises(ValidationError, match=message):
+        NoiseConfig(
+            detectors=["H1", "L1"],
+            psd_files={"H1": Path("h1_psd.txt"), "L1": Path("l1_psd.txt")},
+            csd_files=csd_files,
+        )
+
+
 def test_noise_config_validator_defensive_negative_cutoff_branches() -> None:
     """Model validator defensive checks reject negative cutoff values."""
     low_negative = NoiseConfig.model_construct(
@@ -94,6 +157,8 @@ def test_noise_config_validator_defensive_negative_cutoff_branches() -> None:
         output=OutputConfig(),
         seed=None,
         psd_file=None,
+        psd_files=None,
+        csd_files=None,
         low_frequency_cutoff=-1.0,
         high_frequency_cutoff=256.0,
     )
@@ -107,6 +172,8 @@ def test_noise_config_validator_defensive_negative_cutoff_branches() -> None:
         output=OutputConfig(),
         seed=None,
         psd_file=None,
+        psd_files=None,
+        csd_files=None,
         low_frequency_cutoff=8.0,
         high_frequency_cutoff=-1.0,
     )
