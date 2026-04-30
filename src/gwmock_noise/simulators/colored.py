@@ -204,20 +204,23 @@ class ColoredNoiseSimulator:
             elif history.shape != (WINDOW_SIZE,):
                 raise ValueError(f"previous_strain for {detector} must have shape ({WINDOW_SIZE},).")
 
-            strain_buffer = history.copy()
+            raw_strain_buffer = history.copy()
+            strain_buffer = raw_strain_buffer.copy()
             strain_buffer[-OVERLAP_SIZE:] *= self._window_out
 
             while strain_buffer.size - WINDOW_SIZE < n_samples:
-                new_strain = self._generate_single_realization(detector)
+                raw_new_strain = self._generate_single_realization(detector)
+                new_strain = raw_new_strain.copy()
                 new_strain[:OVERLAP_SIZE] *= self._window_in
                 new_strain[-OVERLAP_SIZE:] *= self._window_out
                 strain_buffer[-OVERLAP_SIZE:] = (
                     strain_buffer[-OVERLAP_SIZE:] + new_strain[:OVERLAP_SIZE]
                 ) / self._blend_norm
                 strain_buffer = np.concatenate((strain_buffer, new_strain[OVERLAP_SIZE:]))
+                raw_strain_buffer = np.concatenate((raw_strain_buffer, raw_new_strain[OVERLAP_SIZE:]))
 
             realizations[detector] = strain_buffer[WINDOW_SIZE : WINDOW_SIZE + n_samples].copy()
-            self.previous_strain[detector] = strain_buffer[n_samples : n_samples + WINDOW_SIZE].copy()
+            self.previous_strain[detector] = raw_strain_buffer[n_samples : n_samples + WINDOW_SIZE].copy()
 
         return realizations
 
