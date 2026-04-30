@@ -11,6 +11,7 @@ WINDOW_SIZE = 2048
 OVERLAP_SIZE = WINDOW_SIZE // 2
 PSD_WINDOW_ALPHA = 1e-3
 PSD_COLUMNS = 2
+MIN_TAPER_BINS = 2
 
 
 def _tukey_window(length: int, alpha: float = PSD_WINDOW_ALPHA) -> np.ndarray:
@@ -21,6 +22,8 @@ def _tukey_window(length: int, alpha: float = PSD_WINDOW_ALPHA) -> np.ndarray:
         return np.ones(length, dtype=float)
     if alpha >= 1:
         return np.hanning(length)
+    if length <= MIN_TAPER_BINS or alpha * length <= MIN_TAPER_BINS:
+        return np.ones(length, dtype=float)
 
     x = np.linspace(0.0, 1.0, length)
     window = np.ones(length, dtype=float)
