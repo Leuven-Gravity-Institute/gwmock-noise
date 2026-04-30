@@ -86,6 +86,9 @@ class OverlapAddStitcher:
         new_strain_segments = {detector: [] for detector in self.detectors}
         new_raw_segments = {detector: [] for detector in self.detectors}
         blended_overlaps = {detector: [] for detector in self.detectors}
+        overlap_sources = {
+            detector: strain_buffers[detector][-self.overlap_size :].copy() for detector in self.detectors
+        }
         extension_step = self.window_size - self.overlap_size
         current_size = self.window_size
 
@@ -98,13 +101,12 @@ class OverlapAddStitcher:
                 new_chunk = raw_new.copy()
                 new_chunk[: self.overlap_size] *= self._window_in
                 new_chunk[-self.overlap_size :] *= self._window_out
-                if blended_overlaps[detector]:
-                    overlap_source = blended_overlaps[detector][-1]
-                else:
-                    overlap_source = strain_buffers[detector][-self.overlap_size :]
-                blended_overlaps[detector].append((overlap_source + new_chunk[: self.overlap_size]) / self._blend_norm)
+                blended_overlaps[detector].append(
+                    (overlap_sources[detector] + new_chunk[: self.overlap_size]) / self._blend_norm
+                )
                 new_strain_segments[detector].append(new_chunk[self.overlap_size :])
                 new_raw_segments[detector].append(raw_new[self.overlap_size :])
+                overlap_sources[detector] = new_chunk[-self.overlap_size :].copy()
 
             current_size += extension_step
 
