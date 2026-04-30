@@ -77,3 +77,10 @@ def test_stitcher_validates_cached_history_before_generation() -> None:
 
     with pytest.raises(ValueError, match="must have shape"):
         stitcher.stitch(n_samples=4, chunk_generator=lambda: {"H1": np.zeros(8)})
+
+
+def test_stitcher_rejects_non_positive_sample_request() -> None:
+    """Stitch rejects non-positive sample counts."""
+    stitcher = OverlapAddStitcher(detectors=["H1"], window_size=8, overlap_size=4)
+    with pytest.raises(ValueError, match="n_samples must be positive"):
+        stitcher.stitch(n_samples=0, chunk_generator=lambda: {"H1": np.zeros(8)})

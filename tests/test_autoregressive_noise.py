@@ -188,3 +188,77 @@ def test_ar_simulator_rejects_wrong_psd_shape(tmp_path: Path) -> None:
             detectors=["H1"],
             sampling_frequency=256.0,
         )
+
+
+def test_ar_simulator_rejects_duplicate_detectors(tmp_path: Path) -> None:
+    """Runtime validation rejects duplicate detector names."""
+    psd_path = _write_psd_file(tmp_path / "duplicate_detectors_psd.txt")
+    with pytest.raises(ValueError, match="detectors must not contain duplicate names"):
+        ARNoiseSimulator(
+            psd_file=psd_path,
+            detectors=["H1", "H1"],
+            sampling_frequency=256.0,
+        )
+
+
+def test_ar_generate_with_order_one_updates_state(tmp_path: Path) -> None:
+    """Order=1 follows the no-shift update branch in _generate_block."""
+    psd_path = _write_psd_file(tmp_path / "order_one_psd.txt")
+    simulator = ARNoiseSimulator(
+        psd_file=psd_path,
+        detectors=["H1"],
+        sampling_frequency=256.0,
+        order=1,
+        seed=1,
+    )
+    result = simulator.generate(duration=2.0, sampling_frequency=256.0, detectors=["H1"])
+    assert result["H1"].shape == (512,)
+    assert simulator._state["H1"].shape == (1,)
+
+
+def test_ar_generate_reconfigures_fit_when_sampling_frequency_changes(tmp_path: Path) -> None:
+    """Changing runtime sampling frequency triggers refit/reset branch."""
+    psd_path = _write_psd_file(tmp_path / "reconfigure_psd.txt", sampling_frequency=512.0)
+    simulator = ARNoiseSimulator(
+        psd_file=psd_path,
+        detectors=["H1"],
+        sampling_frequency=256.0,
+        order=16,
+        seed=5,
+    )
+    first = simulator.generate(duration=2.0, sampling_frequency=256.0, detectors=["H1"])
+    second = simulator.generate(duration=2.0, sampling_frequency=512.0, detectors=["H1"])
+    assert first["H1"].shape == (512,)
+    assert second["H1"].shape == (1024,)
+
+
+def test_ar_generate_uses_block_chunking_for_long_requests(tmp_path: Path) -> None:
+    """Long generation requests use block concatenation path."""
+    psd_path = _write_psd_file(tmp_path / "chunking_psd.txt")
+    simulator = ARNoiseSimulator(
+        psd_file=psd_path,
+        detectors=["H1"],
+        sampling_frequency=256.0,
+        order=8,
+        block_size=64,
+        seed=7,
+    )
+    # 300 > block_size so while/concatenate path is exercised.
+    result = simulator.generate(duration=300 / 256.0, sampling_frequency=256.0, detectors=["H1"])
+    assert result["H1"].shape == (300,)
+
+
+def test_ar_simulator_supports_zero_regularization_and_system_seed(tmp_path: Path) -> None:
+    """Fit works with regularization=0 and seed=None RNG initialization."""
+    psd_path = _write_psd_file(tmp_path / "zero_reg_psd.txt")
+    simulator = ARNoiseSimulator(
+        psd_file=psd_path,
+        detectors=["H1", "L1"],
+        sampling_frequency=256.0,
+        order=16,
+        regularization=0.0,
+        seed=None,
+    )
+    result = simulator.generate(duration=2.0, sampling_frequency=256.0, detectors=["H1", "L1"])
+    assert result["H1"].shape == (512,)
+    assert result["L1"].shape == (512,)

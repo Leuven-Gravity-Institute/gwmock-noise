@@ -225,6 +225,11 @@ def test_parse_csd_file_map_rejects_malformed_keys(tmp_path: Path) -> None:
         parse_csd_file_map({"H1-H1": tmp_path / "a.npy"})
 
 
+def test_parse_csd_file_map_accepts_empty_mapping() -> None:
+    """Empty CSD map is normalized to an empty dict."""
+    assert parse_csd_file_map({}) == {}
+
+
 def test_parse_csd_file_map_rejects_duplicate_normalized_pairs(tmp_path: Path) -> None:
     """CSD parser rejects duplicate keys that normalize to the same pair."""
     with pytest.raises(ValueError, match="Duplicate CSD file mapping"):
@@ -364,3 +369,43 @@ def test_generate_reconfigures_when_runtime_changes(tmp_path: Path) -> None:
     second = simulator.generate(duration=4.0, sampling_frequency=512.0, detectors=detectors)
     assert first["H1"].shape == (1024,)
     assert second["H1"].shape == (2048,)
+
+
+def test_previous_strain_property_exposes_stitcher_buffers(tmp_path: Path) -> None:
+    """previous_strain property proxies through to the stitcher state."""
+    detectors = ["H1", "L1"]
+    psd_files, csd_files = _build_spectral_inputs(tmp_path, detectors)
+    simulator = CorrelatedNoiseSimulator(
+        psd_files=psd_files,
+        csd_files=csd_files,
+        detectors=detectors,
+        sampling_frequency=256.0,
+        seed=3,
+    )
+    simulator.generate(duration=2.0, sampling_frequency=256.0, detectors=detectors)
+    assert set(simulator.previous_strain) == set(detectors)
+
+
+def test_regularized_cholesky_falls_back_on_factorization_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LinAlgError path falls back to diagonal square-root factor."""
+    detectors = ["H1", "L1"]
+    psd_files, csd_files = _build_spectral_inputs(tmp_path, detectors)
+    simulator = CorrelatedNoiseSimulator(
+        psd_files=psd_files,
+        csd_files=csd_files,
+        detectors=detectors,
+        sampling_frequency=256.0,
+    )
+
+    def _raise_linalg_error(_: np.ndarray) -> np.ndarray:
+        raise np.linalg.LinAlgError("forced")
+
+    monkeypatch.setattr(np.linalg, "cholesky", _raise_linalg_error)
+    matrix = np.array([[1.0, 0.2], [0.2, 0.5]], dtype=np.complex128)
+    factor = simulator._regularized_cholesky(matrix)
+
+    assert factor.shape == (2, 2)
+    assert np.allclose(factor, np.diag(np.diag(factor)))
