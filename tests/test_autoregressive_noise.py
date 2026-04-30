@@ -1,0 +1,190 @@
+"""Tests for the autoregressive noise simulator."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from gwmock_noise.simulators import ARNoiseSimulator
+
+
+def _write_psd_file(path: Path, *, sampling_frequency: float = 256.0, n_points: int = 1025) -> Path:
+    """Write a flat PSD covering the detector band."""
+    frequencies = np.linspace(0.0, sampling_frequency / 2.0, n_points)
+    values = np.full_like(frequencies, 2.0e-3)
+    np.savetxt(path, np.column_stack((frequencies, values)))
+    return path
+
+
+def _estimate_one_sided_psd(strain: np.ndarray, sampling_frequency: float) -> tuple[np.ndarray, np.ndarray]:
+    """Estimate the one-sided periodogram."""
+    n_samples = strain.size
+    frequency_series = np.fft.rfft(strain)
+    psd = (2.0 / (sampling_frequency * n_samples)) * np.abs(frequency_series) ** 2
+    psd[0] /= 2.0
+    if n_samples % 2 == 0:
+        psd[-1] /= 2.0
+    frequencies = np.fft.rfftfreq(n_samples, d=1.0 / sampling_frequency)
+    return frequencies, psd
+
+
+def test_generated_psd_matches_input_psd_within_tolerance(tmp_path: Path) -> None:
+    """Averaged AR realizations preserve the target PSD shape."""
+    psd_path = _write_psd_file(tmp_path / "flat_psd.txt")
+    sampling_frequency = 256.0
+    estimated_psds = []
+
+    for seed in range(24):
+        simulator = ARNoiseSimulator(
+            psd_file=psd_path,
+            detectors=["H1"],
+            sampling_frequency=sampling_frequency,
+            seed=seed,
+            order=64,
+            low_frequency_cutoff=8.0,
+            high_frequency_cutoff=96.0,
+        )
+        realization = simulator.generate(
+            duration=8.0,
+            sampling_frequency=sampling_frequency,
+            detectors=["H1"],
+        )["H1"]
+        _, estimated_psd = _estimate_one_sided_psd(realization, sampling_frequency)
+        estimated_psds.append(estimated_psd)
+
+    mean_psd = np.mean(np.stack(estimated_psds), axis=0)
+    frequencies = np.fft.rfftfreq(realization.size, d=1.0 / sampling_frequency)
+    band = (frequencies >= 12.0) & (frequencies <= 80.0)
+
+    assert np.median(mean_psd[band]) == pytest.approx(2.0e-3, rel=0.3)
+
+
+def test_consecutive_generate_calls_are_continuous(tmp_path: Path) -> None:
+    """AR state carries across generate() calls without a visible jump."""
+    psd_path = _write_psd_file(tmp_path / "continuity_psd.txt")
+    simulator = ARNoiseSimulator(
+        psd_file=psd_path,
+        detectors=["H1"],
+        sampling_frequency=256.0,
+        seed=1234,
+        order=64,
+    )
+
+    first = simulator.generate(duration=4.0, sampling_frequency=256.0, detectors=["H1"])["H1"]
+    second = simulator.generate(duration=4.0, sampling_frequency=256.0, detectors=["H1"])["H1"]
+    combined = np.concatenate((first, second))
+    jumps = np.abs(np.diff(combined))
+    boundary_jump = jumps[first.size - 1]
+
+    assert boundary_jump <= np.quantile(jumps, 0.995)
+
+
+def test_generate_is_deterministic_after_reset(tmp_path: Path) -> None:
+    """Resetting and reusing the same seed reproduces the same realization."""
+    psd_path = _write_psd_file(tmp_path / "deterministic_psd.txt")
+    simulator = ARNoiseSimulator(
+        psd_file=psd_path,
+        detectors=["H1", "L1"],
+        sampling_frequency=256.0,
+        order=64,
+    )
+
+    first = simulator.generate(duration=4.0, sampling_frequency=256.0, detectors=["H1", "L1"], seed=99)
+    simulator.reset()
+    second = simulator.generate(duration=4.0, sampling_frequency=256.0, detectors=["H1", "L1"], seed=99)
+
+    np.testing.assert_allclose(first["H1"], second["H1"])
+    np.testing.assert_allclose(first["L1"], second["L1"])
+    assert not np.allclose(first["H1"], first["L1"])
+
+
+def test_ar_model_fit_completes_under_five_seconds_for_4096_point_psd(tmp_path: Path) -> None:
+    """The fitter meets the issue timing requirement for a 4096-point PSD."""
+    psd_path = _write_psd_file(
+        tmp_path / "fit_timing_psd.txt",
+        sampling_frequency=4096.0,
+        n_points=4096,
+    )
+    simulator = ARNoiseSimulator(
+        psd_file=psd_path,
+        detectors=["H1"],
+        sampling_frequency=4096.0,
+        order=256,
+    )
+
+    assert simulator.metadata["autoregressive_noise"]["fit_time_seconds"] < 5.0
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"duration": 0.0}, "duration must be greater than zero"),
+        ({"sampling_frequency": 0.0}, "sampling_frequency must be greater than zero"),
+        ({"detectors": []}, "detectors must contain at least one detector"),
+        ({"order": 0}, "order must be greater than zero"),
+        ({"block_size": 0}, "block_size must be greater than zero"),
+        ({"regularization": -1.0}, "regularization must be non-negative"),
+        ({"low_frequency_cutoff": -1.0}, "low_frequency_cutoff must be non-negative"),
+        (
+            {"low_frequency_cutoff": 20.0, "high_frequency_cutoff": 20.0},
+            "high_frequency_cutoff must be greater than low_frequency_cutoff",
+        ),
+        (
+            {"high_frequency_cutoff": 200.0},
+            "high_frequency_cutoff must not exceed the Nyquist frequency",
+        ),
+    ],
+)
+def test_ar_simulator_validates_runtime_arguments(
+    tmp_path: Path,
+    kwargs: dict[str, float | int | list[str]],
+    message: str,
+) -> None:
+    """ARNoiseSimulator rejects invalid runtime and cutoff arguments."""
+    psd_path = _write_psd_file(tmp_path / "invalid_runtime_psd.txt")
+    base_kwargs: dict[str, object] = {
+        "psd_file": psd_path,
+        "detectors": ["H1"],
+        "sampling_frequency": 256.0,
+        "duration": 4.0,
+    }
+    base_kwargs.update(kwargs)
+
+    with pytest.raises(ValueError, match=message):
+        ARNoiseSimulator(**base_kwargs)
+
+
+def test_ar_simulator_rejects_missing_psd_file(tmp_path: Path) -> None:
+    """Initialization fails when the PSD file does not exist."""
+    with pytest.raises(FileNotFoundError, match="PSD file not found"):
+        ARNoiseSimulator(
+            psd_file=tmp_path / "missing_psd.txt",
+            detectors=["H1"],
+            sampling_frequency=256.0,
+        )
+
+
+def test_ar_simulator_rejects_unsupported_psd_suffix(tmp_path: Path) -> None:
+    """Initialization fails for unsupported PSD file formats."""
+    psd_path = tmp_path / "psd.dat"
+    np.savetxt(psd_path, np.column_stack((np.array([0.0, 1.0]), np.array([1.0, 1.0]))))
+    with pytest.raises(ValueError, match="Unsupported PSD file format"):
+        ARNoiseSimulator(
+            psd_file=psd_path,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+        )
+
+
+def test_ar_simulator_rejects_wrong_psd_shape(tmp_path: Path) -> None:
+    """Initialization fails when PSD data are not shape (N, 2)."""
+    psd_path = tmp_path / "bad_shape.npy"
+    np.save(psd_path, np.ones((8,)))
+    with pytest.raises(ValueError, match="PSD file must have shape"):
+        ARNoiseSimulator(
+            psd_file=psd_path,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+        )
