@@ -84,6 +84,8 @@ class ARNoiseSimulator:
             raise ValueError("sampling_frequency must be greater than zero.")
         if not detectors:
             raise ValueError("detectors must contain at least one detector.")
+        if len(set(detectors)) != len(detectors):
+            raise ValueError("detectors must not contain duplicate names.")
         if self.order < 1:
             raise ValueError("order must be greater than zero.")
         if self.block_size < 1:
