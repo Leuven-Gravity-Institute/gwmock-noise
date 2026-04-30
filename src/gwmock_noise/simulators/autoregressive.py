@@ -58,6 +58,8 @@ class ARNoiseSimulator:
         self.block_size = block_size
         self.regularization = regularization
 
+        self._validate_runtime(duration=duration, sampling_frequency=sampling_frequency, detectors=self.detectors)
+
         self._rngs: dict[str, np.random.Generator] = {}
         self._state: dict[str, np.ndarray] = {}
         self._ar_coefficients = np.zeros(self.order, dtype=float)
@@ -66,7 +68,6 @@ class ARNoiseSimulator:
         self._fit_grid_size = 0
         self._high_frequency_cutoff = 0.0
 
-        self._validate_runtime(duration=duration, sampling_frequency=sampling_frequency, detectors=self.detectors)
         self._fit_model()
 
     def _validate_runtime(
