@@ -62,6 +62,58 @@ def test_noise_config_validates_detectors() -> None:
         NoiseConfig(detectors=[])
 
 
+def test_noise_config_validates_cutoff_ordering() -> None:
+    """NoiseConfig requires high_frequency_cutoff to be greater than low_frequency_cutoff."""
+    with pytest.raises(ValidationError, match="greater than low_frequency_cutoff"):
+        NoiseConfig(
+            sampling_frequency=1024.0,
+            low_frequency_cutoff=128.0,
+            high_frequency_cutoff=128.0,
+        )
+
+
+def test_noise_config_validates_cutoffs_are_not_above_nyquist() -> None:
+    """NoiseConfig rejects cutoff values above the Nyquist frequency."""
+    with pytest.raises(ValidationError, match="low_frequency_cutoff must be <= Nyquist"):
+        NoiseConfig(sampling_frequency=1024.0, low_frequency_cutoff=600.0)
+
+    with pytest.raises(ValidationError, match="high_frequency_cutoff must be <= Nyquist"):
+        NoiseConfig(
+            sampling_frequency=1024.0,
+            low_frequency_cutoff=16.0,
+            high_frequency_cutoff=600.0,
+        )
+
+
+def test_noise_config_validator_defensive_negative_cutoff_branches() -> None:
+    """Model validator defensive checks reject negative cutoff values."""
+    low_negative = NoiseConfig.model_construct(
+        detectors=["H1"],
+        duration=4.0,
+        sampling_frequency=1024.0,
+        output=OutputConfig(),
+        seed=None,
+        psd_file=None,
+        low_frequency_cutoff=-1.0,
+        high_frequency_cutoff=256.0,
+    )
+    with pytest.raises(ValueError, match="low_frequency_cutoff must be >= 0"):
+        low_negative.validate_frequency_cutoffs()
+
+    high_negative = NoiseConfig.model_construct(
+        detectors=["H1"],
+        duration=4.0,
+        sampling_frequency=1024.0,
+        output=OutputConfig(),
+        seed=None,
+        psd_file=None,
+        low_frequency_cutoff=8.0,
+        high_frequency_cutoff=-1.0,
+    )
+    with pytest.raises(ValueError, match="high_frequency_cutoff must be >= 0"):
+        high_negative.validate_frequency_cutoffs()
+
+
 def test_load_config_yaml(tmp_path: Path) -> None:
     """load_config loads and validates YAML files."""
     config_file = tmp_path / "config.yaml"
@@ -137,6 +189,15 @@ noise:
     config = load_config(config_file)
     assert config.detectors == ["V1"]
     assert config.duration == 1.0
+
+
+def test_load_config_empty_yaml_uses_defaults(tmp_path: Path) -> None:
+    """load_config treats empty YAML as an empty config mapping."""
+    config_file = tmp_path / "empty.yaml"
+    config_file.write_text("")
+
+    config = load_config(config_file)
+    assert config == NoiseConfig()
 
 
 def test_load_config_file_not_found() -> None:

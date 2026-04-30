@@ -11,6 +11,7 @@ import pytest
 
 from gwmock_noise.config import NoiseConfig, OutputConfig
 from gwmock_noise.simulators import ColoredNoiseSimulator, DefaultNoiseSimulator
+from gwmock_noise.simulators.colored import WINDOW_SIZE, _tukey_window
 
 
 def _write_psd_file(path: Path) -> Path:
@@ -171,3 +172,149 @@ def test_default_simulator_uses_colored_noise_when_psd_is_configured(tmp_path: P
     assert metadata["colored_noise"]["psd_file"] == str(psd_path)
     assert metadata["colored_noise"]["low_frequency_cutoff"] == 8.0
     assert metadata["colored_noise"]["high_frequency_cutoff"] == 96.0
+
+
+def test_tukey_window_validates_positive_length() -> None:
+    """Tukey helper rejects non-positive lengths."""
+    with pytest.raises(ValueError, match="length must be positive"):
+        _tukey_window(0)
+
+
+def test_tukey_window_returns_ones_when_alpha_non_positive() -> None:
+    """Alpha <= 0 disables tapering."""
+    np.testing.assert_allclose(_tukey_window(8, alpha=0.0), np.ones(8))
+
+
+def test_tukey_window_matches_hanning_when_alpha_ge_one() -> None:
+    """Alpha >= 1 follows the Hann branch."""
+    np.testing.assert_allclose(_tukey_window(8, alpha=1.0), np.hanning(8))
+
+
+def test_tukey_window_skips_taper_for_tiny_windows() -> None:
+    """Tiny windows return all ones to avoid collapsing narrow masks."""
+    np.testing.assert_allclose(_tukey_window(2, alpha=0.5), np.ones(2))
+    np.testing.assert_allclose(_tukey_window(3, alpha=0.5), np.ones(3))
+
+
+def test_tukey_window_applies_taper_for_regular_windows() -> None:
+    """Regular-size windows still use tapering."""
+    window = _tukey_window(64, alpha=0.5)
+    assert window.shape == (64,)
+    assert window.dtype == float
+    assert window[0] == pytest.approx(0.0)
+    assert window[32] == pytest.approx(1.0)
+
+
+def test_generate_rejects_invalid_previous_strain_shape(tmp_path: Path) -> None:
+    """Generate validates continuity buffer shapes."""
+    psd_path = _write_psd_file(tmp_path / "shape_psd.txt")
+    simulator = ColoredNoiseSimulator(
+        psd_file=psd_path,
+        detectors=["H1"],
+        sampling_frequency=256.0,
+        seed=7,
+    )
+    simulator.previous_strain["H1"] = np.zeros(WINDOW_SIZE - 1)
+
+    with pytest.raises(ValueError, match="must have shape"):
+        simulator.generate(duration=4.0, sampling_frequency=256.0, detectors=["H1"])
+
+
+def test_generate_reconfigures_when_runtime_sampling_frequency_changes(tmp_path: Path) -> None:
+    """Changing runtime sampling_frequency reconfigures and resets continuity state."""
+    psd_path = _write_psd_file(tmp_path / "runtime_change_psd.txt")
+    simulator = ColoredNoiseSimulator(
+        psd_file=psd_path,
+        detectors=["H1"],
+        sampling_frequency=256.0,
+        seed=21,
+    )
+
+    simulator.generate(duration=4.0, sampling_frequency=256.0, detectors=["H1"])
+    assert "H1" in simulator.previous_strain
+
+    second = simulator.generate(duration=4.0, sampling_frequency=512.0, detectors=["H1"])
+    assert second["H1"].shape == (2048,)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"duration": 0.0}, "duration must be greater than zero"),
+        ({"sampling_frequency": 0.0}, "sampling_frequency must be greater than zero"),
+        ({"detectors": []}, "detectors must contain at least one detector"),
+        ({"low_frequency_cutoff": -1.0}, "low_frequency_cutoff must be non-negative"),
+        (
+            {"low_frequency_cutoff": 20.0, "high_frequency_cutoff": 20.0},
+            "high_frequency_cutoff must be greater than low_frequency_cutoff",
+        ),
+        (
+            {"high_frequency_cutoff": 200.0},
+            "high_frequency_cutoff must not exceed the Nyquist frequency",
+        ),
+    ],
+)
+def test_colored_simulator_validates_runtime_arguments(
+    tmp_path: Path,
+    kwargs: dict[str, float | list[str]],
+    message: str,
+) -> None:
+    """ColoredNoiseSimulator rejects invalid runtime and cutoff arguments."""
+    psd_path = _write_psd_file(tmp_path / "invalid_runtime_psd.txt")
+    base_kwargs: dict[str, object] = {
+        "psd_file": psd_path,
+        "detectors": ["H1"],
+        "sampling_frequency": 256.0,
+        "duration": 4.0,
+    }
+    base_kwargs.update(kwargs)
+
+    with pytest.raises(ValueError, match=message):
+        ColoredNoiseSimulator(**base_kwargs)
+
+
+def test_colored_simulator_rejects_empty_frequency_mask(tmp_path: Path) -> None:
+    """Initialization fails when cutoff band contains no FFT bins."""
+    psd_path = _write_psd_file(tmp_path / "empty_mask_psd.txt")
+    with pytest.raises(ValueError, match="contains no simulation bins"):
+        ColoredNoiseSimulator(
+            psd_file=psd_path,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            low_frequency_cutoff=0.01,
+            high_frequency_cutoff=0.02,
+        )
+
+
+def test_colored_simulator_rejects_missing_psd_file(tmp_path: Path) -> None:
+    """Initialization fails when the PSD file does not exist."""
+    with pytest.raises(FileNotFoundError, match="PSD file not found"):
+        ColoredNoiseSimulator(
+            psd_file=tmp_path / "missing_psd.txt",
+            detectors=["H1"],
+            sampling_frequency=256.0,
+        )
+
+
+def test_colored_simulator_rejects_unsupported_psd_suffix(tmp_path: Path) -> None:
+    """Initialization fails for unsupported PSD file formats."""
+    psd_path = tmp_path / "psd.dat"
+    np.savetxt(psd_path, np.column_stack((np.array([0.0, 1.0]), np.array([1.0, 1.0]))))
+    with pytest.raises(ValueError, match="Unsupported PSD file format"):
+        ColoredNoiseSimulator(
+            psd_file=psd_path,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+        )
+
+
+def test_colored_simulator_rejects_wrong_psd_shape(tmp_path: Path) -> None:
+    """Initialization fails when PSD data are not shape (N, 2)."""
+    psd_path = tmp_path / "bad_shape.npy"
+    np.save(psd_path, np.ones((8,)))
+    with pytest.raises(ValueError, match="PSD file must have shape"):
+        ColoredNoiseSimulator(
+            psd_file=psd_path,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+        )
