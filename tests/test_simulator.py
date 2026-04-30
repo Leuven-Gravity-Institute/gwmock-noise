@@ -14,6 +14,7 @@ from gwmock_noise.simulators import (
     ARNoiseSimulator,
     BaseNoiseSimulator,
     ColoredNoiseSimulator,
+    CorrelatedARNoiseSimulator,
     CorrelatedNoiseSimulator,
     DefaultNoiseSimulator,
     NoiseSimulator,
@@ -119,3 +120,8 @@ def test_ar_simulator_is_importable_from_top_level_package() -> None:
 def test_correlated_simulator_is_importable_from_top_level_package() -> None:
     """CorrelatedNoiseSimulator is re-exported from the top-level package."""
     assert gwmock_noise.CorrelatedNoiseSimulator is CorrelatedNoiseSimulator
+
+
+def test_correlated_ar_simulator_is_importable_from_top_level_package() -> None:
+    """CorrelatedARNoiseSimulator is re-exported from the top-level package."""
+    assert gwmock_noise.CorrelatedARNoiseSimulator is CorrelatedARNoiseSimulator
