@@ -22,12 +22,6 @@ class OverlapAddStitcher:
     ) -> None:
         self.window_size = window_size
         self.overlap_size = overlap_size
-        if self.window_size <= 0:
-            raise ValueError("window_size must be a positive integer.")
-        if self.overlap_size <= 0:
-            raise ValueError("overlap_size must be a positive integer.")
-        if self.overlap_size >= self.window_size:
-            raise ValueError("overlap_size must be smaller than window_size.")
         self.previous_strain: dict[str, np.ndarray] = {}
         self._window_out = np.cos(np.linspace(0.0, np.pi / 2.0, overlap_size))
         self._window_in = np.sin(np.linspace(0.0, np.pi / 2.0, overlap_size))
@@ -83,16 +77,7 @@ class OverlapAddStitcher:
         for detector in self.detectors:
             strain_buffers[detector][-self.overlap_size :] *= self._window_out
 
-        new_strain_segments = {detector: [] for detector in self.detectors}
-        new_raw_segments = {detector: [] for detector in self.detectors}
-        blended_overlaps = {detector: [] for detector in self.detectors}
-        overlap_sources = {
-            detector: strain_buffers[detector][-self.overlap_size :].copy() for detector in self.detectors
-        }
-        extension_step = self.window_size - self.overlap_size
-        current_size = self.window_size
-
-        while current_size - self.window_size < n_samples:
+        while next(iter(strain_buffers.values())).size - self.window_size < n_samples:
             raw_new_chunks = chunk_generator()
             self._validate_chunk_map(raw_new_chunks)
 
@@ -101,27 +86,11 @@ class OverlapAddStitcher:
                 new_chunk = raw_new.copy()
                 new_chunk[: self.overlap_size] *= self._window_in
                 new_chunk[-self.overlap_size :] *= self._window_out
-                blended_overlaps[detector].append(
-                    (overlap_sources[detector] + new_chunk[: self.overlap_size]) / self._blend_norm
-                )
-                new_strain_segments[detector].append(new_chunk[self.overlap_size :])
-                new_raw_segments[detector].append(raw_new[self.overlap_size :])
-                overlap_sources[detector] = new_chunk[-self.overlap_size :].copy()
-
-            current_size += extension_step
-
-        for detector in self.detectors:
-            if new_strain_segments[detector]:
-                strain_buffers[detector] = np.concatenate(
-                    [strain_buffers[detector], np.concatenate(new_strain_segments[detector])]
-                )
-                raw_buffers[detector] = np.concatenate(
-                    [raw_buffers[detector], np.concatenate(new_raw_segments[detector])]
-                )
-                for index, blended_overlap in enumerate(blended_overlaps[detector]):
-                    overlap_start = (self.window_size - self.overlap_size) + (index * extension_step)
-                    overlap_stop = overlap_start + self.overlap_size
-                    strain_buffers[detector][overlap_start:overlap_stop] = blended_overlap
+                strain_buffers[detector][-self.overlap_size :] = (
+                    strain_buffers[detector][-self.overlap_size :] + new_chunk[: self.overlap_size]
+                ) / self._blend_norm
+                strain_buffers[detector] = np.concatenate((strain_buffers[detector], new_chunk[self.overlap_size :]))
+                raw_buffers[detector] = np.concatenate((raw_buffers[detector], raw_new[self.overlap_size :]))
 
         realization = {
             detector: strain_buffers[detector][self.window_size : self.window_size + n_samples].copy()

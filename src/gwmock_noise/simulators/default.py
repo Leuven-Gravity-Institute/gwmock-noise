@@ -72,8 +72,6 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         Returns:
             Result containing paths to generated outputs and the config used.
         """
-        # Note: strain data is generated for metadata capture but not persisted.
-        # Future milestones will add strain data output.
         if config.psd_files is not None or config.csd_files is not None:
             correlated_simulator = CorrelatedNoiseSimulator(
                 psd_files=config.psd_files or {},
