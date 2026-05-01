@@ -25,6 +25,9 @@ def take(
     n_samples = round(total_duration * sampling_frequency)
     if n_samples < 1:
         raise ValueError("total_duration and sampling_frequency must produce at least one sample.")
+    chunk_samples = round(chunk_duration * sampling_frequency)
+    if chunk_samples < 1:
+        raise ValueError("chunk_duration and sampling_frequency must produce at least one sample.")
 
     n_chunks = math.ceil(total_duration / chunk_duration)
     collected: dict[str, list[np.ndarray]] | None = None
@@ -48,4 +51,7 @@ def take(
     if collected is None:
         return {}
 
-    return {detector: np.concatenate(chunks)[:n_samples] for detector, chunks in collected.items()}
+    concatenated = {detector: np.concatenate(chunks) for detector, chunks in collected.items()}
+    if any(strain.shape[0] < n_samples for strain in concatenated.values()):
+        raise ValueError("stream ended before total_duration could be collected.")
+    return {detector: strain[:n_samples] for detector, strain in concatenated.items()}
