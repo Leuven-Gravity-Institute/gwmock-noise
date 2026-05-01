@@ -50,6 +50,27 @@ def _worker_generate(
     return results
 
 
+def _worker_generate_with_instances(
+    simulators: dict[str, NoiseSimulator],
+    duration: float,
+    sampling_frequency: float,
+    detectors: list[str],
+    seeds: dict[str, int | None],
+) -> dict[str, np.ndarray]:
+    """Generate detector batches using persistent simulator instances."""
+    results: dict[str, np.ndarray] = {}
+    for detector in detectors:
+        simulator = simulators[detector]
+        result = simulator.generate(
+            duration,
+            sampling_frequency,
+            [detector],
+            seed=seeds[detector],
+        )
+        results[detector] = np.asarray(result[detector], dtype=float)
+    return results
+
+
 class ParallelAdapter:
     """Wrap an independent-detector simulator factory with parallel execution."""
 
@@ -78,6 +99,7 @@ class ParallelAdapter:
         self._preview_metadata: dict[str, Any] | None = None
         self._resolved_backend: ExecutorBackend | None = None
         self._resolved_max_workers: int | None = None
+        self._worker_simulators: dict[str, NoiseSimulator] = {}
 
     def _preview_simulator(self) -> NoiseSimulator:
         """Instantiate one simulator for validation and metadata inspection."""
@@ -150,6 +172,49 @@ class ParallelAdapter:
             return ProcessPoolExecutor
         return ThreadPoolExecutor
 
+    def _get_worker_simulator(self, detector: str) -> NoiseSimulator:
+        """Create and cache a persistent simulator for one detector."""
+        simulator = self._worker_simulators.get(detector)
+        if simulator is not None:
+            return simulator
+
+        simulator = self.base_factory()
+        if not isinstance(simulator, NoiseSimulator):
+            raise TypeError("base_factory must construct a NoiseSimulator-compatible object.")
+        self._worker_simulators[detector] = simulator
+        return simulator
+
+    def _run_assignments_persistent(
+        self,
+        *,
+        executor_type: type[Executor] | None,
+        duration: float,
+        sampling_frequency: float,
+        seeds: dict[str, int | None],
+        assignments: list[list[str]],
+    ) -> dict[str, np.ndarray]:
+        """Execute detector assignments using cached simulator instances."""
+        simulators = {detector: self._get_worker_simulator(detector) for detector in seeds}
+        if executor_type is None:
+            return _worker_generate_with_instances(simulators, duration, sampling_frequency, assignments[0], seeds)
+
+        futures = {}
+        with executor_type(max_workers=len(assignments)) as executor:
+            for assignment in assignments:
+                futures[tuple(assignment)] = executor.submit(
+                    _worker_generate_with_instances,
+                    simulators,
+                    duration,
+                    sampling_frequency,
+                    assignment,
+                    seeds,
+                )
+
+        combined: dict[str, np.ndarray] = {}
+        for _assignment, future in futures.items():
+            combined.update(future.result())
+        return combined
+
     def _run_assignments(
         self,
         *,
@@ -214,22 +279,13 @@ class ParallelAdapter:
         self._resolved_backend = resolved_backend
         self._resolved_max_workers = resolved_workers
 
-        executor_type: type[Executor] | None = None if resolved_workers == 1 else self._executor_type(resolved_backend)
-        if executor_type is ProcessPoolExecutor and self.backend == "auto":
-            try:
-                results = self._run_assignments(
-                    executor_type=executor_type,
-                    duration=duration,
-                    sampling_frequency=sampling_frequency,
-                    seeds=seeds,
-                    assignments=assignments,
-                )
-                return {detector: results[detector] for detector in runtime_detectors}
-            except (AttributeError, OSError, RuntimeError, TypeError):
-                self._resolved_backend = "thread"
-                executor_type = ThreadPoolExecutor
+        # Persistent simulator state cannot be preserved with one-off process pools.
+        if resolved_backend == "process":
+            resolved_backend = "thread"
+            self._resolved_backend = "thread"
 
-        results = self._run_assignments(
+        executor_type: type[Executor] | None = None if resolved_workers == 1 else self._executor_type(resolved_backend)
+        results = self._run_assignments_persistent(
             executor_type=executor_type,
             duration=duration,
             sampling_frequency=sampling_frequency,
@@ -249,6 +305,10 @@ class ParallelAdapter:
         while True:
             yield self.generate(chunk_duration, sampling_frequency, detectors, seed)
             seed = None
+
+    def reset(self) -> None:
+        """Clear cached worker simulators, resetting continuity across workers."""
+        self._worker_simulators.clear()
 
     @property
     def metadata(self) -> dict[str, Any]:
