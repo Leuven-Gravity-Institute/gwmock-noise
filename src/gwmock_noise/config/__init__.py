@@ -8,6 +8,23 @@ their full configuration.
 from __future__ import annotations
 
 from gwmock_noise.config.loader import load_config
-from gwmock_noise.config.models import NoiseConfig, OutputConfig, SpectralLine
+from gwmock_noise.config.models import (
+    BlipGlitch,
+    GlitchModel,
+    LogNormalAmplitudeDistribution,
+    NoiseConfig,
+    OutputConfig,
+    ScatteredLightGlitch,
+    SpectralLine,
+)
 
-__all__ = ["NoiseConfig", "OutputConfig", "SpectralLine", "load_config"]
+__all__ = [
+    "BlipGlitch",
+    "GlitchModel",
+    "LogNormalAmplitudeDistribution",
+    "NoiseConfig",
+    "OutputConfig",
+    "ScatteredLightGlitch",
+    "SpectralLine",
+    "load_config",
+]

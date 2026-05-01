@@ -14,11 +14,15 @@ from gwmock_noise.simulators import (
     AddLines,
     ARNoiseSimulator,
     BaseNoiseSimulator,
+    BlipGlitch,
     ColoredNoiseSimulator,
     CorrelatedARNoiseSimulator,
     CorrelatedNoiseSimulator,
     DefaultNoiseSimulator,
+    InjectGlitches,
+    LogNormalAmplitudeDistribution,
     NoiseSimulator,
+    ScatteredLightGlitch,
     SimulationResult,
     SpectralLineSimulator,
 )
@@ -137,3 +141,15 @@ def test_spectral_line_simulator_is_importable_from_top_level_package() -> None:
 def test_add_lines_is_importable_from_top_level_package() -> None:
     """AddLines is re-exported from the top-level package."""
     assert gwmock_noise.AddLines is AddLines
+
+
+def test_inject_glitches_is_importable_from_top_level_package() -> None:
+    """InjectGlitches is re-exported from the top-level package."""
+    assert gwmock_noise.InjectGlitches is InjectGlitches
+
+
+def test_glitch_models_are_importable_from_top_level_package() -> None:
+    """Glitch models are re-exported from the top-level package."""
+    assert gwmock_noise.BlipGlitch is BlipGlitch
+    assert gwmock_noise.ScatteredLightGlitch is ScatteredLightGlitch
+    assert gwmock_noise.LogNormalAmplitudeDistribution is LogNormalAmplitudeDistribution

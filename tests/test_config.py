@@ -8,7 +8,15 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from gwmock_noise.config import NoiseConfig, OutputConfig, SpectralLine, load_config
+from gwmock_noise.config import (
+    BlipGlitch,
+    LogNormalAmplitudeDistribution,
+    NoiseConfig,
+    OutputConfig,
+    ScatteredLightGlitch,
+    SpectralLine,
+    load_config,
+)
 
 
 def test_noise_config_defaults() -> None:
@@ -27,6 +35,7 @@ def test_noise_config_defaults() -> None:
     assert config.low_frequency_cutoff == 2.0
     assert config.high_frequency_cutoff is None
     assert config.spectral_lines is None
+    assert config.glitches is None
 
 
 def test_noise_config_custom_values() -> None:
@@ -105,6 +114,54 @@ def test_noise_config_accepts_spectral_lines_from_mappings() -> None:
     ]
 
 
+def test_noise_config_accepts_glitches_from_mappings() -> None:
+    """NoiseConfig parses configured glitch mappings into dataclasses."""
+    config = NoiseConfig.model_validate(
+        {
+            "detectors": ["H1"],
+            "glitches": [
+                {
+                    "kind": "blip",
+                    "rate": 0.5,
+                    "width": 0.01,
+                    "amplitude_distribution": {
+                        "distribution": "lognormal",
+                        "mean": 1.0e-23,
+                        "std": 1.0e-24,
+                    },
+                },
+                {
+                    "kind": "scattered_light",
+                    "rate": 0.1,
+                    "duration": 0.5,
+                    "peak_frequency": 24.0,
+                    "arch_exponent": 1.5,
+                    "amplitude_distribution": {
+                        "distribution": "lognormal",
+                        "mean": 5.0e-24,
+                        "std": 0.0,
+                    },
+                },
+            ],
+        }
+    )
+
+    assert config.glitches == [
+        BlipGlitch(
+            rate=0.5,
+            width=0.01,
+            amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0e-23, std=1.0e-24),
+        ),
+        ScatteredLightGlitch(
+            rate=0.1,
+            duration=0.5,
+            peak_frequency=24.0,
+            arch_exponent=1.5,
+            amplitude_distribution=LogNormalAmplitudeDistribution(mean=5.0e-24, std=0.0),
+        ),
+    ]
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -126,6 +183,41 @@ def test_noise_config_rejects_invalid_spectral_line_values(field: str, value: fl
                 ]
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("glitch_config", "message"),
+    [
+        (
+            [
+                {
+                    "kind": "unknown",
+                    "rate": 0.5,
+                    "amplitude_distribution": {"distribution": "lognormal", "mean": 1.0, "std": 0.0},
+                }
+            ],
+            "glitch kind must be one of",
+        ),
+        (
+            [
+                {
+                    "kind": "blip",
+                    "rate": 0.5,
+                    "width": 0.01,
+                    "amplitude_distribution": {"distribution": "gaussian", "mean": 1.0, "std": 0.0},
+                }
+            ],
+            "Only the 'lognormal' amplitude distribution is supported",
+        ),
+    ],
+)
+def test_noise_config_rejects_invalid_glitch_mappings(
+    glitch_config: list[dict[str, object]],
+    message: str,
+) -> None:
+    """NoiseConfig rejects unsupported glitch kinds and amplitude distributions."""
+    with pytest.raises(ValidationError, match=message):
+        NoiseConfig.model_validate({"glitches": glitch_config})
 
 
 def test_noise_config_validates_detectors() -> None:

@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from gwmock_noise.config import NoiseConfig, OutputConfig, SpectralLine, load_config
+from gwmock_noise.config import (
+    BlipGlitch,
+    GlitchModel,
+    LogNormalAmplitudeDistribution,
+    NoiseConfig,
+    OutputConfig,
+    ScatteredLightGlitch,
+    SpectralLine,
+    load_config,
+)
 from gwmock_noise.simulators import (
     AddLines,
     ARNoiseSimulator,
@@ -11,6 +20,7 @@ from gwmock_noise.simulators import (
     CorrelatedARNoiseSimulator,
     CorrelatedNoiseSimulator,
     DefaultNoiseSimulator,
+    InjectGlitches,
     NoiseSimulator,
     SimulationResult,
     SpectralLineSimulator,
@@ -22,13 +32,18 @@ __all__ = [
     "ARNoiseSimulator",
     "AddLines",
     "BaseNoiseSimulator",
+    "BlipGlitch",
     "ColoredNoiseSimulator",
     "CorrelatedARNoiseSimulator",
     "CorrelatedNoiseSimulator",
     "DefaultNoiseSimulator",
+    "GlitchModel",
+    "InjectGlitches",
+    "LogNormalAmplitudeDistribution",
     "NoiseConfig",
     "NoiseSimulator",
     "OutputConfig",
+    "ScatteredLightGlitch",
     "SimulationResult",
     "SpectralLine",
     "SpectralLineSimulator",

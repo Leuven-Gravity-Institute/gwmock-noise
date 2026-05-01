@@ -12,6 +12,7 @@ from gwmock_noise.config import NoiseConfig
 from gwmock_noise.simulators.base import BaseNoiseSimulator, SimulationResult
 from gwmock_noise.simulators.colored import ColoredNoiseSimulator
 from gwmock_noise.simulators.correlated import CorrelatedNoiseSimulator, parse_csd_file_map
+from gwmock_noise.simulators.glitches import InjectGlitches, _ZeroNoiseSimulator
 from gwmock_noise.simulators.protocol import NoiseSimulator
 from gwmock_noise.simulators.spectral_lines import AddLines, SpectralLineSimulator
 
@@ -96,14 +97,25 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
                 raise ValueError("spectral_lines must contain at least one spectral line.")
 
             if simulator is None:
-                return SpectralLineSimulator(
+                simulator = SpectralLineSimulator(
                     lines=config.spectral_lines,
                     detectors=config.detectors,
                     duration=config.duration,
                     sampling_frequency=config.sampling_frequency,
                     seed=config.seed,
                 )
-            return AddLines(simulator, config.spectral_lines)
+            else:
+                simulator = AddLines(simulator, config.spectral_lines)
+
+        if config.glitches is not None:
+            if simulator is None:
+                simulator = _ZeroNoiseSimulator(
+                    detectors=config.detectors,
+                    duration=config.duration,
+                    sampling_frequency=config.sampling_frequency,
+                    seed=config.seed,
+                )
+            simulator = InjectGlitches(simulator, config.glitches)
 
         return simulator
 
