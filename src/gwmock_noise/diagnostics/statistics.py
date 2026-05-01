@@ -130,6 +130,8 @@ def _validate_samples(data: np.ndarray) -> np.ndarray:
         raise ValueError("data must be a one-dimensional array.")
     if samples.size == 0:
         raise ValueError("data must contain at least one sample.")
+    if not np.all(np.isfinite(samples)):
+        raise ValueError("data must contain only finite samples.")
     return samples
 
 
