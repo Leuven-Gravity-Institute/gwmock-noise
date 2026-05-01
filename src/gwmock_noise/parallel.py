@@ -46,7 +46,7 @@ def _worker_generate(
             [detector],
             seed=seeds[detector],
         )
-        results[detector] = np.asarray(result[detector], dtype=float)
+        results[detector] = np.asarray(result[detector])
     return results
 
 
@@ -67,7 +67,7 @@ def _worker_generate_with_instances(
             [detector],
             seed=seeds[detector],
         )
-        results[detector] = np.asarray(result[detector], dtype=float)
+        results[detector] = np.asarray(result[detector])
     return results
 
 
