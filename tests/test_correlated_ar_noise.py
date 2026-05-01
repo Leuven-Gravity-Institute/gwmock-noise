@@ -434,6 +434,21 @@ def test_correlated_ar_order_zero_updates_empty_state(tmp_path: Path) -> None:
     assert simulator._state.shape == (0, 2)
 
 
+def test_correlated_ar_rejects_tiny_duration_rounding_to_zero_samples(tmp_path: Path) -> None:
+    """Generate rejects requests that round to zero samples."""
+    detectors = ["H1", "L1"]
+    psd_files, csd_files = _build_spectral_inputs(tmp_path, detectors)
+    simulator = CorrelatedARNoiseSimulator(
+        psd_files=psd_files,
+        csd_files=csd_files,
+        detectors=detectors,
+        sampling_frequency=256.0,
+        order=16,
+    )
+    with pytest.raises(ValueError, match="must produce at least one sample"):
+        simulator.generate(duration=1.0e-6, sampling_frequency=256.0, detectors=detectors)
+
+
 def test_regularized_cholesky_falls_back_on_factorization_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

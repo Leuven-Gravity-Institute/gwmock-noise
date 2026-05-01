@@ -262,3 +262,97 @@ def test_ar_simulator_supports_zero_regularization_and_system_seed(tmp_path: Pat
     result = simulator.generate(duration=2.0, sampling_frequency=256.0, detectors=["H1", "L1"])
     assert result["H1"].shape == (512,)
     assert result["L1"].shape == (512,)
+
+
+def test_ar_simulator_rejects_empty_frequency_band_during_fit(tmp_path: Path) -> None:
+    """Fit rejects cutoffs that leave no FFT bins."""
+    psd_path = _write_psd_file(tmp_path / "empty_band_psd.txt")
+    with pytest.raises(ValueError, match="contains no simulation bins"):
+        ARNoiseSimulator(
+            psd_file=psd_path,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            low_frequency_cutoff=0.01,
+            high_frequency_cutoff=0.02,
+        )
+
+
+def test_ar_simulator_rejects_zero_variance_target_psd(tmp_path: Path) -> None:
+    """Fit rejects PSDs that integrate to zero variance."""
+    psd_path = _write_psd_file(tmp_path / "zero_psd.txt")
+    data = np.loadtxt(psd_path)
+    data[:, 1] = 0.0
+    np.savetxt(psd_path, data)
+    with pytest.raises(ValueError, match="zero variance"):
+        ARNoiseSimulator(psd_file=psd_path, detectors=["H1"], sampling_frequency=256.0, order=8)
+
+
+def test_ar_simulator_rejects_tiny_duration_rounding_to_zero_samples(tmp_path: Path) -> None:
+    """Generate rejects requests that round to zero samples."""
+    psd_path = _write_psd_file(tmp_path / "tiny_duration_psd.txt")
+    simulator = ARNoiseSimulator(psd_file=psd_path, detectors=["H1"], sampling_frequency=256.0, order=8)
+    with pytest.raises(ValueError, match="must produce at least one sample"):
+        simulator.generate(duration=1.0e-6, sampling_frequency=256.0, detectors=["H1"])
+
+
+def test_ar_simulator_rejects_nonpositive_innovation_variance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fit rejects nonpositive innovation variance."""
+    psd_path = _write_psd_file(tmp_path / "innovation_psd.txt")
+    monkeypatch.setattr(
+        "gwmock_noise.simulators.autoregressive.np.linalg.solve",
+        lambda a, b: np.array([-2.0]),
+    )
+    monkeypatch.setattr(
+        "gwmock_noise.simulators.autoregressive.np.roots",
+        lambda a: np.array([]),
+    )
+    monkeypatch.setattr(
+        "gwmock_noise.simulators.autoregressive.np.dot",
+        lambda a, b: -10.0,
+    )
+    with pytest.raises(ValueError, match="Innovation variance must be positive"):
+        ARNoiseSimulator(
+            psd_file=psd_path,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            order=1,
+            low_frequency_cutoff=0.0,
+            high_frequency_cutoff=128.0,
+        )
+
+
+def test_ar_simulator_rejects_unstable_roots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fit rejects unstable AR roots."""
+    psd_path = _write_psd_file(tmp_path / "unstable_psd.txt")
+    monkeypatch.setattr(
+        "gwmock_noise.simulators.autoregressive.np.linalg.solve",
+        lambda a, b: np.array([0.0]),
+    )
+    monkeypatch.setattr(
+        "gwmock_noise.simulators.autoregressive.np.roots",
+        lambda a: np.array([1.1]),
+    )
+    with pytest.raises(ValueError, match="Fitted AR model is unstable"):
+        ARNoiseSimulator(psd_file=psd_path, detectors=["H1"], sampling_frequency=256.0, order=1)
+
+
+def test_ar_generate_reconfigures_state_for_detector_reordering(tmp_path: Path) -> None:
+    """Detector reordering triggers reconfigure_state reset path."""
+    psd_path = _write_psd_file(tmp_path / "reorder_psd.txt")
+    simulator = ARNoiseSimulator(
+        psd_file=psd_path,
+        detectors=["H1", "L1"],
+        sampling_frequency=256.0,
+        order=8,
+        seed=9,
+    )
+    first = simulator.generate(duration=2.0, sampling_frequency=256.0, detectors=["H1", "L1"])
+    second = simulator.generate(duration=2.0, sampling_frequency=256.0, detectors=["L1", "H1"])
+    assert first["H1"].shape == (512,)
+    assert second["H1"].shape == (512,)

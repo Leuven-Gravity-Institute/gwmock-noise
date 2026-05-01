@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from gwmock_noise.config import (
     BlipGlitch,
+    GlitchModel,
     LogNormalAmplitudeDistribution,
     NoiseConfig,
     OutputConfig,
@@ -219,6 +220,100 @@ def test_scattered_light_glitch_rejects_nonpositive_sampling_frequency() -> None
 
 
 @pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"mean": 0.0}, "mean must be greater than zero"),
+        ({"std": -1.0}, "std must be non-negative"),
+    ],
+)
+def test_lognormal_amplitude_distribution_validates_parameters(
+    kwargs: dict[str, float],
+    message: str,
+) -> None:
+    """Amplitude distribution validates mean/std limits."""
+    with pytest.raises(ValueError, match=message):
+        LogNormalAmplitudeDistribution(**kwargs)
+
+
+def test_glitch_model_base_generate_is_abstract() -> None:
+    """Base GlitchModel.generate_waveform raises NotImplementedError."""
+    base = GlitchModel(rate=0.1, amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0))
+    with pytest.raises(NotImplementedError):
+        base.generate_waveform(256.0)
+
+
+def test_glitch_model_subclass_validators_reject_invalid_ranges() -> None:
+    """Blip/scattered-light validators reject invalid field ranges."""
+    with pytest.raises(ValueError, match="blip width must be greater than zero"):
+        BlipGlitch(
+            rate=0.1,
+            width=0.0,
+            amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        )
+    with pytest.raises(ValueError, match="scattered-light duration must be greater than zero"):
+        ScatteredLightGlitch(
+            rate=0.1,
+            duration=0.0,
+            peak_frequency=12.0,
+            arch_exponent=1.0,
+            amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        )
+    with pytest.raises(ValueError, match="scattered-light peak_frequency must be greater than zero"):
+        ScatteredLightGlitch(
+            rate=0.1,
+            duration=0.5,
+            peak_frequency=0.0,
+            arch_exponent=1.0,
+            amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        )
+    with pytest.raises(ValueError, match="scattered-light arch_exponent must be greater than zero"):
+        ScatteredLightGlitch(
+            rate=0.1,
+            duration=0.5,
+            peak_frequency=12.0,
+            arch_exponent=0.0,
+            amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        )
+
+
+def test_glitch_model_rejects_negative_rate() -> None:
+    """Common glitch validator rejects negative rates."""
+    with pytest.raises(ValueError, match="glitch rate must be non-negative"):
+        BlipGlitch(
+            rate=-0.1,
+            width=0.01,
+            amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        )
+
+
+def test_blip_glitch_rejects_nonpositive_sampling_frequency() -> None:
+    """Blip waveform generation validates sampling frequency."""
+    glitch = BlipGlitch(
+        rate=0.1,
+        width=0.01,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+    )
+    with pytest.raises(ValueError, match="sampling_frequency must be greater than zero"):
+        glitch.generate_waveform(0.0)
+
+
+def test_blip_glitch_handles_zero_variance_carrier(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Blip generation handles the zero-carrier-std branch safely."""
+
+    class ZeroNormalRng:
+        def normal(self, size: int) -> np.ndarray:
+            return np.zeros(size, dtype=float)
+
+    glitch = BlipGlitch(
+        rate=0.1,
+        width=0.01,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+    )
+    waveform = glitch.generate_waveform(1024.0, rng=ZeroNormalRng())  # type: ignore[arg-type]
+    assert waveform.shape[0] > 0
+
+
+@pytest.mark.parametrize(
     ("field", "value", "message"),
     [
         ("frequency", -1.0, "spectral line frequency must be non-negative"),
@@ -351,6 +446,16 @@ def test_noise_config_rejects_mixed_time_varying_and_multi_detector_psd_inputs()
             detectors=["H1"],
             psd_schedule=[(0.0, Path("shared_psd.txt"))],
             psd_files={"H1": Path("h1_psd.txt")},
+        )
+
+
+def test_noise_config_rejects_mixed_single_and_time_varying_psd_inputs() -> None:
+    """NoiseConfig rejects simultaneous psd_file and psd_schedule inputs."""
+    with pytest.raises(ValidationError, match="psd_file and psd_schedule are mutually exclusive"):
+        NoiseConfig(
+            detectors=["H1"],
+            psd_file=Path("shared_psd.txt"),
+            psd_schedule=[(0.0, Path("shared_psd.txt"))],
         )
 
 

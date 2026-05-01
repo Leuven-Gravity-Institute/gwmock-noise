@@ -101,6 +101,27 @@ def test_default_simulator_uses_zero_base_for_glitch_only_configuration(tmp_path
     assert runtime.metadata["base_implementation"] == "zero"
 
 
+def test_default_simulator_rejects_empty_spectral_lines_when_bypassing_model_validation() -> None:
+    """_configure_simulator guards against empty spectral_lines defensively."""
+    config = NoiseConfig.model_construct(
+        detectors=["H1"],
+        duration=2.0,
+        sampling_frequency=128.0,
+        output=OutputConfig(directory=Path("."), prefix="x"),
+        seed=None,
+        psd_file=None,
+        psd_schedule=None,
+        psd_files=None,
+        csd_files=None,
+        low_frequency_cutoff=2.0,
+        high_frequency_cutoff=None,
+        spectral_lines=[],
+        glitches=None,
+    )
+    with pytest.raises(ValueError, match="spectral_lines must contain at least one spectral line"):
+        DefaultNoiseSimulator()._configure_simulator(config)
+
+
 def test_simulation_result_attributes() -> None:
     """SimulationResult has expected attributes for upstream consumers."""
     config = NoiseConfig()

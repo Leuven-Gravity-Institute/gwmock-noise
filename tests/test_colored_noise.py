@@ -395,12 +395,35 @@ def test_colored_simulator_rejects_empty_psd_schedule() -> None:
         ColoredNoiseSimulator(psd_schedule=[], detectors=["H1"], sampling_frequency=256.0)
 
 
+def test_colored_simulator_requires_psd_source() -> None:
+    """Either psd_file or psd_schedule must be configured."""
+    with pytest.raises(ValueError, match="Either psd_file or psd_schedule must be provided"):
+        ColoredNoiseSimulator(detectors=["H1"], sampling_frequency=256.0)
+
+
+def test_colored_simulator_rejects_mixed_psd_file_and_schedule(tmp_path: Path) -> None:
+    """Single PSD and schedule inputs are mutually exclusive."""
+    psd_path = _write_psd_file(tmp_path / "mixed_psd.txt")
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        ColoredNoiseSimulator(
+            psd_file=psd_path, psd_schedule=[(0.0, psd_path)], detectors=["H1"], sampling_frequency=256.0
+        )
+
+
 def test_colored_simulator_rejects_duplicate_schedule_offsets(tmp_path: Path) -> None:
     """Schedule offsets must be distinct."""
     psd_a = _write_psd_file(tmp_path / "a_psd.txt")
     psd_b = _write_psd_file(tmp_path / "b_psd.txt")
     with pytest.raises(ValueError, match="must use distinct GPS offsets"):
         ColoredNoiseSimulator(psd_schedule=[(0.0, psd_a), (0.0, psd_b)], detectors=["H1"], sampling_frequency=256.0)
+
+
+def test_colored_simulator_rejects_unsorted_schedule_offsets(tmp_path: Path) -> None:
+    """Schedule offsets must be sorted."""
+    psd_a = _write_psd_file(tmp_path / "a_psd_unsorted.txt")
+    psd_b = _write_psd_file(tmp_path / "b_psd_unsorted.txt")
+    with pytest.raises(ValueError, match="must be sorted by GPS offset"):
+        ColoredNoiseSimulator(psd_schedule=[(1.0, psd_a), (0.0, psd_b)], detectors=["H1"], sampling_frequency=256.0)
 
 
 def test_colored_reset_handles_empty_psd_anchor_cache(tmp_path: Path) -> None:
