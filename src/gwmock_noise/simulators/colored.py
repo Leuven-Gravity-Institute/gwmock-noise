@@ -183,40 +183,7 @@ class ColoredNoiseSimulator:
             next_frame_midpoint += FRAME_STEP
             return self._generate_realization_chunk()
 
-        history = self.previous_strain
-        if history:
-            self._stitcher._validate_chunk_map(history)
-            current_raw = {detector: history[detector].copy() for detector in self.detectors}
-        else:
-            warmup = chunk_generator()
-            self._stitcher._validate_chunk_map(warmup)
-            current_raw = chunk_generator()
-            self._stitcher._validate_chunk_map(current_raw)
-            current_raw = {detector: current_raw[detector].copy() for detector in self.detectors}
-
-        emitted_segments = {detector: [] for detector in self.detectors}
-        produced_samples = 0
-
-        while produced_samples < n_samples:
-            next_raw = chunk_generator()
-            self._stitcher._validate_chunk_map(next_raw)
-
-            for detector in self.detectors:
-                blended_overlap = (
-                    (current_raw[detector][-OVERLAP_SIZE:] * self._stitcher._window_out)
-                    + (next_raw[detector][:OVERLAP_SIZE] * self._stitcher._window_in)
-                ) / self._stitcher._blend_norm
-                emitted_segments[detector].append(blended_overlap)
-                current_raw[detector] = next_raw[detector].copy()
-
-            produced_samples += FRAME_STEP
-
-        realization = {
-            detector: np.concatenate(segments)[:n_samples] for detector, segments in emitted_segments.items()
-        }
-        self.previous_strain.clear()
-        self.previous_strain.update(current_raw)
-        return realization
+        return self._stitcher.stitch(n_samples=n_samples, chunk_generator=chunk_generator)
 
     def _initialize_generators(self, seed: int | None) -> None:
         """Initialize per-detector random-number generators."""
