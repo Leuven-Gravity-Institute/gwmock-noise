@@ -32,10 +32,12 @@ from gwmock_noise.simulators import (
 from gwmock_noise.version import __version__
 
 _OPTIONAL_EXPORTS = {
+    "DiagnosticResult": "gwmock_noise.diagnostics",
     "compare_psd": "gwmock_noise.diagnostics",
     "estimate_psd": "gwmock_noise.diagnostics",
     "FrameWriter": "gwmock_noise.output",
     "GWpyAdapter": "gwmock_noise.output",
+    "run_diagnostics": "gwmock_noise.diagnostics",
 }
 
 __all__ = [
@@ -47,6 +49,7 @@ __all__ = [
     "CorrelatedARNoiseSimulator",
     "CorrelatedNoiseSimulator",
     "DefaultNoiseSimulator",
+    "DiagnosticResult",
     "FrameWriter",
     "GWpyAdapter",
     "GlitchModel",
@@ -64,6 +67,7 @@ __all__ = [
     "compare_psd",
     "estimate_psd",
     "load_config",
+    "run_diagnostics",
 ]
 
 
