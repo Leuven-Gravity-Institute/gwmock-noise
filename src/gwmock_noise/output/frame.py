@@ -84,6 +84,8 @@ class FrameWriter:
         """Write a sequence of contiguous frame segments."""
         written_segments: list[dict[str, Path]] = []
         for index, (gps_start, gps_end) in enumerate(segments):
+            if gps_end <= gps_start:
+                raise ValueError(f"Invalid segment ({gps_start}, {gps_end}); expected gps_end > gps_start.")
             self.gps_start = gps_start
             written_segments.append(
                 self.write(
