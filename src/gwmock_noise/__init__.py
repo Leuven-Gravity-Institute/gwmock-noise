@@ -15,6 +15,7 @@ from gwmock_noise.config import (
     SpectralLine,
     load_config,
 )
+from gwmock_noise.parallel import ParallelAdapter
 from gwmock_noise.simulators import (
     AddLines,
     ARNoiseSimulator,
@@ -59,6 +60,7 @@ __all__ = [
     "NoiseConfig",
     "NoiseSimulator",
     "OutputConfig",
+    "ParallelAdapter",
     "ScatteredLightGlitch",
     "SimulationResult",
     "SpectralLine",
