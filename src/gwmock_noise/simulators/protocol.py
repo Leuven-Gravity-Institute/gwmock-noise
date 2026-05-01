@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
@@ -24,6 +25,15 @@ class NoiseSimulator(Protocol):
         seed: int | None = None,
     ) -> dict[str, np.ndarray]:
         """Generate per-detector strain arrays."""
+
+    def generate_stream(
+        self,
+        chunk_duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> Iterator[dict[str, np.ndarray]]:
+        """Yield per-detector strain chunks lazily."""
 
     @property
     def metadata(self) -> dict[str, Any]:

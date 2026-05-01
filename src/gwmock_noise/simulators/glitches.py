@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import numpy as np
@@ -45,6 +46,18 @@ class _ZeroNoiseSimulator:
         self.seed = seed
         n_samples = round(duration * sampling_frequency)
         return {detector: np.zeros(n_samples, dtype=float) for detector in detectors}
+
+    def generate_stream(
+        self,
+        chunk_duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> Iterator[dict[str, np.ndarray]]:
+        """Yield zero-valued chunks lazily."""
+        while True:
+            yield self.generate(chunk_duration, sampling_frequency, detectors, seed)
+            seed = None
 
     @property
     def metadata(self) -> dict[str, Any]:
@@ -153,6 +166,18 @@ class InjectGlitches:
 
         self._elapsed_time = segment_end
         return combined
+
+    def generate_stream(
+        self,
+        chunk_duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> Iterator[dict[str, np.ndarray]]:
+        """Yield glitch-injected chunks lazily."""
+        while True:
+            yield self.generate(chunk_duration, sampling_frequency, detectors, seed)
+            seed = None
 
     @property
     def metadata(self) -> dict[str, Any]:

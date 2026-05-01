@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from itertools import combinations
 from pathlib import Path
 from typing import Any
@@ -285,6 +286,18 @@ class CorrelatedNoiseSimulator:
 
         n_samples = round(duration * sampling_frequency)
         return self._stitcher.stitch(n_samples=n_samples, chunk_generator=self._generate_realization_chunk)
+
+    def generate_stream(
+        self,
+        chunk_duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> Iterator[dict[str, np.ndarray]]:
+        """Yield correlated-noise chunks lazily while preserving simulator state."""
+        while True:
+            yield self.generate(chunk_duration, sampling_frequency, detectors, seed)
+            seed = None
 
     @property
     def metadata(self) -> dict[str, Any]:

@@ -1,0 +1,51 @@
+"""Streaming helpers for protocol-compatible simulators."""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Iterator
+
+import numpy as np
+
+
+def take(
+    stream: Iterator[dict[str, np.ndarray]],
+    total_duration: float,
+    chunk_duration: float,
+    sampling_frequency: float,
+) -> dict[str, np.ndarray]:
+    """Collect stream chunks up to ``total_duration`` seconds."""
+    if total_duration <= 0:
+        raise ValueError("total_duration must be greater than zero.")
+    if chunk_duration <= 0:
+        raise ValueError("chunk_duration must be greater than zero.")
+    if sampling_frequency <= 0:
+        raise ValueError("sampling_frequency must be greater than zero.")
+
+    n_samples = round(total_duration * sampling_frequency)
+    if n_samples < 1:
+        raise ValueError("total_duration and sampling_frequency must produce at least one sample.")
+
+    n_chunks = math.ceil(total_duration / chunk_duration)
+    collected: dict[str, list[np.ndarray]] | None = None
+
+    for _ in range(n_chunks):
+        try:
+            chunk = next(stream)
+        except StopIteration as error:
+            raise ValueError("stream ended before total_duration could be collected.") from error
+
+        if collected is None:
+            collected = {detector: [np.asarray(strain)] for detector, strain in chunk.items()}
+            continue
+
+        if set(chunk) != set(collected):
+            raise ValueError("stream chunks must contain a consistent detector set.")
+
+        for detector, strain in chunk.items():
+            collected[detector].append(np.asarray(strain))
+
+    if collected is None:
+        return {}
+
+    return {detector: np.concatenate(chunks)[:n_samples] for detector, chunks in collected.items()}

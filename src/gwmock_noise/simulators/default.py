@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +66,18 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         self.seed = seed
         self._active_metadata = None
         return {detector: np.array([], dtype=float) for detector in detectors}
+
+    def generate_stream(
+        self,
+        chunk_duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> Iterator[dict[str, np.ndarray]]:
+        """Yield placeholder strain chunks lazily."""
+        while True:
+            yield self.generate(chunk_duration, sampling_frequency, detectors, seed)
+            seed = None
 
     def _configure_simulator(self, config: NoiseConfig) -> NoiseSimulator | None:
         """Build the runtime simulator implied by the validated config."""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from itertools import combinations
 from pathlib import Path
 from typing import Any
@@ -307,6 +308,18 @@ class CorrelatedARNoiseSimulator:
 
         realization = np.concatenate(blocks, axis=0)
         return {detector: realization[:, self._detector_index[detector]].copy() for detector in self.detectors}
+
+    def generate_stream(
+        self,
+        chunk_duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> Iterator[dict[str, np.ndarray]]:
+        """Yield correlated AR chunks lazily while preserving innovation state."""
+        while True:
+            yield self.generate(chunk_duration, sampling_frequency, detectors, seed)
+            seed = None
 
     @property
     def metadata(self) -> dict[str, Any]:

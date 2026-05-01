@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from gwmock_noise.simulators import (
     ScatteredLightGlitch,
     SimulationResult,
     SpectralLineSimulator,
+    take,
 )
 
 
@@ -51,6 +53,18 @@ class DuckNoiseSimulator:
         self.detectors = list(detectors)
         self.seed = seed
         return {detector: np.zeros(1) for detector in detectors}
+
+    def generate_stream(
+        self,
+        chunk_duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ):
+        """Yield minimal per-detector arrays lazily."""
+        while True:
+            yield self.generate(chunk_duration, sampling_frequency, detectors, seed)
+            seed = None
 
     @property
     def metadata(self) -> dict[str, Any]:
@@ -188,6 +202,19 @@ def test_add_lines_is_importable_from_top_level_package() -> None:
 def test_inject_glitches_is_importable_from_top_level_package() -> None:
     """InjectGlitches is re-exported from the top-level package."""
     assert gwmock_noise.InjectGlitches is InjectGlitches
+
+
+def test_take_is_importable_from_simulators_package() -> None:
+    """Take is re-exported from the simulators package."""
+    assert gwmock_noise.take is take
+
+
+def test_protocol_simulators_expose_streaming_generator_methods() -> None:
+    """The built-in protocol simulators publish generator-based streaming methods."""
+    assert inspect.isgeneratorfunction(DefaultNoiseSimulator.generate_stream)
+    assert inspect.isgeneratorfunction(SpectralLineSimulator.generate_stream)
+    assert inspect.isgeneratorfunction(AddLines.generate_stream)
+    assert inspect.isgeneratorfunction(InjectGlitches.generate_stream)
 
 
 def test_glitch_models_are_importable_from_top_level_package() -> None:

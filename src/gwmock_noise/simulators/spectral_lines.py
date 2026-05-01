@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import numpy as np
@@ -148,6 +149,18 @@ class SpectralLineSimulator:
         line_signal = self._generate_lines(duration=duration, sampling_frequency=sampling_frequency)
         return {detector: line_signal.copy() for detector in runtime_detectors}
 
+    def generate_stream(
+        self,
+        chunk_duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> Iterator[dict[str, np.ndarray]]:
+        """Yield spectral-line chunks lazily."""
+        while True:
+            yield self.generate(chunk_duration, sampling_frequency, detectors, seed)
+            seed = None
+
     @property
     def metadata(self) -> dict[str, Any]:
         """Return simulator metadata."""
@@ -219,6 +232,18 @@ class AddLines:
                 raise ValueError("Base simulator output shape must match the generated spectral-line shape.")
             combined[detector] = base_strain + line_strain
         return combined
+
+    def generate_stream(
+        self,
+        chunk_duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> Iterator[dict[str, np.ndarray]]:
+        """Yield additive spectral-line chunks lazily."""
+        while True:
+            yield self.generate(chunk_duration, sampling_frequency, detectors, seed)
+            seed = None
 
     @property
     def metadata(self) -> dict[str, Any]:

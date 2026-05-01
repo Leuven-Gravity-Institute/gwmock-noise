@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -239,6 +240,18 @@ class ARNoiseSimulator:
             realizations[detector] = np.concatenate(blocks)
 
         return realizations
+
+    def generate_stream(
+        self,
+        chunk_duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> Iterator[dict[str, np.ndarray]]:
+        """Yield AR-noise chunks lazily while preserving recursion state."""
+        while True:
+            yield self.generate(chunk_duration, sampling_frequency, detectors, seed)
+            seed = None
 
     @property
     def metadata(self) -> dict[str, Any]:
