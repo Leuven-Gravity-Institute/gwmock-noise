@@ -103,4 +103,13 @@ class FrameWriter:
 
     def _frame_path(self, detector: str, channel: str, gps_start: float, duration: float) -> Path:
         """Return the output path for a detector frame segment."""
-        return self.output_dir / f"{detector[0]}-{channel}_{int(gps_start)}-{int(duration)}.gwf"
+        start_token = self._format_time_token(gps_start)
+        duration_token = self._format_time_token(duration)
+        return self.output_dir / f"{detector[0]}-{channel}_{start_token}-{duration_token}.gwf"
+
+    @staticmethod
+    def _format_time_token(value: float) -> str:
+        """Return a filename-safe token preserving sub-second precision."""
+        if float(value).is_integer():
+            return str(int(value))
+        return f"{value:.6f}".rstrip("0").rstrip(".").replace(".", "p")
