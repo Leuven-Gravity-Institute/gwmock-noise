@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from gwmock_noise.config import NoiseConfig, OutputConfig, load_config
+from gwmock_noise.config import NoiseConfig, OutputConfig, SpectralLine, load_config
 
 
 def test_noise_config_defaults() -> None:
@@ -26,6 +26,7 @@ def test_noise_config_defaults() -> None:
     assert config.csd_files is None
     assert config.low_frequency_cutoff == 2.0
     assert config.high_frequency_cutoff is None
+    assert config.spectral_lines is None
 
 
 def test_noise_config_custom_values() -> None:
@@ -84,6 +85,47 @@ def test_noise_config_accepts_time_varying_psd_schedule() -> None:
         (0.0, Path("psd_start.txt")),
         (128.0, Path("psd_end.txt")),
     ]
+
+
+def test_noise_config_accepts_spectral_lines_from_mappings() -> None:
+    """NoiseConfig parses configured spectral-line mappings into dataclasses."""
+    config = NoiseConfig.model_validate(
+        {
+            "detectors": ["H1"],
+            "spectral_lines": [
+                {"frequency": 60.0, "amplitude": 1.5e-23},
+                {"frequency": 120.0, "amplitude": 5.0e-24, "phase": 0.5, "drift_rate": 0.125},
+            ],
+        }
+    )
+
+    assert config.spectral_lines == [
+        SpectralLine(frequency=60.0, amplitude=1.5e-23),
+        SpectralLine(frequency=120.0, amplitude=5.0e-24, phase=0.5, drift_rate=0.125),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("frequency", -1.0, "spectral line frequency must be non-negative"),
+        ("amplitude", -1.0, "spectral line amplitude must be non-negative"),
+    ],
+)
+def test_noise_config_rejects_invalid_spectral_line_values(field: str, value: float, message: str) -> None:
+    """SpectralLine validation rejects negative frequency and amplitude."""
+    with pytest.raises(ValidationError, match=message):
+        NoiseConfig.model_validate(
+            {
+                "spectral_lines": [
+                    {
+                        "frequency": 32.0,
+                        "amplitude": 1.0e-23,
+                        field: value,
+                    }
+                ]
+            }
+        )
 
 
 def test_noise_config_validates_detectors() -> None:

@@ -9,9 +9,11 @@ from gwmock_noise.simulators.correlated import CorrelatedNoiseSimulator
 from gwmock_noise.simulators.correlated_ar import CorrelatedARNoiseSimulator
 from gwmock_noise.simulators.default import DefaultNoiseSimulator
 from gwmock_noise.simulators.protocol import NoiseSimulator
+from gwmock_noise.simulators.spectral_lines import AddLines, SpectralLineSimulator
 
 __all__ = [
     "ARNoiseSimulator",
+    "AddLines",
     "BaseNoiseSimulator",
     "ColoredNoiseSimulator",
     "CorrelatedARNoiseSimulator",
@@ -19,5 +21,6 @@ __all__ = [
     "DefaultNoiseSimulator",
     "NoiseSimulator",
     "SimulationResult",
+    "SpectralLineSimulator",
     "TimeVaryingColoredNoiseSimulator",
 ]

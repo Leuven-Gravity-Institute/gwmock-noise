@@ -12,6 +12,8 @@ from gwmock_noise.config import NoiseConfig
 from gwmock_noise.simulators.base import BaseNoiseSimulator, SimulationResult
 from gwmock_noise.simulators.colored import ColoredNoiseSimulator
 from gwmock_noise.simulators.correlated import CorrelatedNoiseSimulator, parse_csd_file_map
+from gwmock_noise.simulators.protocol import NoiseSimulator
+from gwmock_noise.simulators.spectral_lines import AddLines, SpectralLineSimulator
 
 
 class DefaultNoiseSimulator(BaseNoiseSimulator):
@@ -63,6 +65,45 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         self._active_metadata = None
         return {detector: np.array([], dtype=float) for detector in detectors}
 
+    def _configure_simulator(self, config: NoiseConfig) -> NoiseSimulator | None:
+        """Build the runtime simulator implied by the validated config."""
+        simulator: NoiseSimulator | None = None
+        if config.psd_files is not None or config.csd_files is not None:
+            simulator = CorrelatedNoiseSimulator(
+                psd_files=config.psd_files or {},
+                csd_files=parse_csd_file_map(config.csd_files),
+                detectors=config.detectors,
+                duration=config.duration,
+                sampling_frequency=config.sampling_frequency,
+                seed=config.seed,
+                low_frequency_cutoff=config.low_frequency_cutoff,
+                high_frequency_cutoff=config.high_frequency_cutoff,
+            )
+        elif config.psd_file is not None or config.psd_schedule is not None:
+            simulator = ColoredNoiseSimulator(
+                psd_file=config.psd_file,
+                psd_schedule=config.psd_schedule,
+                detectors=config.detectors,
+                duration=config.duration,
+                sampling_frequency=config.sampling_frequency,
+                seed=config.seed,
+                low_frequency_cutoff=config.low_frequency_cutoff,
+                high_frequency_cutoff=config.high_frequency_cutoff,
+            )
+
+        if config.spectral_lines:
+            if simulator is None:
+                return SpectralLineSimulator(
+                    lines=config.spectral_lines,
+                    detectors=config.detectors,
+                    duration=config.duration,
+                    sampling_frequency=config.sampling_frequency,
+                    seed=config.seed,
+                )
+            return AddLines(simulator, config.spectral_lines)
+
+        return simulator
+
     def run(self, config: NoiseConfig) -> SimulationResult:
         """Run the noise simulation with the given configuration.
 
@@ -74,29 +115,8 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         """
         # Note: strain data is generated for metadata capture but not persisted.
         # Future milestones will add strain data output.
-        if config.psd_files is not None or config.csd_files is not None:
-            correlated_simulator = CorrelatedNoiseSimulator(
-                psd_files=config.psd_files or {},
-                csd_files=parse_csd_file_map(config.csd_files),
-                detectors=config.detectors,
-                duration=config.duration,
-                sampling_frequency=config.sampling_frequency,
-                seed=config.seed,
-                low_frequency_cutoff=config.low_frequency_cutoff,
-                high_frequency_cutoff=config.high_frequency_cutoff,
-            )
-            correlated_simulator.generate(
-                duration=config.duration,
-                sampling_frequency=config.sampling_frequency,
-                detectors=config.detectors,
-                seed=config.seed,
-            )
-            self.duration = config.duration
-            self.sampling_frequency = config.sampling_frequency
-            self.detectors = list(config.detectors)
-            self.seed = config.seed
-            self._active_metadata = correlated_simulator.metadata
-        elif config.psd_file is None and config.psd_schedule is None:
+        simulator = self._configure_simulator(config)
+        if simulator is None:
             self.generate(
                 duration=config.duration,
                 sampling_frequency=config.sampling_frequency,
@@ -104,17 +124,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
                 seed=config.seed,
             )
         else:
-            colored_simulator = ColoredNoiseSimulator(
-                psd_file=config.psd_file,
-                psd_schedule=config.psd_schedule,
-                detectors=config.detectors,
-                duration=config.duration,
-                sampling_frequency=config.sampling_frequency,
-                seed=config.seed,
-                low_frequency_cutoff=config.low_frequency_cutoff,
-                high_frequency_cutoff=config.high_frequency_cutoff,
-            )
-            colored_simulator.generate(
+            simulator.generate(
                 duration=config.duration,
                 sampling_frequency=config.sampling_frequency,
                 detectors=config.detectors,
@@ -124,7 +134,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
             self.sampling_frequency = config.sampling_frequency
             self.detectors = list(config.detectors)
             self.seed = config.seed
-            self._active_metadata = colored_simulator.metadata
+            self._active_metadata = simulator.metadata
 
         out_dir = Path(config.output.directory)
         out_dir.mkdir(parents=True, exist_ok=True)

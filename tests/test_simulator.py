@@ -11,6 +11,7 @@ import pytest
 import gwmock_noise
 from gwmock_noise.config import NoiseConfig, OutputConfig
 from gwmock_noise.simulators import (
+    AddLines,
     ARNoiseSimulator,
     BaseNoiseSimulator,
     ColoredNoiseSimulator,
@@ -19,6 +20,7 @@ from gwmock_noise.simulators import (
     DefaultNoiseSimulator,
     NoiseSimulator,
     SimulationResult,
+    SpectralLineSimulator,
 )
 
 
@@ -125,3 +127,13 @@ def test_correlated_simulator_is_importable_from_top_level_package() -> None:
 def test_correlated_ar_simulator_is_importable_from_top_level_package() -> None:
     """CorrelatedARNoiseSimulator is re-exported from the top-level package."""
     assert gwmock_noise.CorrelatedARNoiseSimulator is CorrelatedARNoiseSimulator
+
+
+def test_spectral_line_simulator_is_importable_from_top_level_package() -> None:
+    """SpectralLineSimulator is re-exported from the top-level package."""
+    assert gwmock_noise.SpectralLineSimulator is SpectralLineSimulator
+
+
+def test_add_lines_is_importable_from_top_level_package() -> None:
+    """AddLines is re-exported from the top-level package."""
+    assert gwmock_noise.AddLines is AddLines

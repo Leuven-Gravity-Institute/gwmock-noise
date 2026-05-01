@@ -8,6 +8,6 @@ their full configuration.
 from __future__ import annotations
 
 from gwmock_noise.config.loader import load_config
-from gwmock_noise.config.models import NoiseConfig, OutputConfig
+from gwmock_noise.config.models import NoiseConfig, OutputConfig, SpectralLine
 
-__all__ = ["NoiseConfig", "OutputConfig", "load_config"]
+__all__ = ["NoiseConfig", "OutputConfig", "SpectralLine", "load_config"]

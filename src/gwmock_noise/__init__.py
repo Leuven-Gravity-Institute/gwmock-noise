@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from gwmock_noise.config import NoiseConfig, OutputConfig, load_config
+from gwmock_noise.config import NoiseConfig, OutputConfig, SpectralLine, load_config
 from gwmock_noise.simulators import (
+    AddLines,
     ARNoiseSimulator,
     BaseNoiseSimulator,
     ColoredNoiseSimulator,
@@ -12,12 +13,14 @@ from gwmock_noise.simulators import (
     DefaultNoiseSimulator,
     NoiseSimulator,
     SimulationResult,
+    SpectralLineSimulator,
     TimeVaryingColoredNoiseSimulator,
 )
 from gwmock_noise.version import __version__
 
 __all__ = [
     "ARNoiseSimulator",
+    "AddLines",
     "BaseNoiseSimulator",
     "ColoredNoiseSimulator",
     "CorrelatedARNoiseSimulator",
@@ -27,6 +30,8 @@ __all__ = [
     "NoiseSimulator",
     "OutputConfig",
     "SimulationResult",
+    "SpectralLine",
+    "SpectralLineSimulator",
     "TimeVaryingColoredNoiseSimulator",
     "__version__",
     "load_config",

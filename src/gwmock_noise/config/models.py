@@ -2,11 +2,30 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Self
 
 from pydantic import BaseModel, Field, model_validator
 
 DETECTOR_PAIR_SIZE = 2
+
+
+@dataclass(slots=True)
+class SpectralLine:
+    """Configuration for a narrow-band spectral line."""
+
+    frequency: float
+    amplitude: float
+    phase: float | None = None
+    drift_rate: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Validate scalar line parameters."""
+        if self.frequency < 0:
+            raise ValueError("spectral line frequency must be non-negative.")
+        if self.amplitude < 0:
+            raise ValueError("spectral line amplitude must be non-negative.")
 
 
 class OutputConfig(BaseModel):
@@ -72,6 +91,10 @@ class NoiseConfig(BaseModel):
         default=None,
         gt=0,
         description="Upper frequency cutoff applied during colored-noise generation.",
+    )
+    spectral_lines: list[SpectralLine] | None = Field(
+        default=None,
+        description="Optional additive spectral lines injected on top of the configured simulator.",
     )
 
     def _validate_frequency_bounds(self, *, nyquist: float) -> None:
@@ -144,7 +167,7 @@ class NoiseConfig(BaseModel):
             seen_pairs.add(normalized_pair)
 
     @model_validator(mode="after")
-    def validate_frequency_cutoffs(self) -> NoiseConfig:
+    def validate_frequency_cutoffs(self) -> Self:
         """Validate cutoff ordering and Nyquist limits."""
         nyquist = self.sampling_frequency / 2
         self._validate_frequency_bounds(nyquist=nyquist)
