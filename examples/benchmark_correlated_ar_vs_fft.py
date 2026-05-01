@@ -6,6 +6,7 @@ import argparse
 import tempfile
 import time
 import tracemalloc
+from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
@@ -42,6 +43,10 @@ class BenchmarkResult:
     simulator: str
     wall_time_seconds: float
     peak_memory_mib: float
+    setup_wall_time_seconds: float
+    setup_peak_memory_mib: float
+    generate_wall_time_seconds: float
+    generate_peak_memory_mib: float
     mean_psd_relative_error: float
     mean_csd_relative_error: float
     frequencies: np.ndarray
@@ -119,21 +124,37 @@ def _mean_relative_error(
 
 def _benchmark_simulator(
     label: str,
-    simulator: CorrelatedARNoiseSimulator | CorrelatedNoiseSimulator,
+    build_simulator: Callable[[], CorrelatedARNoiseSimulator | CorrelatedNoiseSimulator],
     config: BenchmarkConfig,
 ) -> BenchmarkResult:
-    """Benchmark one simulator and summarize PSD/CSD errors."""
+    """Benchmark one simulator and summarize PSD/CSD errors.
+
+    Measures construction/setup (``CorrelatedARNoiseSimulator`` / ``CorrelatedNoiseSimulator`` ``__init__``)
+    and ``generate()`` separately, each with its own wall time and tracemalloc peak.
+    """
     tracemalloc.start()
-    started_at = time.perf_counter()
+    setup_started = time.perf_counter()
+    simulator = build_simulator()
+    setup_elapsed = time.perf_counter() - setup_started
+    _, setup_peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    tracemalloc.start()
+    generate_started = time.perf_counter()
     realization = simulator.generate(
         duration=config.duration,
         sampling_frequency=config.sampling_frequency,
         detectors=config.detectors,
         seed=config.seed,
     )
-    elapsed = time.perf_counter() - started_at
-    _, peak = tracemalloc.get_traced_memory()
+    generate_elapsed = time.perf_counter() - generate_started
+    _, generate_peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
+
+    total_elapsed = setup_elapsed + generate_elapsed
+    setup_peak_mib = setup_peak / (1024.0**2)
+    generate_peak_mib = generate_peak / (1024.0**2)
+    peak_mib = max(setup_peak_mib, generate_peak_mib)
 
     frequencies, estimated_psd = _estimate_one_sided_psd(realization[config.detectors[0]], config.sampling_frequency)
     _, estimated_csd = _estimate_one_sided_csd(
@@ -155,8 +176,12 @@ def _benchmark_simulator(
 
     return BenchmarkResult(
         simulator=label,
-        wall_time_seconds=elapsed,
-        peak_memory_mib=peak / (1024.0**2),
+        wall_time_seconds=total_elapsed,
+        peak_memory_mib=peak_mib,
+        setup_wall_time_seconds=setup_elapsed,
+        setup_peak_memory_mib=setup_peak_mib,
+        generate_wall_time_seconds=generate_elapsed,
+        generate_peak_memory_mib=generate_peak_mib,
         mean_psd_relative_error=_mean_relative_error(
             estimated_psd,
             target_psd,
@@ -177,12 +202,21 @@ def _benchmark_simulator(
 
 def _print_table(rows: list[BenchmarkResult]) -> None:
     """Print a simple comparison table."""
-    print(f"{'Simulator':<18} {'Wall time (s)':>14} {'Peak MiB':>10} {'PSD rel. err':>14} {'CSD rel. err':>14}")
-    print(f"{'-' * 18} {'-' * 14} {'-' * 10} {'-' * 14} {'-' * 14}")
+    print(
+        f"{'Simulator':<18} "
+        f"{'Setup (s)':>10} {'Gen (s)':>10} {'Total (s)':>10} "
+        f"{'Setup MiB':>10} {'Gen MiB':>10} {'Peak MiB':>10} "
+        f"{'PSD rel. err':>14} {'CSD rel. err':>14}"
+    )
+    print(f"{'-' * 18} {'-' * 10} {'-' * 10} {'-' * 10} {'-' * 10} {'-' * 10} {'-' * 10} {'-' * 14} {'-' * 14}")
     for row in rows:
         print(
             f"{row.simulator:<18} "
-            f"{row.wall_time_seconds:>14.3f} "
+            f"{row.setup_wall_time_seconds:>10.3f} "
+            f"{row.generate_wall_time_seconds:>10.3f} "
+            f"{row.wall_time_seconds:>10.3f} "
+            f"{row.setup_peak_memory_mib:>10.2f} "
+            f"{row.generate_peak_memory_mib:>10.2f} "
             f"{row.peak_memory_mib:>10.2f} "
             f"{row.mean_psd_relative_error:>14.5f} "
             f"{row.mean_csd_relative_error:>14.5f}"
@@ -242,29 +276,34 @@ def main() -> None:
         order=args.order,
     )
 
-    correlated_ar = CorrelatedARNoiseSimulator(
-        psd_files=psd_files,
-        csd_files=csd_files,
-        detectors=detectors,
-        duration=args.duration,
-        sampling_frequency=args.sampling_frequency,
-        order=args.order,
-        low_frequency_cutoff=args.low_frequency_cutoff,
-        high_frequency_cutoff=args.high_frequency_cutoff,
-    )
-    correlated_fft = CorrelatedNoiseSimulator(
-        psd_files=psd_files,
-        csd_files={("H1", "L1"): csd_files["H1-L1"]},
-        detectors=detectors,
-        duration=args.duration,
-        sampling_frequency=args.sampling_frequency,
-        low_frequency_cutoff=args.low_frequency_cutoff,
-        high_frequency_cutoff=args.high_frequency_cutoff,
-    )
-
     rows = [
-        _benchmark_simulator("Correlated VMA", correlated_ar, config),
-        _benchmark_simulator("Correlated FFT", correlated_fft, config),
+        _benchmark_simulator(
+            "Correlated VMA",
+            lambda: CorrelatedARNoiseSimulator(
+                psd_files=psd_files,
+                csd_files=csd_files,
+                detectors=detectors,
+                duration=args.duration,
+                sampling_frequency=args.sampling_frequency,
+                order=args.order,
+                low_frequency_cutoff=args.low_frequency_cutoff,
+                high_frequency_cutoff=args.high_frequency_cutoff,
+            ),
+            config,
+        ),
+        _benchmark_simulator(
+            "Correlated FFT",
+            lambda: CorrelatedNoiseSimulator(
+                psd_files=psd_files,
+                csd_files={("H1", "L1"): csd_files["H1-L1"]},
+                detectors=detectors,
+                duration=args.duration,
+                sampling_frequency=args.sampling_frequency,
+                low_frequency_cutoff=args.low_frequency_cutoff,
+                high_frequency_cutoff=args.high_frequency_cutoff,
+            ),
+            config,
+        ),
     ]
     _print_table(rows)
     _maybe_plot(rows, args.plot)
