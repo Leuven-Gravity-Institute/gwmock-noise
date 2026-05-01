@@ -101,9 +101,9 @@ def plot_psd(frequencies: np.ndarray, psd: np.ndarray, ax=None):
     if frequency_array.shape != psd_array.shape:
         raise ValueError("frequencies and psd must have the same shape.")
 
-    positive = frequency_array > 0.0
+    positive = (frequency_array > 0.0) & (psd_array > 0.0)
     if not np.any(positive):
-        raise ValueError("frequencies must contain at least one positive value for log plotting.")
+        raise ValueError("frequencies and psd must contain at least one positive value for log plotting.")
 
     if ax is None:
         _, ax = pyplot.subplots()
