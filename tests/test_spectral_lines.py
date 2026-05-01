@@ -43,6 +43,53 @@ class ZeroNoiseSimulator:
         return {"implementation": "zero"}
 
 
+class NoResetNoiseSimulator:
+    """Protocol-compatible base simulator variant without reset()."""
+
+    def __init__(self) -> None:
+        """Initialize zero-valued base-simulator state."""
+        self.duration = 4.0
+        self.sampling_frequency = 256.0
+        self.detectors = ["H1"]
+        self.seed: int | None = None
+
+    def generate(
+        self,
+        duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> dict[str, np.ndarray]:
+        """Generate zero strain for each requested detector.
+
+        Args:
+            duration: The duration of the simulation in seconds.
+            sampling_frequency: The sampling frequency in Hz.
+            detectors: The list of detectors to simulate.
+            seed: The random seed to use for the simulation.
+
+        Returns:
+            Dictionary containing the zero strain for each requested detector.
+
+        """
+        self.duration = duration
+        self.sampling_frequency = sampling_frequency
+        self.detectors = list(detectors)
+        self.seed = seed
+        n_samples = round(duration * sampling_frequency)
+        return {detector: np.zeros(n_samples, dtype=float) for detector in detectors}
+
+    @property
+    def metadata(self) -> dict[str, str]:
+        """Return representative metadata for the wrapper tests.
+
+        Returns:
+            Dictionary containing the implementation name.
+
+        """
+        return {"implementation": "no_reset"}
+
+
 def _peak_frequency_and_config_amplitude(
     strain: np.ndarray,
     *,
@@ -180,3 +227,118 @@ def test_default_simulator_reports_additive_line_metadata(tmp_path: Path) -> Non
     assert metadata["spectral_lines"]["lines"] == [
         {"frequency": 48.0, "amplitude": 2.0e-2, "phase": 0.0, "drift_rate": 0.0}
     ]
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"duration": 0.0}, "duration must be greater than zero"),
+        ({"sampling_frequency": 0.0}, "sampling_frequency must be greater than zero"),
+        ({"detectors": []}, "detectors must contain at least one detector"),
+        ({"detectors": ["H1", "H1"]}, "detectors must not contain duplicate names"),
+    ],
+)
+def test_spectral_line_simulator_validates_runtime(
+    kwargs: dict[str, object],
+    message: str,
+) -> None:
+    """SpectralLineSimulator validates shared runtime parameters."""
+    base = {
+        "lines": [SpectralLine(frequency=32.0, amplitude=1.0e-2)],
+        "detectors": ["H1"],
+        "sampling_frequency": 256.0,
+        "duration": 2.0,
+    }
+    base.update(kwargs)
+    with pytest.raises(ValueError, match=message):
+        SpectralLineSimulator(**base)
+
+
+def test_spectral_line_simulator_requires_non_empty_line_list() -> None:
+    """Simulator requires at least one spectral line."""
+    with pytest.raises(ValueError, match="at least one spectral line"):
+        SpectralLineSimulator(lines=[], detectors=["H1"])
+
+
+def test_spectral_line_simulator_rejects_out_of_band_drift() -> None:
+    """Line frequencies must stay within [0, Nyquist] over each segment."""
+    simulator = SpectralLineSimulator(
+        lines=[SpectralLine(frequency=120.0, amplitude=1.0e-2, drift_rate=20.0)],
+        detectors=["H1"],
+        sampling_frequency=256.0,
+    )
+    with pytest.raises(ValueError, match="within \\[0, Nyquist\\]"):
+        simulator.generate(duration=1.0, sampling_frequency=256.0, detectors=["H1"])
+
+
+def test_spectral_line_simulator_rejects_zero_sample_request() -> None:
+    """Rounded zero-sample requests are rejected."""
+    simulator = SpectralLineSimulator(
+        lines=[SpectralLine(frequency=32.0, amplitude=1.0e-2)],
+        detectors=["H1"],
+        sampling_frequency=256.0,
+    )
+    with pytest.raises(ValueError, match="must produce at least one sample"):
+        simulator.generate(duration=1.0e-6, sampling_frequency=256.0, detectors=["H1"])
+
+
+def test_add_lines_rejects_empty_lines() -> None:
+    """AddLines requires at least one line."""
+    with pytest.raises(ValueError, match="at least one spectral line"):
+        AddLines(ZeroNoiseSimulator(), [])
+
+
+def test_add_lines_reset_without_callable_base_reset() -> None:
+    """AddLines reset tolerates bases without reset()."""
+    simulator = AddLines(NoResetNoiseSimulator(), [SpectralLine(frequency=32.0, amplitude=1.0e-2)])
+    simulator.reset()
+
+
+def test_add_lines_reset_calls_base_reset_when_available() -> None:
+    """AddLines reset delegates to base reset when present."""
+
+    class ResetTrackingBase(ZeroNoiseSimulator):
+        def __init__(self) -> None:
+            super().__init__()
+            self.reset_calls = 0
+
+        def reset(self) -> None:
+            self.reset_calls += 1
+
+    base = ResetTrackingBase()
+    simulator = AddLines(base, [SpectralLine(frequency=32.0, amplitude=1.0e-2)])
+    simulator.reset()
+    assert base.reset_calls == 1
+
+
+def test_add_lines_validates_base_detector_and_shape() -> None:
+    """AddLines validates detector keys and output shape."""
+
+    class MissingDetectorBase(ZeroNoiseSimulator):
+        def generate(
+            self,
+            duration: float,
+            sampling_frequency: float,
+            detectors: list[str],
+            seed: int | None = None,
+        ) -> dict[str, np.ndarray]:
+            _ = (duration, sampling_frequency, detectors, seed)
+            return {"H1": np.zeros(16)}
+
+    class BadShapeBase(ZeroNoiseSimulator):
+        def generate(
+            self,
+            duration: float,
+            sampling_frequency: float,
+            detectors: list[str],
+            seed: int | None = None,
+        ) -> dict[str, np.ndarray]:
+            _ = (duration, detectors, seed)
+            n_samples = round(duration * sampling_frequency)
+            return {"H1": np.zeros(n_samples + 1)}
+
+    low_line = SpectralLine(frequency=2.0, amplitude=1.0e-2)
+    with pytest.raises(KeyError, match="did not return detector"):
+        AddLines(MissingDetectorBase(), [low_line]).generate(1.0, 16.0, ["H1", "L1"], seed=1)
+    with pytest.raises(ValueError, match="output shape must match"):
+        AddLines(BadShapeBase(), [low_line]).generate(1.0, 16.0, ["H1"], seed=1)

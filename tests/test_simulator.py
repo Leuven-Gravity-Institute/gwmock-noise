@@ -80,6 +80,27 @@ def test_default_simulator_run(tmp_path: Path) -> None:
     assert "4096" in content
 
 
+def test_default_simulator_uses_zero_base_for_glitch_only_configuration(tmp_path: Path) -> None:
+    """Glitch-only config wraps the internal zero-noise base."""
+    config = NoiseConfig(
+        detectors=["H1"],
+        duration=2.0,
+        sampling_frequency=128.0,
+        output=OutputConfig(directory=tmp_path, prefix="glitch_only"),
+        glitches=[
+            BlipGlitch(
+                rate=0.2,
+                width=0.01,
+                amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+            )
+        ],
+    )
+    simulator = DefaultNoiseSimulator()
+    runtime = simulator._configure_simulator(config)
+    assert isinstance(runtime, InjectGlitches)
+    assert runtime.metadata["base_implementation"] == "zero"
+
+
 def test_simulation_result_attributes() -> None:
     """SimulationResult has expected attributes for upstream consumers."""
     config = NoiseConfig()

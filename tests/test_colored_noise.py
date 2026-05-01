@@ -389,6 +389,29 @@ def test_colored_simulator_validates_runtime_arguments(
         ColoredNoiseSimulator(**base_kwargs)
 
 
+def test_colored_simulator_rejects_empty_psd_schedule() -> None:
+    """Empty time-varying schedules are rejected."""
+    with pytest.raises(ValueError, match="must contain at least one anchor"):
+        ColoredNoiseSimulator(psd_schedule=[], detectors=["H1"], sampling_frequency=256.0)
+
+
+def test_colored_simulator_rejects_duplicate_schedule_offsets(tmp_path: Path) -> None:
+    """Schedule offsets must be distinct."""
+    psd_a = _write_psd_file(tmp_path / "a_psd.txt")
+    psd_b = _write_psd_file(tmp_path / "b_psd.txt")
+    with pytest.raises(ValueError, match="must use distinct GPS offsets"):
+        ColoredNoiseSimulator(psd_schedule=[(0.0, psd_a), (0.0, psd_b)], detectors=["H1"], sampling_frequency=256.0)
+
+
+def test_colored_reset_handles_empty_psd_anchor_cache(tmp_path: Path) -> None:
+    """Reset tolerates an empty anchor cache without touching _psd."""
+    psd_path = _write_psd_file(tmp_path / "reset_psd.txt")
+    simulator = ColoredNoiseSimulator(psd_file=psd_path, detectors=["H1"], sampling_frequency=256.0, seed=2)
+    simulator._psd_anchors = []
+    simulator.reset()
+    assert simulator._generated_samples == 0
+
+
 def test_colored_simulator_rejects_empty_frequency_mask(tmp_path: Path) -> None:
     """Initialization fails when cutoff band contains no FFT bins."""
     psd_path = _write_psd_file(tmp_path / "empty_mask_psd.txt")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
@@ -162,6 +163,61 @@ def test_noise_config_accepts_glitches_from_mappings() -> None:
     ]
 
 
+def test_noise_config_accepts_glitch_instance_inputs() -> None:
+    """NoiseConfig accepts GlitchModel instances directly."""
+    blip = BlipGlitch(
+        rate=0.5,
+        width=0.01,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0e-23, std=1.0e-24),
+    )
+    config = NoiseConfig.model_validate({"detectors": ["H1"], "glitches": [blip]})
+    assert config.glitches == [blip]
+
+
+def test_noise_config_accepts_amplitude_distribution_instances_in_glitch_mapping() -> None:
+    """Amplitude-distribution dataclass instances are accepted in glitch mappings."""
+    config = NoiseConfig.model_validate(
+        {
+            "detectors": ["H1"],
+            "glitches": [
+                {
+                    "kind": "blip",
+                    "rate": 0.5,
+                    "width": 0.01,
+                    "amplitude_distribution": LogNormalAmplitudeDistribution(mean=1.0, std=0.1),
+                }
+            ],
+        }
+    )
+    assert isinstance(config.glitches[0], BlipGlitch)
+
+
+def test_noise_config_requires_amplitude_distribution_in_glitch_mapping() -> None:
+    """Glitch mapping must include amplitude_distribution."""
+    with pytest.raises(ValidationError, match="require an amplitude_distribution mapping"):
+        NoiseConfig.model_validate({"detectors": ["H1"], "glitches": [{"kind": "blip", "rate": 0.5, "width": 0.01}]})
+
+
+def test_lognormal_amplitude_distribution_samples_nonzero_std() -> None:
+    """Nonzero std path samples finite positive amplitudes."""
+    distribution = LogNormalAmplitudeDistribution(mean=1.0, std=0.5)
+    sample = distribution.sample(np.random.default_rng(1))
+    assert sample > 0.0
+
+
+def test_scattered_light_glitch_rejects_nonpositive_sampling_frequency() -> None:
+    """Scattered-light waveform generation validates sampling frequency."""
+    glitch = ScatteredLightGlitch(
+        rate=0.1,
+        duration=0.5,
+        peak_frequency=24.0,
+        arch_exponent=1.0,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+    )
+    with pytest.raises(ValueError, match="sampling_frequency must be greater than zero"):
+        glitch.generate_waveform(0.0)
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -218,6 +274,35 @@ def test_noise_config_rejects_invalid_glitch_mappings(
     """NoiseConfig rejects unsupported glitch kinds and amplitude distributions."""
     with pytest.raises(ValidationError, match=message):
         NoiseConfig.model_validate({"glitches": glitch_config})
+
+
+def test_noise_config_rejects_invalid_amplitude_distribution_type() -> None:
+    """Glitch amplitude_distribution must be a mapping/dataclass."""
+    with pytest.raises(ValidationError, match="amplitude_distribution must be a mapping"):
+        NoiseConfig.model_validate(
+            {
+                "glitches": [
+                    {
+                        "kind": "blip",
+                        "rate": 0.5,
+                        "width": 0.01,
+                        "amplitude_distribution": 1.23,
+                    }
+                ]
+            }
+        )
+
+
+def test_noise_config_rejects_non_mapping_glitch_entries() -> None:
+    """Glitch entries must be mappings or dataclass instances."""
+    with pytest.raises(ValidationError, match="glitches entries must be mappings"):
+        NoiseConfig.model_validate({"glitches": [123]})
+
+
+def test_noise_config_parse_glitches_accepts_none() -> None:
+    """Parsing keeps a null glitches field as None."""
+    config = NoiseConfig.model_validate({"glitches": None})
+    assert config.glitches is None
 
 
 def test_noise_config_validates_detectors() -> None:

@@ -388,6 +388,52 @@ def test_generate_accepts_detector_reorder_only(tmp_path: Path) -> None:
     assert out["H1"].shape == (512,)
 
 
+def test_correlated_ar_rejects_csd_pair_outside_detector_set_after_parse(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Normalization re-checks parsed CSD keys against configured detectors."""
+    psd_files, _ = _build_spectral_inputs(tmp_path, ["H1", "L1"])
+    fake_csd = {("H1", "V1"): tmp_path / "h1_v1.npy"}
+
+    monkeypatch.setattr("gwmock_noise.simulators.correlated_ar.parse_csd_file_map", lambda _: fake_csd)
+    with pytest.raises(ValueError, match="configured detectors"):
+        CorrelatedARNoiseSimulator(
+            psd_files=psd_files,
+            csd_files={"H1-L1": tmp_path / "h1_l1.npy"},
+            detectors=["H1", "L1"],
+            sampling_frequency=256.0,
+        )
+
+
+def test_correlated_ar_rejects_too_few_spectral_points(tmp_path: Path) -> None:
+    """Model fitting requires at least two spectral samples."""
+    psd_path = tmp_path / "single_point_psd.npy"
+    np.save(psd_path, np.array([[0.0, 1.0e-3]], dtype=float))
+    with pytest.raises(ValueError, match="at least two frequency samples"):
+        CorrelatedARNoiseSimulator(
+            psd_files={"H1": psd_path},
+            detectors=["H1"],
+            sampling_frequency=256.0,
+        )
+
+
+def test_correlated_ar_order_zero_updates_empty_state(tmp_path: Path) -> None:
+    """Order-zero fit keeps an empty continuity state after generation."""
+    psd_files, csd_files = _build_spectral_inputs(tmp_path, ["H1", "L1"])
+    simulator = CorrelatedARNoiseSimulator(
+        psd_files=psd_files,
+        csd_files=csd_files,
+        detectors=["H1", "L1"],
+        sampling_frequency=256.0,
+        order=0,
+        seed=4,
+    )
+    out = simulator.generate(duration=2.0, sampling_frequency=256.0, detectors=["H1", "L1"])
+    assert out["H1"].shape == (512,)
+    assert simulator._state.shape == (0, 2)
+
+
 def test_regularized_cholesky_falls_back_on_factorization_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
