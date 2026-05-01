@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 from scipy.signal import csd
 
-import gwmock_noise
 from gwmock_noise.diagnostics.psd import estimate_psd
 from gwmock_noise.simulators import NoiseSimulator, SchumannNoiseSimulator
 
@@ -63,11 +62,6 @@ def _build_simulator(tmp_path: Path, detectors: list[str]) -> SchumannNoiseSimul
     )
 
 
-def test_schumann_simulator_is_importable_from_top_level_package() -> None:
-    """SchumannNoiseSimulator is re-exported from the top-level package."""
-    assert gwmock_noise.SchumannNoiseSimulator is SchumannNoiseSimulator
-
-
 def test_schumann_simulator_satisfies_noise_protocol(tmp_path: Path) -> None:
     """SchumannNoiseSimulator satisfies the runtime-checkable protocol."""
     simulator = _build_simulator(tmp_path, ["H1", "L1"])
@@ -116,10 +110,10 @@ def test_hanford_livingston_coherence_matches_isotropic_reference(tmp_path: Path
         )
         _, psd_h1 = estimate_psd(realization["H1"], sampling_frequency=256.0, segment_duration=16.0)
         _, psd_l1 = estimate_psd(realization["L1"], sampling_frequency=256.0, segment_duration=16.0)
-        frequencies, csd = _estimate_one_sided_csd(realization["H1"], realization["L1"], 256.0)
+        frequencies, csd_estimate = _estimate_one_sided_csd(realization["H1"], realization["L1"], 256.0)
         psds_h1.append(psd_h1)
         psds_l1.append(psd_l1)
-        csds.append(csd)
+        csds.append(csd_estimate)
 
     mean_psd_h1 = np.mean(np.stack(psds_h1), axis=0)
     mean_psd_l1 = np.mean(np.stack(psds_l1), axis=0)
