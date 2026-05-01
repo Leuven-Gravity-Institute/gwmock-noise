@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from importlib import import_module
+from typing import Any
+
 from gwmock_noise.config import (
     BlipGlitch,
     GlitchModel,
@@ -37,6 +40,7 @@ __all__ = [
     "CorrelatedARNoiseSimulator",
     "CorrelatedNoiseSimulator",
     "DefaultNoiseSimulator",
+    "GWpyAdapter",
     "GlitchModel",
     "InjectGlitches",
     "LogNormalAmplitudeDistribution",
@@ -51,3 +55,12 @@ __all__ = [
     "__version__",
     "load_config",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily resolve optional top-level exports."""
+    if name == "GWpyAdapter":
+        adapter = getattr(import_module("gwmock_noise.output"), name)
+        globals()[name] = adapter
+        return adapter
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

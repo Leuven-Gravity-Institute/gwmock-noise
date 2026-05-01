@@ -25,6 +25,9 @@ dependencies = [
     "typer>=0.25.0",
 ]
 
+[project.optional-dependencies]
+gwpy = ["gwpy"]
+
 [dependency-groups]
 dev = [
   "bandit[toml]>=1.9.4",
