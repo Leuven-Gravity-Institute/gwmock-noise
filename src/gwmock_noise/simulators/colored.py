@@ -53,8 +53,16 @@ class ColoredNoiseSimulator:
         """Initialize the simulator."""
         if psd_file is None and psd_schedule is None:
             raise ValueError("Either psd_file or psd_schedule must be provided.")
+        if psd_file is not None and psd_schedule is not None:
+            raise ValueError("psd_file and psd_schedule are mutually exclusive.")
         if psd_schedule is not None and not psd_schedule:
             raise ValueError("psd_schedule must contain at least one anchor.")
+        if psd_schedule is not None:
+            offsets = [float(gps_offset_seconds) for gps_offset_seconds, _ in psd_schedule]
+            if offsets != sorted(offsets):
+                raise ValueError("psd_schedule entries must be sorted by GPS offset.")
+            if len(offsets) != len(set(offsets)):
+                raise ValueError("psd_schedule entries must use distinct GPS offsets.")
 
         self.psd_file = Path(psd_file) if psd_file is not None else None
         self.psd_schedule = (
