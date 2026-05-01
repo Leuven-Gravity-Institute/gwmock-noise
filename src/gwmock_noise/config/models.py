@@ -274,7 +274,7 @@ class NoiseConfig(BaseModel):
         if isinstance(value, LogNormalAmplitudeDistribution):
             return value
         if not isinstance(value, dict):
-            raise TypeError("amplitude_distribution must be a mapping or LogNormalAmplitudeDistribution.")
+            raise ValueError("amplitude_distribution must be a mapping or LogNormalAmplitudeDistribution.")
         return LogNormalAmplitudeDistribution(**value)
 
     @classmethod
@@ -283,7 +283,7 @@ class NoiseConfig(BaseModel):
         if isinstance(value, GlitchModel):
             return value
         if not isinstance(value, dict):
-            raise TypeError("glitches entries must be mappings or GlitchModel instances.")
+            raise ValueError("glitches entries must be mappings or GlitchModel instances.")
 
         kind = value.get("kind")
         if kind not in SUPPORTED_GLITCH_KINDS:
