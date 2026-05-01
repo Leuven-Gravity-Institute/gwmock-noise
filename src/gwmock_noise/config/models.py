@@ -102,6 +102,8 @@ class NoiseConfig(BaseModel):
         """Validate PSD configuration choices."""
         if self.psd_file is not None and self.psd_files is not None:
             raise ValueError("psd_file and psd_files are mutually exclusive.")
+        if self.psd_file is not None and self.psd_schedule is not None:
+            raise ValueError("psd_file and psd_schedule are mutually exclusive.")
         if self.psd_schedule is not None and self.psd_files is not None:
             raise ValueError("psd_schedule and psd_files are mutually exclusive.")
 
