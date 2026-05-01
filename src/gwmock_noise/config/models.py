@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Self
+from typing import Annotated, Any, Literal, Self
 
 import numpy as np
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -97,7 +97,7 @@ class BlipGlitch(GlitchModel):
     """Gaussian-windowed broadband burst."""
 
     width: float = 0.01
-    kind: str = field(init=False, default="blip")
+    kind: Literal["blip"] = field(init=False, default="blip")
 
     def __post_init__(self) -> None:
         """Validate blip-specific parameters."""
@@ -142,7 +142,7 @@ class ScatteredLightGlitch(GlitchModel):
     peak_frequency: float = 24.0
     arch_exponent: float = 1.0
     phase: float = 0.0
-    kind: str = field(init=False, default="scattered_light")
+    kind: Literal["scattered_light"] = field(init=False, default="scattered_light")
 
     def __post_init__(self) -> None:
         """Validate scattered-light parameters."""
@@ -262,7 +262,7 @@ class NoiseConfig(BaseModel):
         default=None,
         description="Optional additive spectral lines injected on top of the configured simulator.",
     )
-    glitches: list[GlitchModel] | None = Field(
+    glitches: list[Annotated[BlipGlitch | ScatteredLightGlitch, Field(discriminator="kind")]] | None = Field(
         default=None,
         description="Optional transient glitches injected on top of the configured simulator.",
         min_length=1,
