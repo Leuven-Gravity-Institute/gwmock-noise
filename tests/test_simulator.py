@@ -25,6 +25,8 @@ from gwmock_noise.simulators import (
     LogNormalAmplitudeDistribution,
     NoiseSimulator,
     ScatteredLightGlitch,
+    SchumannNoiseSimulator,
+    SchumannParams,
     SimulationResult,
     SpectralLineSimulator,
     take,
@@ -228,3 +230,9 @@ def test_glitch_models_are_importable_from_top_level_package() -> None:
 def test_parallel_adapter_is_importable_from_top_level_package() -> None:
     """ParallelAdapter is re-exported from the top-level package."""
     assert gwmock_noise.ParallelAdapter is ParallelAdapter
+
+
+def test_schumann_simulator_is_importable_from_top_level_package() -> None:
+    """SchumannNoiseSimulator is re-exported from the top-level package."""
+    assert gwmock_noise.SchumannNoiseSimulator is SchumannNoiseSimulator
+    assert gwmock_noise.SchumannParams is SchumannParams

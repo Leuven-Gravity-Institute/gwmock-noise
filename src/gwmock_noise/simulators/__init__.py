@@ -16,6 +16,7 @@ from gwmock_noise.simulators.correlated_ar import CorrelatedARNoiseSimulator
 from gwmock_noise.simulators.default import DefaultNoiseSimulator
 from gwmock_noise.simulators.glitches import InjectGlitches
 from gwmock_noise.simulators.protocol import NoiseSimulator
+from gwmock_noise.simulators.schumann import SchumannNoiseSimulator, SchumannParams
 from gwmock_noise.simulators.spectral_lines import AddLines, SpectralLineSimulator
 from gwmock_noise.simulators.streaming import take
 
@@ -33,6 +34,8 @@ __all__ = [
     "LogNormalAmplitudeDistribution",
     "NoiseSimulator",
     "ScatteredLightGlitch",
+    "SchumannNoiseSimulator",
+    "SchumannParams",
     "SimulationResult",
     "SpectralLineSimulator",
     "TimeVaryingColoredNoiseSimulator",
