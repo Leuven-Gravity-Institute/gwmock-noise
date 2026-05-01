@@ -137,8 +137,8 @@ def _validate_samples(data: np.ndarray) -> np.ndarray:
 
 def _validate_sampling_frequency(sampling_frequency: float) -> None:
     """Validate the sampling frequency argument."""
-    if sampling_frequency <= 0.0:
-        raise ValueError("sampling_frequency must be greater than zero.")
+    if not np.isfinite(sampling_frequency) or sampling_frequency <= 0.0:
+        raise ValueError("sampling_frequency must be finite and greater than zero.")
 
 
 def _validate_alpha(alpha: float) -> None:
