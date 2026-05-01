@@ -32,6 +32,8 @@ from gwmock_noise.simulators import (
 from gwmock_noise.version import __version__
 
 _OPTIONAL_EXPORTS = {
+    "compare_psd": "gwmock_noise.diagnostics",
+    "estimate_psd": "gwmock_noise.diagnostics",
     "FrameWriter": "gwmock_noise.output",
     "GWpyAdapter": "gwmock_noise.output",
 }
@@ -59,6 +61,8 @@ __all__ = [
     "SpectralLineSimulator",
     "TimeVaryingColoredNoiseSimulator",
     "__version__",
+    "compare_psd",
+    "estimate_psd",
     "load_config",
 ]
 
