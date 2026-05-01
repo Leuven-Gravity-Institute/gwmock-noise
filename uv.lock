@@ -697,7 +697,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.4" },
     { name = "pydantic", specifier = ">=2.13.3" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "scipy", specifier = ">=1.16.0" },
+    { name = "scipy", specifier = ">=1.17.1" },
     { name = "typer", specifier = ">=0.25.0" },
 ]
 provides-extras = ["frame", "gwpy"]
