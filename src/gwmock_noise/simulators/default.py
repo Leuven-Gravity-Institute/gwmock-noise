@@ -96,7 +96,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
             self.detectors = list(config.detectors)
             self.seed = config.seed
             self._active_metadata = correlated_simulator.metadata
-        elif config.psd_file is None:
+        elif config.psd_file is None and config.psd_schedule is None:
             self.generate(
                 duration=config.duration,
                 sampling_frequency=config.sampling_frequency,
@@ -106,6 +106,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         else:
             colored_simulator = ColoredNoiseSimulator(
                 psd_file=config.psd_file,
+                psd_schedule=config.psd_schedule,
                 detectors=config.detectors,
                 duration=config.duration,
                 sampling_frequency=config.sampling_frequency,

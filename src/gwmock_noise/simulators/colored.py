@@ -12,6 +12,7 @@ from gwmock_noise.simulators._stitching import OVERLAP_SIZE, WINDOW_SIZE, Overla
 
 PSD_WINDOW_ALPHA = 1e-3
 MIN_TAPER_BINS = 2
+FRAME_STEP = WINDOW_SIZE - OVERLAP_SIZE
 
 
 def _tukey_window(length: int, alpha: float = PSD_WINDOW_ALPHA) -> np.ndarray:
@@ -40,7 +41,8 @@ class ColoredNoiseSimulator:
     def __init__(  # noqa: PLR0913
         self,
         *,
-        psd_file: str | Path,
+        psd_file: str | Path | None = None,
+        psd_schedule: list[tuple[float, str | Path]] | None = None,
         detectors: list[str] | None = None,
         sampling_frequency: float = 4096.0,
         duration: float = 4.0,
@@ -49,7 +51,17 @@ class ColoredNoiseSimulator:
         high_frequency_cutoff: float | None = None,
     ) -> None:
         """Initialize the simulator."""
-        self.psd_file = Path(psd_file)
+        if psd_file is None and psd_schedule is None:
+            raise ValueError("Either psd_file or psd_schedule must be provided.")
+        if psd_schedule is not None and not psd_schedule:
+            raise ValueError("psd_schedule must contain at least one anchor.")
+
+        self.psd_file = Path(psd_file) if psd_file is not None else None
+        self.psd_schedule = (
+            [(float(gps_offset_seconds), Path(path)) for gps_offset_seconds, path in psd_schedule]
+            if psd_schedule is not None
+            else None
+        )
         self.detectors = list(detectors) if detectors is not None else ["H1", "L1"]
         self.duration = duration
         self.sampling_frequency = sampling_frequency
@@ -59,6 +71,8 @@ class ColoredNoiseSimulator:
 
         self._rngs: dict[str, np.random.Generator] = {}
         self._stitcher = OverlapAddStitcher(self.detectors)
+        self._generated_samples = 0
+        self._psd_anchors: list[tuple[float, np.ndarray]] = []
 
         self._validate_runtime(duration=duration, sampling_frequency=sampling_frequency, detectors=self.detectors)
         self._configure_frequency_grid()
@@ -105,12 +119,62 @@ class ColoredNoiseSimulator:
         if not np.any(self._frequency_mask):
             raise ValueError("The requested frequency range contains no simulation bins.")
 
-        self._psd = np.zeros_like(self._frequency_grid, dtype=float)
+        self._psd_anchors = self._load_psd_anchors()
+        self._psd = self._interpolate_psd(0.0)
+
+    def _load_psd_on_grid(self, psd_file: str | Path) -> np.ndarray:
+        """Load one PSD file onto the simulator frequency grid."""
+        psd = np.zeros_like(self._frequency_grid, dtype=float)
         masked_frequencies = self._frequency_grid[self._frequency_mask]
-        psd_frequencies, psd_values = load_spectral_series(self.psd_file, kind="PSD")
+        psd_frequencies, psd_values = load_spectral_series(psd_file, kind="PSD")
         interpolated_psd = np.interp(masked_frequencies, psd_frequencies, psd_values, left=0.0, right=0.0)
-        self._psd[self._frequency_mask] = np.clip(interpolated_psd, a_min=0.0, a_max=None)
-        self._psd[self._frequency_mask] *= _tukey_window(masked_frequencies.size)
+        psd[self._frequency_mask] = np.clip(interpolated_psd, a_min=0.0, a_max=None)
+        psd[self._frequency_mask] *= _tukey_window(masked_frequencies.size)
+        return psd
+
+    def _load_psd_anchors(self) -> list[tuple[float, np.ndarray]]:
+        """Load all configured PSD anchors onto the current simulator grid."""
+        anchors = self.psd_schedule or [(0.0, self.psd_file)]
+        return [
+            (gps_offset_seconds, self._load_psd_on_grid(psd_path))
+            for gps_offset_seconds, psd_path in anchors
+            if psd_path is not None
+        ]
+
+    def _interpolate_psd(self, t: float) -> np.ndarray:
+        """Interpolate the PSD schedule log-linearly at frame midpoint time ``t``."""
+        if len(self._psd_anchors) == 1:
+            return self._psd_anchors[0][1].copy()
+
+        anchor_times = np.array([time for time, _ in self._psd_anchors], dtype=float)
+        if t <= anchor_times[0]:
+            return self._psd_anchors[0][1].copy()
+        if t >= anchor_times[-1]:
+            return self._psd_anchors[-1][1].copy()
+
+        upper_index = int(np.searchsorted(anchor_times, t, side="right"))
+        lower_time, lower_psd = self._psd_anchors[upper_index - 1]
+        upper_time, upper_psd = self._psd_anchors[upper_index]
+        weight = (t - lower_time) / (upper_time - lower_time)
+
+        interpolated = np.zeros_like(self._frequency_grid, dtype=float)
+        lower_masked = np.maximum(lower_psd[self._frequency_mask], np.finfo(float).tiny)
+        upper_masked = np.maximum(upper_psd[self._frequency_mask], np.finfo(float).tiny)
+        log_psd = ((1.0 - weight) * np.log(lower_masked)) + (weight * np.log(upper_masked))
+        interpolated[self._frequency_mask] = np.exp(log_psd)
+        return interpolated
+
+    def _simulate(self, *, n_samples: int) -> dict[str, np.ndarray]:
+        """Generate a continuous realization while updating the PSD per frame."""
+        next_frame_midpoint = self._generated_samples + (FRAME_STEP if self.previous_strain else -FRAME_STEP)
+
+        def chunk_generator() -> dict[str, np.ndarray]:
+            nonlocal next_frame_midpoint
+            self._psd = self._interpolate_psd(next_frame_midpoint / self.sampling_frequency)
+            next_frame_midpoint += FRAME_STEP
+            return self._generate_realization_chunk()
+
+        return self._stitcher.stitch(n_samples=n_samples, chunk_generator=chunk_generator)
 
     def _initialize_generators(self, seed: int | None) -> None:
         """Initialize per-detector random-number generators."""
@@ -141,6 +205,9 @@ class ColoredNoiseSimulator:
         """Clear continuity and RNG state."""
         self._stitcher.reset()
         self._rngs = {}
+        self._generated_samples = 0
+        if self._psd_anchors:
+            self._psd = self._psd_anchors[0][1].copy()
 
     def generate(
         self,
@@ -181,7 +248,9 @@ class ColoredNoiseSimulator:
             self._initialize_generators(self.seed)
 
         n_samples = round(duration * sampling_frequency)
-        return self._stitcher.stitch(n_samples=n_samples, chunk_generator=self._generate_realization_chunk)
+        realization = self._simulate(n_samples=n_samples)
+        self._generated_samples += n_samples
+        return realization
 
     @property
     def metadata(self) -> dict[str, Any]:
@@ -193,10 +262,17 @@ class ColoredNoiseSimulator:
             "detectors": list(self.detectors),
             "seed": self.seed,
             "colored_noise": {
-                "psd_file": str(self.psd_file),
+                "psd_file": str(self.psd_file) if self.psd_file is not None else None,
+                "psd_schedule": [
+                    {"gps_offset_seconds": gps_offset_seconds, "psd_file": str(psd_path)}
+                    for gps_offset_seconds, psd_path in (self.psd_schedule or [])
+                ],
                 "low_frequency_cutoff": self.low_frequency_cutoff,
                 "high_frequency_cutoff": self._high_frequency_cutoff,
                 "window_size": WINDOW_SIZE,
                 "overlap_size": OVERLAP_SIZE,
             },
         }
+
+
+TimeVaryingColoredNoiseSimulator = ColoredNoiseSimulator

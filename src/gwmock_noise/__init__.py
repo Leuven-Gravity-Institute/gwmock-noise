@@ -12,6 +12,7 @@ from gwmock_noise.simulators import (
     DefaultNoiseSimulator,
     NoiseSimulator,
     SimulationResult,
+    TimeVaryingColoredNoiseSimulator,
 )
 from gwmock_noise.version import __version__
 
@@ -26,6 +27,7 @@ __all__ = [
     "NoiseSimulator",
     "OutputConfig",
     "SimulationResult",
+    "TimeVaryingColoredNoiseSimulator",
     "__version__",
     "load_config",
 ]

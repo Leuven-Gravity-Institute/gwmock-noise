@@ -21,6 +21,7 @@ def test_noise_config_defaults() -> None:
     assert config.output.prefix == "noise"
     assert config.seed is None
     assert config.psd_file is None
+    assert config.psd_schedule is None
     assert config.psd_files is None
     assert config.csd_files is None
     assert config.low_frequency_cutoff == 2.0
@@ -69,6 +70,22 @@ def test_noise_config_validates_duration() -> None:
         NoiseConfig(duration=-1.0)
 
 
+def test_noise_config_accepts_time_varying_psd_schedule() -> None:
+    """NoiseConfig accepts a sorted time-varying PSD schedule."""
+    config = NoiseConfig(
+        detectors=["H1"],
+        psd_schedule=[
+            (0.0, Path("psd_start.txt")),
+            (128.0, Path("psd_end.txt")),
+        ],
+    )
+
+    assert config.psd_schedule == [
+        (0.0, Path("psd_start.txt")),
+        (128.0, Path("psd_end.txt")),
+    ]
+
+
 def test_noise_config_validates_detectors() -> None:
     """NoiseConfig requires at least one detector."""
     with pytest.raises(ValidationError, match="at least 1"):
@@ -106,6 +123,38 @@ def test_noise_config_rejects_mixed_single_and_multi_detector_psd_inputs() -> No
             psd_file=Path("shared_psd.txt"),
             psd_files={"H1": Path("h1_psd.txt")},
         )
+
+
+def test_noise_config_rejects_mixed_time_varying_and_multi_detector_psd_inputs() -> None:
+    """NoiseConfig rejects simultaneous psd_schedule and psd_files inputs."""
+    with pytest.raises(ValidationError, match="psd_schedule and psd_files are mutually exclusive"):
+        NoiseConfig(
+            detectors=["H1"],
+            psd_schedule=[(0.0, Path("shared_psd.txt"))],
+            psd_files={"H1": Path("h1_psd.txt")},
+        )
+
+
+@pytest.mark.parametrize(
+    ("psd_schedule", "message"),
+    [
+        (
+            [(16.0, Path("late.txt")), (0.0, Path("early.txt"))],
+            "psd_schedule entries must be sorted by GPS offset",
+        ),
+        (
+            [(0.0, Path("first.txt")), (0.0, Path("second.txt"))],
+            "psd_schedule entries must use distinct GPS offsets",
+        ),
+    ],
+)
+def test_noise_config_validates_time_varying_psd_schedule(
+    psd_schedule: list[tuple[float, Path]],
+    message: str,
+) -> None:
+    """NoiseConfig validates PSD schedule ordering and uniqueness."""
+    with pytest.raises(ValidationError, match=message):
+        NoiseConfig(detectors=["H1"], psd_schedule=psd_schedule)
 
 
 def test_noise_config_requires_per_detector_psds_for_csd_inputs() -> None:

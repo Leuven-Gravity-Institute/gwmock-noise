@@ -50,6 +50,11 @@ class NoiseConfig(BaseModel):
         default=None,
         description="Optional PSD file for FFT-based colored-noise simulation.",
     )
+    psd_schedule: list[tuple[float, Path]] | None = Field(
+        default=None,
+        description="Optional time-ordered list of (gps_offset_seconds, PSD file) anchors for time-varying colored-noise simulation.",
+        min_length=1,
+    )
     psd_files: dict[str, Path] | None = Field(
         default=None,
         description="Optional per-detector PSD files for correlated-noise simulation.",
@@ -97,9 +102,19 @@ class NoiseConfig(BaseModel):
         """Validate PSD configuration choices."""
         if self.psd_file is not None and self.psd_files is not None:
             raise ValueError("psd_file and psd_files are mutually exclusive.")
+        if self.psd_schedule is not None and self.psd_files is not None:
+            raise ValueError("psd_schedule and psd_files are mutually exclusive.")
 
         if self.psd_files is not None and set(self.psd_files) != set(self.detectors):
             raise ValueError("psd_files keys must exactly match detectors.")
+        if self.psd_schedule is None:
+            return
+
+        offsets = [offset for offset, _ in self.psd_schedule]
+        if offsets != sorted(offsets):
+            raise ValueError("psd_schedule entries must be sorted by GPS offset.")
+        if len(offsets) != len(set(offsets)):
+            raise ValueError("psd_schedule entries must use distinct GPS offsets.")
 
     def _validate_csd_inputs(self) -> None:
         """Validate pairwise CSD configuration keys."""
