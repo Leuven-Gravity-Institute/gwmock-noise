@@ -31,6 +31,11 @@ from gwmock_noise.simulators import (
 )
 from gwmock_noise.version import __version__
 
+_OPTIONAL_EXPORTS = {
+    "FrameWriter": "gwmock_noise.output",
+    "GWpyAdapter": "gwmock_noise.output",
+}
+
 __all__ = [
     "ARNoiseSimulator",
     "AddLines",
@@ -40,6 +45,7 @@ __all__ = [
     "CorrelatedARNoiseSimulator",
     "CorrelatedNoiseSimulator",
     "DefaultNoiseSimulator",
+    "FrameWriter",
     "GWpyAdapter",
     "GlitchModel",
     "InjectGlitches",
@@ -59,8 +65,9 @@ __all__ = [
 
 def __getattr__(name: str) -> Any:
     """Lazily resolve optional top-level exports."""
-    if name == "GWpyAdapter":
-        adapter = getattr(import_module("gwmock_noise.output"), name)
-        globals()[name] = adapter
-        return adapter
+    module_name = _OPTIONAL_EXPORTS.get(name)
+    if module_name is not None:
+        export = getattr(import_module(module_name), name)
+        globals()[name] = export
+        return export
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

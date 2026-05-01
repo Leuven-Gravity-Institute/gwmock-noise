@@ -26,6 +26,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+frame = ["gwpy", "lalsuite"]
 gwpy = ["gwpy"]
 
 [dependency-groups]
