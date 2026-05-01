@@ -91,7 +91,10 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
                 high_frequency_cutoff=config.high_frequency_cutoff,
             )
 
-        if config.spectral_lines:
+        if config.spectral_lines is not None:
+            if not config.spectral_lines:
+                raise ValueError("spectral_lines must contain at least one spectral line.")
+
             if simulator is None:
                 return SpectralLineSimulator(
                     lines=config.spectral_lines,
