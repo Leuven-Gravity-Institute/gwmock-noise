@@ -342,6 +342,52 @@ def test_generate_reconfigures_when_runtime_changes(tmp_path: Path) -> None:
     assert second["H1"].shape == (2048,)
 
 
+def test_generate_rejects_detector_subset_at_runtime(tmp_path: Path) -> None:
+    """Subset detector requests are rejected with a clear error."""
+    detectors = ["H1", "L1", "V1"]
+    psd_files, csd_files = _build_spectral_inputs(tmp_path, detectors)
+    simulator = CorrelatedARNoiseSimulator(
+        psd_files=psd_files,
+        csd_files=csd_files,
+        detectors=detectors,
+        sampling_frequency=256.0,
+        order=16,
+    )
+    with pytest.raises(ValueError, match="subset or superset"):
+        simulator.generate(duration=2.0, sampling_frequency=256.0, detectors=["H1", "L1"])
+
+
+def test_generate_rejects_detector_superset_at_runtime(tmp_path: Path) -> None:
+    """Superset detector requests are rejected with a clear error."""
+    detectors = ["H1", "L1"]
+    psd_files, csd_files = _build_spectral_inputs(tmp_path, detectors)
+    simulator = CorrelatedARNoiseSimulator(
+        psd_files=psd_files,
+        csd_files=csd_files,
+        detectors=detectors,
+        sampling_frequency=256.0,
+        order=16,
+    )
+    with pytest.raises(ValueError, match="subset or superset"):
+        simulator.generate(duration=2.0, sampling_frequency=256.0, detectors=["H1", "L1", "V1"])
+
+
+def test_generate_accepts_detector_reorder_only(tmp_path: Path) -> None:
+    """Same detector set in a different order still runs (refit path)."""
+    detectors = ["H1", "L1"]
+    psd_files, csd_files = _build_spectral_inputs(tmp_path, detectors)
+    simulator = CorrelatedARNoiseSimulator(
+        psd_files=psd_files,
+        csd_files=csd_files,
+        detectors=detectors,
+        sampling_frequency=256.0,
+        order=16,
+    )
+    out = simulator.generate(duration=2.0, sampling_frequency=256.0, detectors=["L1", "H1"])
+    assert set(out) == {"H1", "L1"}
+    assert out["H1"].shape == (512,)
+
+
 def test_regularized_cholesky_falls_back_on_factorization_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

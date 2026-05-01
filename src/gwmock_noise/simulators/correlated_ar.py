@@ -268,6 +268,12 @@ class CorrelatedARNoiseSimulator:
             detectors=runtime_detectors,
         )
 
+        if set(runtime_detectors) != set(self.detectors):
+            raise ValueError(
+                "Changing the detector network to a subset or superset is unsupported; "
+                "use the same detector names as at initialization (reordering is allowed)."
+            )
+
         runtime_changed = (
             sampling_frequency != self.sampling_frequency
             or runtime_detectors != self.detectors
