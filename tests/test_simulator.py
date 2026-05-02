@@ -133,12 +133,15 @@ def test_default_simulator_run_uses_frame_writer_for_gwf_output(
             gps_start: float,
             output_dir: Path,
             channel_prefix: str = "MOCK",
+            prefix: str = "",
         ) -> None:
             captured["base"] = base
             captured["gps_start"] = gps_start
             captured["output_dir"] = output_dir
             captured["channel_prefix"] = channel_prefix
+            captured["prefix"] = prefix
             self.output_dir = output_dir
+            self.prefix = prefix
 
         def write(
             self,
@@ -153,7 +156,8 @@ def test_default_simulator_run_uses_frame_writer_for_gwf_output(
             captured["seed"] = seed
             output_paths: dict[str, Path] = {}
             for detector in detectors:
-                output_path = self.output_dir / f"{detector}.gwf"
+                name = f"{self.prefix}_{detector}.gwf" if self.prefix else f"{detector}.gwf"
+                output_path = self.output_dir / name
                 output_path.write_bytes(b"gwf")
                 output_paths[detector] = output_path
             return output_paths
@@ -176,12 +180,13 @@ def test_default_simulator_run_uses_frame_writer_for_gwf_output(
 
     result = DefaultNoiseSimulator().run(config)
 
-    assert result.output_paths["H1"] == tmp_path / "H1.gwf"
+    assert result.output_paths["H1"] == tmp_path / "frame_H1.gwf"
     assert captured == {
         "base": captured["base"],
         "gps_start": 100.5,
         "output_dir": tmp_path,
         "channel_prefix": "SIM",
+        "prefix": "frame",
         "duration": 2.0,
         "sampling_frequency": 128.0,
         "detectors": ["H1"],
@@ -190,7 +195,7 @@ def test_default_simulator_run_uses_frame_writer_for_gwf_output(
 
     metadata = json.loads((tmp_path / "frame_H1.json").read_text())
     assert metadata["artifact_format"] == "gwf"
-    assert metadata["artifact_path"] == str(tmp_path / "H1.gwf")
+    assert metadata["artifact_path"] == str(tmp_path / "frame_H1.gwf")
 
 
 def test_default_simulator_uses_zero_base_for_glitch_only_configuration(tmp_path: Path) -> None:

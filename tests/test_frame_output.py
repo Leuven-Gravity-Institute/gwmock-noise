@@ -88,6 +88,16 @@ def test_frame_writer_round_trips_gwf_output(tmp_path: Path) -> None:
     assert output_paths["H1"].name == "H-H1:MOCK_NOISE_100-2.gwf"
     assert output_paths["L1"].name == "L-L1:MOCK_NOISE_100-2.gwf"
 
+    prefixed = FrameWriter(
+        FixedNoiseSimulator(),
+        gps_start=100.0,
+        output_dir=tmp_path,
+        prefix="run_a",
+    )
+    prefixed_paths = prefixed.write(duration=2.0, sampling_frequency=4.0, detectors=["H1", "L1"])
+    assert prefixed_paths["H1"].name == "run_a_H-H1:MOCK_NOISE_100-2.gwf"
+    assert prefixed_paths["L1"].name == "run_a_L-L1:MOCK_NOISE_100-2.gwf"
+
     recovered = timeseries.TimeSeries.read(output_paths["H1"], "H1:MOCK_NOISE", start=100, end=102)
     assert np.allclose(recovered.value, np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]))
 
@@ -107,5 +117,17 @@ def test_frame_writer_writes_multiple_segments(tmp_path: Path) -> None:
     assert [segment["H1"].name for segment in written] == [
         "H-H1:MOCK_NOISE_100-2.gwf",
         "H-H1:MOCK_NOISE_102-1.gwf",
+    ]
+
+    prefixed_writer = FrameWriter(FixedNoiseSimulator(), gps_start=0.0, output_dir=tmp_path, prefix="seg")
+    prefixed_written = prefixed_writer.write_segments(
+        segments=[(100.0, 102.0), (102.0, 103.0)],
+        sampling_frequency=4.0,
+        detectors=["H1"],
+        seed=7,
+    )
+    assert [segment["H1"].name for segment in prefixed_written] == [
+        "seg_H-H1:MOCK_NOISE_100-2.gwf",
+        "seg_H-H1:MOCK_NOISE_102-1.gwf",
     ]
     assert writer.gps_start == pytest.approx(103.0)

@@ -163,6 +163,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
             gps_start=config.output.gps_start,
             output_dir=Path(config.output.directory),
             channel_prefix=config.output.channel_prefix,
+            prefix=config.output.prefix,
         )
         return writer.write(
             duration=config.duration,

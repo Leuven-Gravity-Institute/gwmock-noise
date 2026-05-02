@@ -36,6 +36,7 @@ class FrameWriter:
         gps_start: float,
         output_dir: Path,
         channel_prefix: str = "MOCK",
+        prefix: str = "",
     ) -> None:
         """Initialize the writer for contiguous GWF output."""
         _require_gwf_backend()
@@ -43,6 +44,7 @@ class FrameWriter:
         self.gps_start = gps_start
         self.output_dir = Path(output_dir)
         self.channel_prefix = channel_prefix
+        self.prefix = prefix
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def write(
@@ -105,7 +107,10 @@ class FrameWriter:
         """Return the output path for a detector frame segment."""
         start_token = self._format_time_token(gps_start)
         duration_token = self._format_time_token(duration)
-        return self.output_dir / f"{detector[0]}-{channel}_{start_token}-{duration_token}.gwf"
+        name = f"{detector[0]}-{channel}_{start_token}-{duration_token}.gwf"
+        if self.prefix:
+            name = f"{self.prefix}_{name}"
+        return self.output_dir / name
 
     @staticmethod
     def _format_time_token(value: float) -> str:
