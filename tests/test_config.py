@@ -29,6 +29,9 @@ def test_noise_config_defaults() -> None:
     assert config.sampling_frequency == 4096.0
     assert config.output.directory == Path(".")
     assert config.output.prefix == "noise"
+    assert config.output.format == "npy"
+    assert config.output.gps_start == 0.0
+    assert config.output.channel_prefix == "MOCK"
     assert config.seed is None
     assert config.psd_file is None
     assert config.psd_schedule is None
@@ -46,7 +49,13 @@ def test_noise_config_custom_values() -> None:
         detectors=["H1", "L1", "V1"],
         duration=8.0,
         sampling_frequency=2048.0,
-        output=OutputConfig(directory=Path("out"), prefix="run1"),
+        output=OutputConfig(
+            directory=Path("out"),
+            prefix="run1",
+            format="gwf",
+            gps_start=1234567890.5,
+            channel_prefix="GWMOCK",
+        ),
         seed=123,
         psd_files={"H1": Path("h1_psd.txt"), "L1": Path("l1_psd.txt"), "V1": Path("v1_psd.txt")},
         csd_files={
@@ -62,6 +71,9 @@ def test_noise_config_custom_values() -> None:
     assert config.sampling_frequency == 2048.0
     assert config.output.directory == Path("out")
     assert config.output.prefix == "run1"
+    assert config.output.format == "gwf"
+    assert config.output.gps_start == 1234567890.5
+    assert config.output.channel_prefix == "GWMOCK"
     assert config.seed == 123
     assert config.psd_file is None
     assert config.psd_files == {"H1": Path("h1_psd.txt"), "L1": Path("l1_psd.txt"), "V1": Path("v1_psd.txt")}
@@ -80,6 +92,12 @@ def test_noise_config_validates_duration() -> None:
         NoiseConfig(duration=0)
     with pytest.raises(ValidationError, match="greater than 0"):
         NoiseConfig(duration=-1.0)
+
+
+def test_noise_config_rejects_unknown_output_format() -> None:
+    """OutputConfig exposes a fixed set of artifact formats."""
+    with pytest.raises(ValidationError, match=r"npy|gwf"):
+        NoiseConfig.model_validate({"output": {"format": "json"}})
 
 
 def test_noise_config_accepts_time_varying_psd_schedule() -> None:

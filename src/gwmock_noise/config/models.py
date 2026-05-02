@@ -199,6 +199,18 @@ class OutputConfig(BaseModel):
 
     directory: Path = Field(default=Path("."), description="Output directory for generated data.")
     prefix: str = Field(default="noise", description="Prefix for output filenames.")
+    format: Literal["npy", "gwf"] = Field(
+        default="npy",
+        description="Artifact format written by BaseNoiseSimulator.run().",
+    )
+    gps_start: float = Field(
+        default=0.0,
+        description="GPS start time used for timestamped output formats such as GWF.",
+    )
+    channel_prefix: str = Field(
+        default="MOCK",
+        description="Channel-name prefix used for GWF frame output.",
+    )
 
 
 class NoiseConfig(BaseModel):

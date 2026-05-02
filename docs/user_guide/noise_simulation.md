@@ -26,10 +26,11 @@ Then run:
 gwmock-noise simulate examples/noise_config_example.toml
 ```
 
-This will create one JSON metadata file per detector in the configured output
-directory (for example `output/noise_H1.json`). In this first milestone the
-files contain configuration metadata only; later versions will write full noise
-time series.
+This will create one NumPy strain artifact plus one JSON metadata sidecar per
+detector in the configured output directory (for example `output/noise_H1.npy`
+and `output/noise_H1.json`). The JSON file describes the produced artifact; the
+strain samples live in the `.npy` file and `SimulationResult.output_paths`
+points to that real data artifact.
 
 ## Configuration
 
@@ -39,14 +40,17 @@ TOML, YAML, or JSON into the same model.
 
 Supported top-level fields:
 
-| Field                | Type        | Description                                             |
-| -------------------- | ----------- | ------------------------------------------------------- |
-| `detectors`          | list[str]   | Names of detectors to simulate (for example `H1`, `L1`) |
-| `duration`           | float       | Duration of the realization in seconds (`> 0`)          |
-| `sampling_frequency` | float       | Sampling frequency in Hz (`> 0`)                        |
-| `output.directory`   | path        | Output directory for generated files                    |
-| `output.prefix`      | str         | Prefix for output file names                            |
-| `seed`               | int or null | Optional random seed for reproducibility                |
+| Field                   | Type        | Description                                                        |
+| ----------------------- | ----------- | ------------------------------------------------------------------ |
+| `detectors`             | list[str]   | Names of detectors to simulate (for example `H1`, `L1`)            |
+| `duration`              | float       | Duration of the realization in seconds (`> 0`)                     |
+| `sampling_frequency`    | float       | Sampling frequency in Hz (`> 0`)                                   |
+| `output.directory`      | path        | Output directory for generated files                               |
+| `output.prefix`         | str         | Prefix for output file names                                       |
+| `output.format`         | str         | Artifact format written by `run(config)`: `npy` (default) or `gwf` |
+| `output.gps_start`      | float       | GPS start time used for timestamped formats such as `gwf`          |
+| `output.channel_prefix` | str         | Channel-name prefix for `gwf` output (default: `MOCK`)             |
+| `seed`                  | int or null | Optional random seed for reproducibility                           |
 
 For integration with the upstream `gwmock` package, the same structure can be
 nested under a `noise` key inside a larger configuration file. In that case the
@@ -80,3 +84,8 @@ for detector, path in result.output_paths.items():
 The upstream `gwmock` package is expected to import and compose
 `gwmock_noise.NoiseConfig` into its own configuration model and to drive a noise
 simulator that implements the `gwmock_noise.BaseNoiseSimulator` interface.
+
+When `output.format = "gwf"`, `run(config)` reuses the built-in GWpy/GWF output
+stack to write frame files instead of NumPy artifacts. The metadata sidecar is
+still written, and `SimulationResult.output_paths` points to the generated GWF
+files.

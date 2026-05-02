@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 from pathlib import Path
 from typing import Any
 
@@ -76,7 +77,7 @@ class DuckNoiseSimulator:
 
 
 def test_default_simulator_run(tmp_path: Path) -> None:
-    """DefaultNoiseSimulator creates output files and returns result."""
+    """DefaultNoiseSimulator creates data artifacts and metadata sidecars."""
     config = NoiseConfig(
         detectors=["H1", "L1"],
         duration=4.0,
@@ -88,13 +89,108 @@ def test_default_simulator_run(tmp_path: Path) -> None:
     assert isinstance(result, SimulationResult)
     assert result.config is config
     assert set(result.output_paths.keys()) == {"H1", "L1"}
+    assert result.output_paths["H1"] == tmp_path / "test_H1.npy"
+    assert result.output_paths["L1"] == tmp_path / "test_L1.npy"
+    assert (tmp_path / "test_H1.npy").exists()
     assert (tmp_path / "test_H1.json").exists()
+    assert (tmp_path / "test_L1.npy").exists()
     assert (tmp_path / "test_L1.json").exists()
 
-    content = (tmp_path / "test_H1.json").read_text()
-    assert "H1" in content
-    assert "4.0" in content
-    assert "4096" in content
+    strain = np.load(result.output_paths["H1"])
+    assert strain.shape == (round(config.duration * config.sampling_frequency),)
+    assert strain.dtype == float
+
+    metadata = json.loads((tmp_path / "test_H1.json").read_text())
+    assert metadata["detector"] == "H1"
+    assert metadata["artifact_format"] == "npy"
+    assert metadata["artifact_path"] == str(tmp_path / "test_H1.npy")
+    assert metadata["implementation"] == "white"
+
+
+def test_default_simulator_generate_returns_reproducible_white_noise() -> None:
+    """Default generate() returns seeded white-noise arrays."""
+    simulator = DefaultNoiseSimulator()
+
+    first = simulator.generate(duration=2.0, sampling_frequency=8.0, detectors=["H1", "L1"], seed=7)
+    second = simulator.generate(duration=2.0, sampling_frequency=8.0, detectors=["H1", "L1"], seed=7)
+
+    assert first["H1"].shape == (16,)
+    np.testing.assert_allclose(first["H1"], second["H1"])
+    np.testing.assert_allclose(first["L1"], second["L1"])
+
+
+def test_default_simulator_run_uses_frame_writer_for_gwf_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run() routes explicit GWF output through FrameWriter."""
+    captured: dict[str, object] = {}
+
+    class StubFrameWriter:
+        def __init__(
+            self,
+            base: NoiseSimulator,
+            gps_start: float,
+            output_dir: Path,
+            channel_prefix: str = "MOCK",
+        ) -> None:
+            captured["base"] = base
+            captured["gps_start"] = gps_start
+            captured["output_dir"] = output_dir
+            captured["channel_prefix"] = channel_prefix
+            self.output_dir = output_dir
+
+        def write(
+            self,
+            duration: float,
+            sampling_frequency: float,
+            detectors: list[str],
+            seed: int | None = None,
+        ) -> dict[str, Path]:
+            captured["duration"] = duration
+            captured["sampling_frequency"] = sampling_frequency
+            captured["detectors"] = list(detectors)
+            captured["seed"] = seed
+            output_paths: dict[str, Path] = {}
+            for detector in detectors:
+                output_path = self.output_dir / f"{detector}.gwf"
+                output_path.write_bytes(b"gwf")
+                output_paths[detector] = output_path
+            return output_paths
+
+    monkeypatch.setattr("gwmock_noise.simulators.default.FrameWriter", StubFrameWriter)
+
+    config = NoiseConfig(
+        detectors=["H1"],
+        duration=2.0,
+        sampling_frequency=128.0,
+        output=OutputConfig(
+            directory=tmp_path,
+            prefix="frame",
+            format="gwf",
+            gps_start=100.5,
+            channel_prefix="SIM",
+        ),
+        seed=11,
+    )
+
+    result = DefaultNoiseSimulator().run(config)
+
+    assert result.output_paths["H1"] == tmp_path / "H1.gwf"
+    assert captured == {
+        "base": captured["base"],
+        "gps_start": 100.5,
+        "output_dir": tmp_path,
+        "channel_prefix": "SIM",
+        "duration": 2.0,
+        "sampling_frequency": 128.0,
+        "detectors": ["H1"],
+        "seed": 11,
+    }
+
+    metadata = json.loads((tmp_path / "frame_H1.json").read_text())
+    assert metadata["artifact_format"] == "gwf"
+    assert metadata["artifact_path"] == str(tmp_path / "H1.gwf")
 
 
 def test_default_simulator_uses_zero_base_for_glitch_only_configuration(tmp_path: Path) -> None:

@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 
 from gwmock_noise.config import NoiseConfig
+from gwmock_noise.output.frame import FrameWriter
 from gwmock_noise.simulators.base import BaseNoiseSimulator, SimulationResult
 from gwmock_noise.simulators.colored import ColoredNoiseSimulator
 from gwmock_noise.simulators.correlated import CorrelatedNoiseSimulator, parse_csd_file_map
@@ -21,9 +22,9 @@ from gwmock_noise.simulators.spectral_lines import AddLines, SpectralLineSimulat
 class DefaultNoiseSimulator(BaseNoiseSimulator):
     """Default noise simulator implementation.
 
-    For the first milestone, this implementation validates the configuration
-    and writes metadata to the output directory. Actual noise generation
-    (Gaussian, glitches) will be added in subsequent milestones.
+    This implementation keeps ``run(config)`` as the public orchestration
+    boundary, dispatching to lower-level generators and writing real strain
+    artifacts plus descriptive metadata sidecars.
     """
 
     def __init__(
@@ -45,10 +46,12 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
     def metadata(self) -> dict[str, Any]:
         """Return metadata describing the current simulator state."""
         base_metadata = {
+            "implementation": "white",
             "duration": self.duration,
             "sampling_frequency": self.sampling_frequency,
             "detectors": list(self.detectors),
             "seed": self.seed,
+            "white_noise": {"distribution": "standard_normal"},
         }
         return base_metadata if self._active_metadata is None else base_metadata | self._active_metadata
 
@@ -59,13 +62,15 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         detectors: list[str],
         seed: int | None = None,
     ) -> dict[str, np.ndarray]:
-        """Return placeholder per-detector strain arrays."""
+        """Return Gaussian white-noise strain arrays."""
         self.duration = duration
         self.sampling_frequency = sampling_frequency
         self.detectors = list(detectors)
         self.seed = seed
         self._active_metadata = None
-        return {detector: np.array([], dtype=float) for detector in detectors}
+        rng = np.random.default_rng(seed)
+        n_samples = round(duration * sampling_frequency)
+        return {detector: rng.standard_normal(n_samples).astype(float, copy=False) for detector in detectors}
 
     def generate_stream(
         self,
@@ -74,7 +79,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         detectors: list[str],
         seed: int | None = None,
     ) -> Iterator[dict[str, np.ndarray]]:
-        """Yield placeholder strain chunks lazily."""
+        """Yield white-noise strain chunks lazily."""
         while True:
             yield self.generate(chunk_duration, sampling_frequency, detectors, seed)
             seed = None
@@ -132,6 +137,64 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
 
         return simulator
 
+    def _write_numpy_outputs(
+        self,
+        *,
+        config: NoiseConfig,
+        strain_by_detector: dict[str, np.ndarray],
+    ) -> dict[str, Path]:
+        """Persist per-detector strain arrays as NumPy artifacts."""
+        output_paths: dict[str, Path] = {}
+        for detector, strain in strain_by_detector.items():
+            output_path = Path(config.output.directory) / f"{config.output.prefix}_{detector}.npy"
+            np.save(output_path, strain)
+            output_paths[detector] = output_path
+        return output_paths
+
+    def _write_frame_outputs(
+        self,
+        *,
+        config: NoiseConfig,
+        simulator: NoiseSimulator,
+    ) -> dict[str, Path]:
+        """Persist per-detector strain arrays as GWF frame files."""
+        writer = FrameWriter(
+            simulator,
+            gps_start=config.output.gps_start,
+            output_dir=Path(config.output.directory),
+            channel_prefix=config.output.channel_prefix,
+        )
+        return writer.write(
+            duration=config.duration,
+            sampling_frequency=config.sampling_frequency,
+            detectors=config.detectors,
+            seed=config.seed,
+        )
+
+    def _write_metadata_sidecars(
+        self,
+        *,
+        config: NoiseConfig,
+        output_paths: dict[str, Path],
+    ) -> None:
+        """Write metadata sidecars describing the emitted detector artifacts."""
+        for detector, artifact_path in output_paths.items():
+            metadata_path = Path(config.output.directory) / f"{config.output.prefix}_{detector}.json"
+            file_metadata = self.metadata | {
+                "detector": detector,
+                "artifact_format": config.output.format,
+                "artifact_path": str(artifact_path),
+            }
+            metadata_path.write_text(json.dumps(file_metadata, indent=2))
+
+    def _sync_public_state(self, *, config: NoiseConfig, metadata: dict[str, Any] | None = None) -> None:
+        """Mirror the active runtime state onto the public orchestrator instance."""
+        self.duration = config.duration
+        self.sampling_frequency = config.sampling_frequency
+        self.detectors = list(config.detectors)
+        self.seed = config.seed
+        self._active_metadata = metadata
+
     def run(self, config: NoiseConfig) -> SimulationResult:
         """Run the noise simulation with the given configuration.
 
@@ -141,38 +204,38 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         Returns:
             Result containing paths to generated outputs and the config used.
         """
-        # Note: strain data is generated for metadata capture but not persisted.
-        # Future milestones will add strain data output.
+        Path(config.output.directory).mkdir(parents=True, exist_ok=True)
+
         simulator = self._configure_simulator(config)
-        if simulator is None:
-            self.generate(
-                duration=config.duration,
-                sampling_frequency=config.sampling_frequency,
-                detectors=config.detectors,
-                seed=config.seed,
-            )
+
+        if config.output.format == "gwf":
+            active_simulator = self if simulator is None else simulator
+            output_paths = self._write_frame_outputs(config=config, simulator=active_simulator)
+            if simulator is None:
+                self._sync_public_state(config=config)
+            else:
+                self._sync_public_state(config=config, metadata=simulator.metadata)
         else:
-            simulator.generate(
-                duration=config.duration,
-                sampling_frequency=config.sampling_frequency,
-                detectors=config.detectors,
-                seed=config.seed,
+            if simulator is None:
+                strain_by_detector = self.generate(
+                    duration=config.duration,
+                    sampling_frequency=config.sampling_frequency,
+                    detectors=config.detectors,
+                    seed=config.seed,
+                )
+            else:
+                strain_by_detector = simulator.generate(
+                    duration=config.duration,
+                    sampling_frequency=config.sampling_frequency,
+                    detectors=config.detectors,
+                    seed=config.seed,
+                )
+                self._sync_public_state(config=config, metadata=simulator.metadata)
+
+            output_paths = self._write_numpy_outputs(
+                config=config,
+                strain_by_detector=strain_by_detector,
             )
-            self.duration = config.duration
-            self.sampling_frequency = config.sampling_frequency
-            self.detectors = list(config.detectors)
-            self.seed = config.seed
-            self._active_metadata = simulator.metadata
 
-        out_dir = Path(config.output.directory)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        prefix = config.output.prefix
-
-        output_paths: dict[str, Path] = {}
-        for detector in config.detectors:
-            meta_path = out_dir / f"{prefix}_{detector}.json"
-            file_metadata = self.metadata | {"detector": detector}
-            meta_path.write_text(json.dumps(file_metadata, indent=2))
-            output_paths[detector] = meta_path
-
+        self._write_metadata_sidecars(config=config, output_paths=output_paths)
         return SimulationResult(output_paths=output_paths, config=config)

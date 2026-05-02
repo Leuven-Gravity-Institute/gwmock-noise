@@ -27,6 +27,7 @@ output:
     result = runner.invoke(app, ["simulate", str(config_file)])
     assert result.exit_code == 0
     assert out_dir.exists()
+    assert (out_dir / "run_H1.npy").exists()
     assert (out_dir / "run_H1.json").exists()
 
 
