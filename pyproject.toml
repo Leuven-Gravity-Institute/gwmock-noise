@@ -42,6 +42,7 @@ dev = [
 ]
 docs = ["zensical>=0.0.37", "mkdocstrings-python>=2.0.3"]
 build = ["hatch>=1.16.5"]
+release = ["git-cliff>=2.13.1"]
 
 [project.scripts]
 gwmock-noise = "gwmock_noise.cli.main:app"
