@@ -1,7 +1,7 @@
 # Troubleshooting
 
-This guide covers common issues you might encounter when using this template and
-how to resolve them.
+This guide covers common issues you might encounter when working on
+**gwmock-noise** and how to resolve them.
 
 ## Setup Issues
 

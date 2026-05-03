@@ -17,12 +17,11 @@ pages for more details:
 - Operating System: Linux, macOS, or Windows
 
 <!-- prettier-ignore-start -->
-!!!note
-    The package is built and tested against Python 3.12-3.14. When creating a virtual environment with `uv`,
+!!! note
+    The package is built and tested against Python 3.12–3.14. When creating a virtual environment with `uv`,
     specify the Python version to ensure compatibility:
-    `uv venv --python 3.12` (replace `3.12` with your preferred version in the 3.12-3.14 range).
+    `uv venv --python 3.12` (replace `3.12` with your preferred version in the 3.12–3.14 range).
     This avoids potential issues with unsupported Python versions.
-
 <!-- prettier-ignore-end -->
 
 ## Install from PyPI
@@ -36,55 +35,60 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install gwmock-noise
 ```
 
-### Optional Dependencies
+### Optional dependencies (extras)
 
-For development or specific features:
+Published wheels expose two optional dependency groups:
+
+| Extra   | Purpose                                                        |
+| ------- | -------------------------------------------------------------- |
+| `gwpy`  | GWpy-based helpers (`GWpyAdapter`, parts of the GWF stack)     |
+| `frame` | GWF frame writing (`FrameWriter`; pulls `gwpy` and `lalsuite`) |
 
 ```bash
-# Development dependencies (testing, linting, etc.)
-uv pip install "gwmock-noise[dev]"
-
-# Documentation dependencies
-uv pip install "gwmock-noise[docs]"
+uv pip install "gwmock-noise[gwpy]"
+uv pip install "gwmock-noise[frame]"
 ```
+
+Development and documentation tooling **are not extras**; they live in uv
+`[dependency-groups]` in `pyproject.toml` (`dev`, `docs`, `build`, `release`).
+Use `uv sync --group dev` (and `--group docs` when building the site) from a git
+checkout.
 
 ## Install from Source
 
 For the latest development version:
 
 ```bash
-git clone git@github.com:Leuven-Gravity-Institute/gwmock_noise.git
-cd gwmock_noise
+git clone git@github.com:Leuven-Gravity-Institute/gwmock-noise.git
+cd gwmock-noise
 # Create a virtual environment (recommended with uv)
 uv venv --python 3.12
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv pip install .
+uv sync
 ```
 
-### Development Installation
+### Development installation
 
-To set up for development:
+To install the package editable with lint/test/doc dependencies:
 
 ```bash
-git clone git@github.com:Leuven-Gravity-Institute/gwmock_noise.git
-cd gwmock_noise
+git clone git@github.com:Leuven-Gravity-Institute/gwmock-noise.git
+cd gwmock-noise
 
-# Create a virtual environment (recommended with uv)
 uv venv --python 3.12
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv sync --extra dev
+uv sync --group dev --group docs
 
-# Install the commitlint dependencies
+# Optional: Node tooling for commitlint (see package.json)
 npm ci
 
-# Install pre-commit hooks
 uv run pre-commit install
 uv run pre-commit install --hook-type commit-msg
 ```
 
-## Verify Installation
+## Verify installation
 
-Check that `gwmock-noise` is installed correctly:
+Check that the CLI and import path work:
 
 ```bash
 gwmock-noise --help
@@ -94,21 +98,22 @@ gwmock-noise --help
 python -c "import gwmock_noise; print(gwmock_noise.__version__)"
 ```
 
-## Dependencies
+## Core runtime dependencies
 
-### Core Dependencies
+The default wheel installs:
 
-- **typer**: CLI framework
+- **numpy** — arrays, FFTs, RNG
+- **pydantic** — configuration models
+- **scipy** — signal processing and numerics
+- **pyyaml** — YAML config loading
+- **typer** — CLI (`gwmock-noise` entry point)
 
-## Getting Help
+## Getting help
 
 <!-- prettier-ignore-start -->
 
 1. Check the [troubleshooting guide](../dev/troubleshooting.md)
-2. Search existing [issues](https://github.com/Leuven-Gravity-Institute/gwmock_noise/issues)
-3. Create a new issue with:
-    - Your operating system and Python version
-    - Full error message
-    - Steps to reproduce the problem
+2. Search existing [issues](https://github.com/Leuven-Gravity-Institute/gwmock-noise/issues)
+3. Open a new issue with your OS, Python version, full traceback, and minimal reproduction steps
 
 <!-- prettier-ignore-end -->

@@ -11,12 +11,79 @@
 [![DOI](https://zenodo.org/badge/924023559.svg)](https://doi.org/10.5281/zenodo.18017404)
 [![SPEC 0 — Minimum Supported Dependencies](https://img.shields.io/badge/SPEC-0-green?labelColor=%23004811&color=%235CA038)](https://scientific-python.org/specs/spec-0000/)
 
-A Python package for simulating gravitational wave detector noise.
+A Python package for simulating gravitational-wave detector **instrumental**
+noise (colored and correlated models, lines, glitches, optional
+Schumann-resonance coupling, and CLI-driven batch runs).
+
+## Documentation
+
+Published docs (user guide and API reference):
+
+[https://leuven-gravity-institute.github.io/gwmock-noise/](https://leuven-gravity-institute.github.io/gwmock-noise/)
+
+To build and preview locally (requires the `docs` dependency group):
+
+```bash
+uv sync --group docs
+uv run zensical serve
+```
+
+Then open [http://127.0.0.1:8000](http://127.0.0.1:8000).
+
+## Quick start
+
+### Install
+
+```bash
+uv venv --python 3.12
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+uv pip install gwmock-noise
+```
+
+Optional extras (declared in `pyproject.toml`):
+
+- `gwmock-noise[gwpy]` — GWpy-based helpers (for example `GWpyAdapter`)
+- `gwmock-noise[frame]` — GWF frame output (`FrameWriter` / GWpy GWF stack)
+
+### CLI
+
+Create a TOML (or YAML/JSON) config and run:
+
+```bash
+gwmock-noise simulate examples/noise_config_example.toml
+```
+
+See [examples/noise_config_example.toml](examples/noise_config_example.toml) and
+the [noise simulation](docs/user_guide/noise_simulation.md) guide for fields and
+output layout.
+
+### Python API
+
+```python
+from pathlib import Path
+
+from gwmock_noise import DefaultNoiseSimulator, NoiseConfig, OutputConfig
+
+config = NoiseConfig(
+    detectors=["H1", "L1"],
+    duration=4.0,
+    sampling_frequency=4096.0,
+    output=OutputConfig(directory=Path("output"), prefix="noise"),
+    seed=42,
+)
+result = DefaultNoiseSimulator().run(config)
+for detector, path in result.output_paths.items():
+    print(detector, "->", path)
+```
+
+For PSD/CSD-driven colored noise, spectral lines, glitches, and streaming
+behavior, use the same `NoiseConfig` fields described in the user guide and API
+reference.
 
 ## Installation
 
 We recommend using `uv` to manage virtual environments for installing
-`gwmock_noise`.
+`gwmock-noise`.
 
 If you don't have `uv` installed, you can install it with pip. See the project
 pages for more details:
@@ -31,10 +98,10 @@ pages for more details:
 - Python 3.12 or higher
 - Operating System: Linux, macOS, or Windows
 
-**Note:** The package is built and tested against Python 3.12-3.14. When
+**Note:** The package is built and tested against Python 3.12–3.14. When
 creating a virtual environment with `uv`, specify the Python version to ensure
 compatibility: `uv venv --python 3.12` (replace `3.12` with your preferred
-version in the 3.12-3.14 range). This avoids potential issues with unsupported
+version in the 3.12–3.14 range). This avoids potential issues with unsupported
 Python versions.
 
 ### Install from PyPI
@@ -54,7 +121,7 @@ For the latest development version:
 
 ```bash
 git clone git@github.com:Leuven-Gravity-Institute/gwmock-noise.git
-cd gwmock_noise
+cd gwmock-noise
 # Create a virtual environment (recommended with uv)
 uv venv --python 3.12
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
@@ -63,16 +130,17 @@ uv sync
 
 #### Development Installation
 
-To set up for development:
+To set up for development (linting, tests, and docs tooling live in **uv
+dependency groups**, not `[project.optional-dependencies]`):
 
 ```bash
 git clone git@github.com:Leuven-Gravity-Institute/gwmock-noise.git
-cd gwmock_noise
+cd gwmock-noise
 
 # Create a virtual environment (recommended with uv)
 uv venv --python 3.12
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv sync --group dev
+uv sync --group dev --group docs
 
 # Install pre-commit hooks
 uv run pre-commit install
@@ -91,11 +159,6 @@ gwmock-noise --help
 python -c "import gwmock_noise; print(gwmock_noise.__version__)"
 ```
 
-## Documentation
-
-Full documentation to be available at
-[https://leuven-gravity-institute.github.io/gwmock_noise](https://leuven-gravity-institute.github.io/gwmock_noise).
-
 ## Contributing
 
 Contributions are welcome!
@@ -111,7 +174,7 @@ Contributions are welcome!
 Releases follow a fixed schedule: every Tuesday at 00:00 UTC, unless an emergent
 bugfix is required. This ensures predictable updates while allowing flexibility
 for critical issues. Users can view upcoming changes in the draft release on the
-[GitHub Releases page](https://github.com/Leuven-Gravity-Institute/gwmock_noise/releases).
+[GitHub Releases page](https://github.com/Leuven-Gravity-Institute/gwmock-noise/releases).
 
 ## Testing
 
@@ -129,5 +192,5 @@ This project is licensed under the 3-Clause BSD License - see the
 ## Support
 
 For questions or issues, please open an issue on
-[GitHub](https://github.com/Leuven-Gravity-Institute/gwmock_noise/issues/new) or
+[GitHub](https://github.com/Leuven-Gravity-Institute/gwmock-noise/issues/new) or
 contact the maintainers.

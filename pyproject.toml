@@ -48,7 +48,7 @@ release = ["git-cliff>=2.13.1"]
 gwmock-noise = "gwmock_noise.cli.main:app"
 
 [project.urls]
-Documentation = "https://leuven-gravity-institute.github.io/gwmock_noise"
+Documentation = "https://leuven-gravity-institute.github.io/gwmock-noise/"
 Source = "https://github.com/Leuven-Gravity-Institute/gwmock_noise"
 Tracker = "https://github.com/Leuven-Gravity-Institute/gwmock_noise/issues"
 Home = "https://github.com/Leuven-Gravity-Institute/gwmock_noise"

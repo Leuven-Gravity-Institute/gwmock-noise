@@ -1,13 +1,12 @@
 # Code Quality
 
-This guide covers the code quality assurance tools and practices used in this
-Python package template, including linting, security scanning, and spell
-checking.
+This guide covers the code quality assurance tools and practices used in
+**gwmock-noise**, including linting, security scanning, and spell checking.
 
 ## Overview
 
 Code quality is maintained through a combination of automated tools and manual
-reviews. The template includes:
+reviews. The repository is configured with:
 
 - **Linting**: Ruff for code style and errors
 - **Security scanning**: Bandit for vulnerability detection
@@ -31,7 +30,7 @@ Ruff is a fast Python linter written in Rust that combines multiple tools.
 **Configuration** (`pyproject.toml`):
 
 ```toml
---8<-- "pyproject.toml:110:145"
+--8<-- "pyproject.toml:93:131"
 ```
 
 **Usage:**
@@ -133,10 +132,10 @@ Pre-commit.ci provides automated pre-commit hook execution:
 Use tools to measure code complexity:
 
 ```bash
-# McCabe complexity
-python -m mccabe src/your_package/
+# McCabe complexity (optional local tooling)
+python -m mccabe src/gwmock_noise/
 
-# Radon metrics
+# Radon metrics (optional)
 radon cc src/ -a
 radon mi src/ -s
 ```
@@ -146,7 +145,7 @@ radon mi src/ -s
 Test coverage is enforced:
 
 ```toml
---8<-- "pyproject.toml:84:85"
+--8<-- "pyproject.toml:76:77"
 ```
 
 ### Quality Gates

@@ -17,7 +17,7 @@ site_name = "gwmock-noise Documentation"
 # meaningful description of the site content for use by search engines.
 #
 # Read more: https://zensical.org/docs/setup/basics/#site_description
-site_description = "A Python package for simulating gravitational wave detector noise"
+site_description = "A Python package for simulating gravitational-wave detector instrumental noise"
 
 # The site_author attribute. This is used in the HTML head element.
 #
@@ -27,7 +27,7 @@ site_author = "Isaac C. F. Wong"
 # The site_url is the canonical URL for your site. When building online
 # documentation you should set this.
 # Read more: https://zensical.org/docs/setup/basics/#site_url
-#site_url = "https://www.example.com/"
+site_url = "https://leuven-gravity-institute.github.io/gwmock-noise/"
 
 # The copyright notice appears in the page footer and can contain an HTML
 # fragment.

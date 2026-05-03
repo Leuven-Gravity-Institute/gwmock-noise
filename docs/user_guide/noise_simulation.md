@@ -89,3 +89,14 @@ When `output.format = "gwf"`, `run(config)` reuses the built-in GWpy/GWF output
 stack to write frame files instead of NumPy artifacts. The metadata sidecar is
 still written, and `SimulationResult.output_paths` points to the generated GWF
 files.
+
+## See also
+
+- **`ParallelAdapter`** (`gwmock_noise.parallel`) — parallelize
+  independent-detector simulators; read the API docs for backend limitations on
+  correlated simulators.
+- **`generate_stream` / `take`** — streaming chunk APIs on simulators that
+  support them; see `gwmock_noise.simulators` in the
+  [API reference](../api/index.md).
+- **Diagnostics** (`gwmock_noise.diagnostics`) — PSD estimation and simple
+  statistical checks for validating realizations.
