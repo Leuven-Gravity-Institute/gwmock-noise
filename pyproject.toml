@@ -23,7 +23,7 @@ dependencies = [
     "pydantic>=2.13.3",
     "scipy>=1.17.1",
     "pyyaml>=6.0.3",
-    "typer>=0.25.0",
+    "typer>=0.25.1",
 ]
 
 [project.optional-dependencies]
