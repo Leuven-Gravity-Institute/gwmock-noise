@@ -1,9 +1,12 @@
 cff-version: 1.2.0
-title:
-    'gwmock-noise: A Python package for simulating gravitational wave detector
-    noise'
-license: '3-Clause BSD'
+title: >-
+    gwmock-noise: A Python package for simulating gravitational wave detector
+    noise
+license: BSD-3-Clause
 type: software
+message: >-
+    If you use this software, please cite it using the metadata from this file
+    or the Zenodo DOI for the release you used.
 authors:
     - given-names: Isaac C. F.
       family-names: Wong
