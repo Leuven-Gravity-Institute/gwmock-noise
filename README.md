@@ -191,5 +191,5 @@ This project is licensed under the 3-Clause BSD License - see the
 ## Support
 
 For questions or issues, please open an issue on
-[GitHub](https://github.com/Leuven-Gravity-Institute/gwmock-noise/issues/new) or
-contact the maintainers.
+[GitHub](https://github.com/Leuven-Gravity-Institute/gwmock-noise/issues/new/choose)
+or contact the maintainers.

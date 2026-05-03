@@ -13,14 +13,14 @@ submitting a pull request—this guide will help you get started.
 1. Open an Issue
 
     - Have a question, bug report, or feature suggestion?
-    [Open an issue](https://github.com/Leuven-Gravity-Institute/gwmock_noise/issues/new/choose)
+    [Open an issue](https://github.com/Leuven-Gravity-Institute/gwmock-noise/issues/new/choose)
     and describe your idea clearly.
     - Check for existing issues before opening a new one.
 
 2. Fork and Clone the Repository
 
     ```shell
-    git clone git@github.com:<username>/gwmock_noise.git
+    git clone git@github.com:<username>/gwmock-noise.git
     cd gwmock-noise
     ```
 
@@ -35,9 +35,9 @@ submitting a pull request—this guide will help you get started.
 
     ```shell
     # Create a virtual environment (recommended with uv)
-    uv venv --python 3.11
+    uv venv --python 3.12s
     source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-    uv sync --extra dev
+    uv sync --group dev
     ```
 
 4. Set Up Pre-commit Hooks
@@ -78,7 +78,7 @@ submitting a pull request—this guide will help you get started.
 
     **Pull request guidelines:**
 
-    - Always use the provided [pull request template](.github/PULL_REQUEST_TEMPLATE/pull_request_template.md)
+    - Always use the provided [pull request template](.github/pull_request_template.md)
         and complete all relevant sections.
     - The pull request title must follow the Conventional Commits format, using the appropriate type prefix
         (for example, `feat:`, `fix:`, `docs:`, `refactor:`).
