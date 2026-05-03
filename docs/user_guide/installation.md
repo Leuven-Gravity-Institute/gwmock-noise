@@ -79,11 +79,7 @@ uv venv --python 3.12
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv sync --group dev --group docs
 
-# Optional: Node tooling for commitlint (see package.json)
-npm ci
-
 uv run pre-commit install
-uv run pre-commit install --hook-type commit-msg
 ```
 
 ## Verify installation

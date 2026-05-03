@@ -21,7 +21,6 @@ This guide covers common issues you might encounter when working on
     pip uninstall pre-commit
     pip install pre-commit
     pre-commit install
-    pre-commit install --hook-type commit-msg
     ```
 
 4. Check if `.git` directory exists (must be a git repository)
@@ -29,35 +28,11 @@ This guide covers common issues you might encounter when working on
 
 <!-- prettier-ignore-end -->
 
-### Commit messages and `commit-msg` hooks
+### Commit message conventions
 
-**Problem:** You expected automated commit-message linting (for example
-commitlint) but nothing runs on `git commit`.
-
-**Context:** The checked-in `.pre-commit-config.yaml` does **not** register a
-`commit-msg` hook. Message style is still expected to follow
-[Conventional Commits](https://www.conventionalcommits.org/) for PRs and history
-readability (see [Contributing](../contributing.md)).
-
-**Solutions:**
-
-<!-- prettier-ignore-start -->
-
-1. Install and run the configured hooks (no Node tooling required for the
-   default setup):
-
-    ```bash
-    uv run pre-commit install
-    ```
-
-2. If you add your own `commit-msg` hook (commitlint or similar), install that
-   tool’s dependencies, wire the hook in `.pre-commit-config.yaml`, then run:
-
-    ```bash
-    pre-commit install --hook-type commit-msg
-    ```
-
-<!-- prettier-ignore-end -->
+Pre-commit here runs on staged files, not on the commit message. Still follow
+[Conventional Commits](https://www.conventionalcommits.org/) for commits and PR
+titles; see [Contributing](../contributing.md).
 
 ### Virtual Environment Issues
 

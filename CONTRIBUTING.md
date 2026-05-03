@@ -40,25 +40,16 @@ submitting a pull request—this guide will help you get started.
     uv sync --extra dev
     ```
 
-4. Set Up Pre-commit Hooks and Commitlint
+4. Set Up Pre-commit Hooks
 
-    We use **pre-commit** to ensure code quality and consistency,
-    and **commitlint** to enforce commit message conventions.
+    We use **pre-commit** to ensure code quality and consistency.
     After installing dependencies, run:
 
     ```shell
     uv run pre-commit install
-    uv run  pre-commit install --hook-type commit-msg
     ```
 
     This ensures checks like code formatting, linting, and basic hygiene run automatically when you commit.
-
-    ```shell
-    npm ci
-    ```
-
-    The project includes a `commitlint.config.js` configuration file that defines the commit message rules.
-    Once installed, commitlint will automatically validate your commit messages when pre-commit runs.
 
 5. Create a New Branch
 

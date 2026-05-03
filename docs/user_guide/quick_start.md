@@ -71,14 +71,6 @@ Install Git hooks (from the repo root):
 
 ```bash
 uv run pre-commit install
-uv run pre-commit install --hook-type commit-msg
-```
-
-If your workflow uses commitlint, install Node dependencies (see
-`package.json`):
-
-```bash
-npm ci
 ```
 
 ## 5. Tests and docs
