@@ -29,37 +29,32 @@ This guide covers common issues you might encounter when working on
 
 <!-- prettier-ignore-end -->
 
-### commitlint Not Running
+### Commit messages and `commit-msg` hooks
 
-**Problem:** Commit messages aren't validated despite `npm install` being run.
+**Problem:** You expected automated commit-message linting (for example
+commitlint) but nothing runs on `git commit`.
+
+**Context:** The checked-in `.pre-commit-config.yaml` does **not** register a
+`commit-msg` hook. Message style is still expected to follow
+[Conventional Commits](https://www.conventionalcommits.org/) for PRs and history
+readability (see [Contributing](../contributing.md)).
 
 **Solutions:**
 
 <!-- prettier-ignore-start -->
 
-1. Verify `npm install` was successful:
+1. Install and run the configured hooks (no Node tooling required for the
+   default setup):
 
     ```bash
-    npm list @commitlint/config-angular
+    uv run pre-commit install
     ```
 
-2. Re-install commitlint dependencies:
-
-    ```bash
-    npm install --save-dev @commitlint/cli @commitlint/config-angular
-    ```
-
-3. Reinstall pre-commit hooks:
+2. If you add your own `commit-msg` hook (commitlint or similar), install that
+   tool’s dependencies, wire the hook in `.pre-commit-config.yaml`, then run:
 
     ```bash
     pre-commit install --hook-type commit-msg
-    ```
-
-4. Test manually:
-
-    ```bash
-    echo "invalid message" | commitlint
-    echo "feat: valid message" | commitlint
     ```
 
 <!-- prettier-ignore-end -->
@@ -86,16 +81,18 @@ This guide covers common issues you might encounter when working on
     python -m pip install --upgrade pip
     ```
 
-3. Install dependencies:
+3. Install dependencies (dev and docs tooling live in **uv dependency groups**,
+   not `[project.optional-dependencies]`; see
+   [Installation](../user_guide/installation.md)):
 
     ```bash
-    pip install -e ".[dev,docs,test]"
+    uv sync --group dev --group docs
     ```
 
 4. Verify installation:
 
     ```bash
-    python -c "import your_package; print(your_package.__version__)"
+    python -c "import gwmock_noise; print(gwmock_noise.__version__)"
     ```
 
 <!-- prettier-ignore-end -->
@@ -115,17 +112,18 @@ version.
     python --version
     ```
 
-2. Ensure Python 3.10 or higher is installed
-3. Use specific Python version when creating venv:
+2. Ensure Python 3.12 or higher is installed (the package targets 3.12–3.14;
+   see `requires-python` in `pyproject.toml`)
+3. Use a supported Python version when creating the venv:
 
     ```bash
-    python3.11 -m venv .venv
+    python3.12 -m venv .venv
     ```
 
 4. Or use uv for version management:
 
     ```bash
-    uv venv --python 3.11
+    uv venv --python 3.12
     source .venv/bin/activate
     ```
 
@@ -143,36 +141,38 @@ version.
 
 1. Verify test file naming: Must be `test_*.py` or `*_test.py`
 2. Verify test function naming: Must start with `test_`
-3. Check `__init__.py` exists in test directory: `touch tests/__init__.py`
+3. Run from the repository root; `pyproject.toml` sets `testpaths = "tests"`
+   and `pythonpath = ["src"]` for discovery
 4. Run pytest with verbose output:
 
     ```bash
-    pytest -vv
+    uv run pytest -vv
     ```
 
 5. Check test discovery:
 
     ```bash
-    pytest --collect-only
+    uv run pytest --collect-only
     ```
 
 <!-- prettier-ignore-end -->
 
 ### Import Errors in Tests
 
-**Problem:** Tests can't import your package modules.
+**Problem:** Tests can't import `gwmock_noise` or its submodules.
 
 **Solutions:**
 
 <!-- prettier-ignore-start -->
 
-1. Install package in development mode:
+1. Install the project and dev dependencies (editable install is implied by
+   `uv sync` from the repo root):
 
     ```bash
-    pip install -e ".[dev,test]"
+    uv sync --group dev
     ```
 
-2. Verify package structure (should have `src/your_package/`)
+2. Verify package layout: Python sources live under `src/gwmock_noise/`
 3. Check `pyproject.toml` has correct `packages` configuration
 4. Run from project root directory
 5. Verify `__init__.py` exists in package directory
@@ -190,10 +190,10 @@ version.
 1. Run pytest with coverage:
 
     ```bash
-    pytest --cov=src/your_package --cov-report=html
+    uv run pytest --cov=src --cov-report=html
     ```
 
-2. Check `.coveragerc` or `pyproject.toml` coverage settings
+2. Check `[tool.coverage.*]` and `[tool.pytest.ini_options]` in `pyproject.toml`
 3. Ensure source files have proper imports
 4. Verify test files import from `src/` layout correctly
 
@@ -246,7 +246,7 @@ version.
 
     ```bash
     git add .
-    git commit -m "your message"  # Try again
+    git commit -m "feat: restage after pre-commit"  # Use a valid Conventional Commit title
     ```
 
 3. Modify tool settings if behavior is unwanted (in `pyproject.toml`)
@@ -297,13 +297,13 @@ version.
 2. Run tests locally first:
 
     ```bash
-    pytest
+    uv run pytest
     pre-commit run --all-files
     ```
 
 3. Common causes:
 
-    - Dependency installation failed: Check `pip install -e ".[dev,docs,test]"`
+    - Dependency installation failed: Compare with CI (`uv sync --group dev --frozen` in `.github/workflows/ci.yml`)
     - Python version mismatch: Verify Python versions in workflow matrix
     - Missing dependencies: Add to `pyproject.toml`
     - Pre-commit failures: Fix locally first
@@ -320,9 +320,9 @@ version.
 
 1. This is normal (~2-3 minutes per run)
 2. To disable CodeQL:
-    - Remove the `codeql` job from `.github/workflows/CI.yml`
+    - Remove or edit the workflow in `.github/workflows/codeql.yml`
     - Keep Bandit in pre-commit for basic security
-3. Or check if it's necessary for your project
+3. Or assess whether CodeQL is worth the CI time for this repository
 4. CodeQL provides value for security-critical projects
 
 ### Release Workflow Fails
@@ -337,25 +337,27 @@ version.
 2. Check CI workflow passed first (required by release workflow)
 3. Verify git-cliff configuration in `cliff.toml`
 4. For publishing:
-    - Check trusted publishers are configured in PyPI
-    - Or verify API tokens are set as secrets
-    - See
-      [CI/CD guide - PyPI Publishing](../user_guide/ci_cd.md#setup-pypi-publishing-optional)
+    - The publish workflow uses OIDC (`id-token: write`); configure a **trusted
+      publisher** on PyPI for this GitHub repo, or verify secrets if you use
+      token-based publishing
+    - Inspect
+      [`.github/workflows/publish.yml`](https://github.com/Leuven-Gravity-Institute/gwmock-noise/blob/main/.github/workflows/publish.yml)
+      for the exact steps
 
 ## Documentation Issues
 
 ### Zensical Site Won't Build
 
-**Problem:** `zensical serve` or `zensical build` fails.
+**Problem:** `uv run zensical serve` or `uv run zensical build` fails.
 
 **Solutions:**
 
 <!-- prettier-ignore-start -->
 
-1. Verify Zensical is installed:
+1. Verify Zensical and doc dependencies are installed:
 
     ```bash
-    pip install -e ".[docs]"
+    uv sync --group docs
     ```
 
 2. Check `zensical.toml` syntax (must be valid TOML)
@@ -364,7 +366,7 @@ version.
 5. Run with verbose output:
 
     ```bash
-    zensical build --verbose
+    uv run zensical build --verbose
     ```
 
 <!-- prettier-ignore-end -->
@@ -381,7 +383,8 @@ version.
     - This allows the documentation workflow to deploy directly
 2. Check documentation workflow ran successfully:
     - Go to Actions tab
-    - Look for "Deploy Zensical documentation to Pages" workflow
+    - Look for the **Documentation** workflow
+      (`.github/workflows/documentation.yml`)
 3. Verify changes were pushed to the correct branch
 4. Wait 1-2 minutes for Pages to build
 5. Hard refresh browser (Ctrl+Shift+R or Cmd+Shift+R)
@@ -395,28 +398,24 @@ version.
 
 <!-- prettier-ignore-start -->
 
-1. Verify docstrings are present in your code:
+1. Verify docstrings are present on public APIs under `src/gwmock_noise/`
 
-    ```python
-    def my_function():
-        """This is a docstring."""
-        pass
-    ```
-
-2. Check mkdocstrings plugin is installed:
+2. Ensure the docs dependency group is installed (includes `mkdocstrings-python`):
 
     ```bash
-    pip install mkdocstrings[python]
+    uv sync --group docs
     ```
 
-3. Verify navigation in `zensical.toml` includes API section
-4. Check `gen_ref_pages.py` script ran successfully:
+3. Verify navigation in `zensical.toml` includes the **API** section and that
+   `docs/api/index.md` uses mkdocstrings directives (for example `::: gwmock_noise`)
+4. Rebuild the site locally:
 
     ```bash
-    python docs/gen_ref_pages.py
+    uv run zensical build --verbose
     ```
 
-5. Ensure modules are properly imported in `__init__.py`
+5. Ensure re-exported symbols in `src/gwmock_noise/__init__.py` match what you
+   expect in the API reference
 
 <!-- prettier-ignore-end -->
 
@@ -424,30 +423,31 @@ version.
 
 ### "ModuleNotFoundError" When Running CLI
 
-**Problem:** Running `your-package --help` fails with module not found.
+**Problem:** Running `gwmock-noise --help` fails with module not found.
 
 **Solutions:**
 
 <!-- prettier-ignore-start -->
 
-1. Install package in development mode:
+1. Install the package in development mode from the repo root:
 
     ```bash
-    pip install -e "."
+    uv sync --group dev
     ```
 
 2. Verify entry points in `pyproject.toml`:
 
     ```toml
     [project.scripts]
-    your-package = "your_package.cli.main:app"
+    gwmock-noise = "gwmock_noise.cli.main:app"
     ```
 
-3. Check the specified function exists and is callable
-4. Verify package name doesn't use hyphens in the module name:
+3. Check the specified Typer app exists and is callable
+4. Remember PyPI distribution name vs import path:
 
-    - Package: `your-package` (in `pyproject.toml`)
-    - Module: `your_package` (directory name)
+    - Distribution / CLI script name: `gwmock-noise` (hyphen; `[project]` `name`
+      and `[project.scripts]` key)
+    - Import package: `gwmock_noise` (underscore; directory under `src/`)
 
 <!-- prettier-ignore-end -->
 
@@ -481,7 +481,7 @@ version.
 4. Install with verbose output to see conflict:
 
     ```bash
-    pip install -e ".[dev,docs,test]" -vv
+    uv sync --group dev --group docs --verbose
     ```
 
 5. Check `pyproject.toml` for overly restrictive version constraints
@@ -505,13 +505,13 @@ version.
 2. Update individual tool:
 
     ```bash
-    pre-commit autoupdate --repo https://github.com/tool-repo
+    pre-commit autoupdate --repo https://github.com/pre-commit/pre-commit-hooks
     ```
 
 3. Test changes:
 
     ```bash
-   pre-commit run --all-files
+    pre-commit run --all-files
     ```
 
 4. Pin to known-good version in `.pre-commit-config.yaml`:
@@ -528,11 +528,14 @@ If you encounter issues not listed here:
 
 <!-- prettier-ignore-start -->
 
-1. **Check existing issues**: Search GitHub Issues for your problem
+1. **Check existing issues**: Search
+   [gwmock-noise issues](https://github.com/Leuven-Gravity-Institute/gwmock-noise/issues)
 2. **Review logs carefully**: Error messages usually point to the root cause
-3. **Search documentation**: Many issues are covered in specific tool docs
+3. **Search documentation**: Published docs are at
+   [https://leuven-gravity-institute.github.io/gwmock-noise/](https://leuven-gravity-institute.github.io/gwmock-noise/)
 4. **Try minimal reproduction**: Isolate the problem to a single file/command
-5. **Ask for help**: Open an [issue](https://github.com/isaac-cf-wong/python-package-template/issues/new/choose) with:
+5. **Ask for help**: Open an
+   [issue](https://github.com/Leuven-Gravity-Institute/gwmock-noise/issues/new/choose) with:
     - Your environment (Python version, OS)
     - Steps to reproduce
     - Full error message/logs
