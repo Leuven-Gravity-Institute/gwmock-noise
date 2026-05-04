@@ -78,7 +78,8 @@ for detector, path in result.output_paths.items():
 
 For PSD/CSD-driven colored noise, spectral lines, glitches, and streaming
 behavior, use the same `NoiseConfig` fields described in the user guide and API
-reference.
+reference. For stateful continuation across chunk boundaries, prefer the public
+`open_stream(...)` helper over reseeding separate runs.
 
 ## Installation
 

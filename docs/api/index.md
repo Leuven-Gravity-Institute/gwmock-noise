@@ -25,7 +25,7 @@ TOML/YAML/JSON.
 ## Simulators
 
 Simulator implementations, the `NoiseSimulator` protocol, `SimulationResult`,
-and streaming helpers such as `take`.
+and streaming helpers such as `open_stream` and `take`.
 
 ::: gwmock_noise.simulators
 

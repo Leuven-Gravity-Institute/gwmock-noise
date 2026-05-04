@@ -26,6 +26,7 @@ def test_import_main_package():
     """Test that the main gwmock_noise package can be imported."""
     assert hasattr(gwmock_noise, "__version__")
     assert gwmock_noise.__version__ is not None
+    assert hasattr(gwmock_noise, "open_stream")
 
 
 @pytest.mark.parametrize("module_name", get_all_submodules(gwmock_noise))

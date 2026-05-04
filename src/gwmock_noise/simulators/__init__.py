@@ -18,7 +18,7 @@ from gwmock_noise.simulators.glitches import InjectGlitches
 from gwmock_noise.simulators.protocol import NoiseSimulator
 from gwmock_noise.simulators.schumann import SchumannNoiseSimulator, SchumannParams
 from gwmock_noise.simulators.spectral_lines import AddLines, SpectralLineSimulator
-from gwmock_noise.simulators.streaming import take
+from gwmock_noise.simulators.streaming import open_stream, take
 
 __all__ = [
     "ARNoiseSimulator",
@@ -39,5 +39,6 @@ __all__ = [
     "SimulationResult",
     "SpectralLineSimulator",
     "TimeVaryingColoredNoiseSimulator",
+    "open_stream",
     "take",
 ]

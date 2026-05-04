@@ -49,6 +49,7 @@ nav = [
   { "Installation" = "user_guide/installation.md" },
   { "Quick Start" = "user_guide/quick_start.md" },
   { "Noise Simulation" = "user_guide/noise_simulation.md" },
+  { "Custom Simulators" = "user_guide/custom_simulators.md" },
   { "Development" = [
     { "Code Quality" = "dev/code_quality.md" },
     { "Troubleshooting" = "dev/troubleshooting.md" },

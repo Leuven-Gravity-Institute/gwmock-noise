@@ -31,6 +31,7 @@ from gwmock_noise.simulators import (
     SimulationResult,
     SpectralLineSimulator,
     TimeVaryingColoredNoiseSimulator,
+    open_stream,
     take,
 )
 from gwmock_noise.version import __version__
@@ -74,6 +75,7 @@ __all__ = [
     "compare_psd",
     "estimate_psd",
     "load_config",
+    "open_stream",
     "run_diagnostics",
     "take",
 ]

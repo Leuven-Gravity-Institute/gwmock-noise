@@ -122,7 +122,7 @@ def test_generated_correlations_match_input_spectra_within_tolerance(tmp_path: P
     estimated_psds = []
     estimated_csds = []
 
-    for seed in range(24):
+    for seed in range(32):
         simulator = CorrelatedNoiseSimulator(
             psd_files=psd_files,
             csd_files=csd_files,

@@ -90,13 +90,46 @@ stack to write frame files instead of NumPy artifacts. The metadata sidecar is
 still written, and `SimulationResult.output_paths` points to the generated GWF
 files.
 
+For stateful continuation across chunk boundaries, use the public streaming
+contract instead of reseeding separate runs:
+
+```python
+import numpy as np
+
+from gwmock_noise import ColoredNoiseSimulator, open_stream
+
+simulator = ColoredNoiseSimulator(
+    psd_file="example_psd.txt",
+    detectors=["H1", "L1"],
+    sampling_frequency=4096.0,
+)
+stream = open_stream(
+    simulator,
+    chunk_duration=4.0,
+    sampling_frequency=4096.0,
+    detectors=["H1", "L1"],
+    seed=42,
+)
+
+first_three_chunks = [next(stream) for _ in range(3)]
+strain_h1 = np.concatenate([chunk["H1"] for chunk in first_three_chunks])
+```
+
+`open_stream(...)` is the supported public continuation surface for
+`NoiseSimulator` implementations. Shipped colored and correlated simulators keep
+their overlap-add state inside the iterator, so concatenating sequential chunks
+reproduces the same realization as one seeded single-shot `generate(...)` call.
+
 ## See also
 
 - **`ParallelAdapter`** (`gwmock_noise.parallel`) — parallelize
   independent-detector simulators; read the API docs for backend limitations on
   correlated simulators.
-- **`generate_stream` / `take`** — streaming chunk APIs on simulators that
-  support them; see `gwmock_noise.simulators` in the
+- **`open_stream` / `take`** — public helpers for opening and collecting
+  stateful chunk streams; see `gwmock_noise.simulators` in the
   [API reference](../api/index.md).
+- **[Custom simulators](custom_simulators.md)** — implement the `NoiseSimulator`
+  protocol so `open_stream(...)` can consume your simulator without
+  package-internal hooks.
 - **Diagnostics** (`gwmock_noise.diagnostics`) — PSD estimation and simple
   statistical checks for validating realizations.

@@ -3,9 +3,39 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 
 import numpy as np
+
+from gwmock_noise.simulators.protocol import NoiseSimulator
+
+
+def open_stream(
+    simulator: NoiseSimulator,
+    *,
+    chunk_duration: float,
+    sampling_frequency: float,
+    detectors: Sequence[str],
+    seed: int | None = None,
+) -> Iterator[dict[str, np.ndarray]]:
+    """Open a stateful chunk stream on a protocol-compatible simulator."""
+    if not isinstance(simulator, NoiseSimulator):
+        raise TypeError("simulator must satisfy the NoiseSimulator protocol.")
+    if chunk_duration <= 0:
+        raise ValueError("chunk_duration must be greater than zero.")
+    if sampling_frequency <= 0:
+        raise ValueError("sampling_frequency must be greater than zero.")
+
+    runtime_detectors = list(detectors)
+    if not runtime_detectors:
+        raise ValueError("detectors must contain at least one detector.")
+
+    return simulator.generate_stream(
+        chunk_duration=chunk_duration,
+        sampling_frequency=sampling_frequency,
+        detectors=runtime_detectors,
+        seed=seed,
+    )
 
 
 def take(

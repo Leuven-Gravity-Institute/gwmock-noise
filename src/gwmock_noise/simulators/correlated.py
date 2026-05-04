@@ -239,6 +239,42 @@ class CorrelatedNoiseSimulator:
         time_series = np.fft.irfft(frequency_series, n=WINDOW_SIZE, axis=1) * self._delta_frequency * WINDOW_SIZE
         return {detector: time_series[self._detector_index[detector]].copy() for detector in self.detectors}
 
+    def _simulate(self, *, n_samples: int) -> dict[str, np.ndarray]:
+        """Generate a prefix-consistent realization from shared correlated chunks."""
+        history = self.previous_strain
+        if history:
+            self._stitcher._validate_chunk_map(history)
+            current_raw = {detector: history[detector].copy() for detector in self.detectors}
+        else:
+            warmup = self._generate_realization_chunk()
+            self._stitcher._validate_chunk_map(warmup)
+            current_raw = self._generate_realization_chunk()
+            self._stitcher._validate_chunk_map(current_raw)
+
+        emitted_segments = {detector: [] for detector in self.detectors}
+        produced_samples = 0
+
+        while produced_samples < n_samples:
+            next_raw = self._generate_realization_chunk()
+            self._stitcher._validate_chunk_map(next_raw)
+
+            for detector in self.detectors:
+                blended_overlap = (
+                    (current_raw[detector][-OVERLAP_SIZE:] * self._stitcher._window_out)
+                    + (next_raw[detector][:OVERLAP_SIZE] * self._stitcher._window_in)
+                ) / self._stitcher._blend_norm
+                emitted_segments[detector].append(blended_overlap)
+                current_raw[detector] = next_raw[detector].copy()
+
+            produced_samples += WINDOW_SIZE - OVERLAP_SIZE
+
+        realization = {
+            detector: np.concatenate(segments)[:n_samples] for detector, segments in emitted_segments.items()
+        }
+        self.previous_strain.clear()
+        self.previous_strain.update({detector: current_raw[detector].copy() for detector in self.detectors})
+        return realization
+
     def reset(self) -> None:
         """Clear continuity and RNG state."""
         self._stitcher.reset()
@@ -285,7 +321,7 @@ class CorrelatedNoiseSimulator:
             self._initialize_generator(self.seed)
 
         n_samples = round(duration * sampling_frequency)
-        return self._stitcher.stitch(n_samples=n_samples, chunk_generator=self._generate_realization_chunk)
+        return self._simulate(n_samples=n_samples)
 
     def generate_stream(
         self,
