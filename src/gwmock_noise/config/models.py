@@ -191,13 +191,18 @@ class ScatteredLightGlitch(GlitchModel):
 
 def supported_glitch_kinds() -> dict[str, type[GlitchModel]]:
     """Return all supported glitch-model kinds."""
-    gengli_glitch = importlib.import_module("gwmock_noise.glitches").GengliBlipGlitch
-
-    return {
+    kinds: dict[str, type[GlitchModel]] = {
         "blip": BlipGlitch,
-        "gengli_blip": gengli_glitch,
         "scattered_light": ScatteredLightGlitch,
     }
+    try:
+        importlib.import_module("gengli")
+    except ModuleNotFoundError as exc:
+        if exc.name != "gengli":
+            raise
+    else:
+        kinds["gengli_blip"] = importlib.import_module("gwmock_noise.glitches").GengliBlipGlitch
+    return kinds
 
 
 class OutputConfig(BaseModel):
