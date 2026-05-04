@@ -18,6 +18,7 @@ Optional integrations (see `pyproject.toml` `[project.optional-dependencies]`):
 ```bash
 uv pip install "gwmock-noise[gwpy]"    # GWpy adapters
 uv pip install "gwmock-noise[frame]" # GWF output (GWpy + LALSuite stack)
+uv pip install "gwmock-noise[gengli]" # gengli-backed blip glitches
 ```
 
 ## 2. Run the CLI
@@ -30,6 +31,12 @@ gwmock-noise simulate examples/noise_config_example.toml
 
 Use `gwmock-noise --help` and `gwmock-noise simulate --help` for Typer/Rich
 usage.
+
+To build a gengli population file from a GravitySpy CSV export:
+
+```bash
+gwmock-noise build-blip-glitch-table --gravity-spy-csv gravity_spy.csv --out glitches.h5
+```
 
 ## 3. Call the Python API
 

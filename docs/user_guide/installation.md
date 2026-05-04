@@ -37,16 +37,18 @@ uv pip install gwmock-noise
 
 ### Optional dependencies (extras)
 
-Published wheels expose two optional dependency groups:
+Published wheels expose three optional dependency groups:
 
-| Extra   | Purpose                                                        |
-| ------- | -------------------------------------------------------------- |
-| `gwpy`  | GWpy-based helpers (`GWpyAdapter`, parts of the GWF stack)     |
-| `frame` | GWF frame writing (`FrameWriter`; pulls `gwpy` and `lalsuite`) |
+| Extra    | Purpose                                                        |
+| -------- | -------------------------------------------------------------- |
+| `gwpy`   | GWpy-based helpers (`GWpyAdapter`, parts of the GWF stack)     |
+| `frame`  | GWF frame writing (`FrameWriter`; pulls `gwpy` and `lalsuite`) |
+| `gengli` | gengli-backed blip glitches (`GengliBlipGlitch`)               |
 
 ```bash
 uv pip install "gwmock-noise[gwpy]"
 uv pip install "gwmock-noise[frame]"
+uv pip install "gwmock-noise[gengli]"
 ```
 
 Development and documentation tooling **are not extras**; they live in uv
@@ -99,6 +101,7 @@ python -c "import gwmock_noise; print(gwmock_noise.__version__)"
 The default wheel installs:
 
 - **numpy** — arrays, FFTs, RNG
+- **h5py** — file-backed glitch population tables
 - **pydantic** — configuration models
 - **scipy** — signal processing and numerics
 - **pyyaml** — YAML config loading

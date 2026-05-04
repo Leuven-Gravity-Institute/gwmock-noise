@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from gwmock_noise.config import (
     BlipGlitch,
+    GengliBlipGlitch,
     GlitchModel,
     LogNormalAmplitudeDistribution,
     NoiseConfig,
@@ -19,6 +20,7 @@ from gwmock_noise.config import (
     SpectralLine,
     load_config,
 )
+from gwmock_noise.glitches.gengli import write_blip_population_file
 
 
 def test_noise_config_defaults() -> None:
@@ -180,6 +182,34 @@ def test_noise_config_accepts_glitches_from_mappings() -> None:
             amplitude_distribution=LogNormalAmplitudeDistribution(mean=5.0e-24, std=0.0),
         ),
     ]
+
+
+def test_noise_config_accepts_gengli_glitch_mapping(tmp_path: Path) -> None:
+    """NoiseConfig parses gengli glitch mappings into dataclass instances."""
+    population_file = tmp_path / "population.h5"
+    psd_file = tmp_path / "psd.txt"
+    write_blip_population_file(population_file, snr_samples=np.array([8.0, 12.0]))
+    np.savetxt(psd_file, np.column_stack((np.array([0.0, 128.0]), np.array([0.0, 1.0]))))
+
+    config = NoiseConfig.model_validate(
+        {
+            "detectors": ["H1"],
+            "glitches": [
+                {
+                    "kind": "gengli_blip",
+                    "rate": 0.2,
+                    "population_file": str(population_file),
+                    "psd_file": str(psd_file),
+                    "gengli_detector": "L1",
+                    "amplitude_distribution": {"distribution": "lognormal", "mean": 1.0, "std": 0.0},
+                }
+            ],
+        }
+    )
+
+    assert isinstance(config.glitches[0], GengliBlipGlitch)
+    assert config.glitches[0].population_file == population_file
+    assert config.glitches[0].psd_file == psd_file
 
 
 def test_noise_config_accepts_glitch_instance_inputs() -> None:

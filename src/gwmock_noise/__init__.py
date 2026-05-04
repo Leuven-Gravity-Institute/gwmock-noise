@@ -7,6 +7,7 @@ from typing import Any
 
 from gwmock_noise.config import (
     BlipGlitch,
+    GengliBlipGlitch,
     GlitchModel,
     LogNormalAmplitudeDistribution,
     NoiseConfig,
@@ -57,6 +58,7 @@ __all__ = [
     "DiagnosticResult",
     "FrameWriter",
     "GWpyAdapter",
+    "GengliBlipGlitch",
     "GlitchModel",
     "InjectGlitches",
     "LogNormalAmplitudeDistribution",
