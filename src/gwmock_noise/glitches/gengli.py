@@ -23,6 +23,8 @@ def _load_gengli() -> Any:
     try:
         return importlib.import_module("gengli")
     except ModuleNotFoundError as exc:  # pragma: no cover - exercised via tests
+        if exc.name != "gengli":
+            raise
         raise ImportError(
             "GengliBlipGlitch requires the optional dependency 'gengli'. Install gwmock-noise[gengli]."
         ) from exc
