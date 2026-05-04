@@ -321,6 +321,8 @@ class CorrelatedNoiseSimulator:
             self._initialize_generator(self.seed)
 
         n_samples = round(duration * sampling_frequency)
+        if n_samples < 1:
+            raise ValueError("duration and sampling_frequency must produce at least one sample.")
         return self._simulate(n_samples=n_samples)
 
     def generate_stream(
