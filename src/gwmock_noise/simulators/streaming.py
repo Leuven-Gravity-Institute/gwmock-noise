@@ -25,6 +25,10 @@ def open_stream(
         raise ValueError("chunk_duration must be greater than zero.")
     if sampling_frequency <= 0:
         raise ValueError("sampling_frequency must be greater than zero.")
+    if isinstance(detectors, str):
+        raise TypeError("detectors must be a sequence of detector names, not a single string.")
+    if round(chunk_duration * sampling_frequency) < 1:
+        raise ValueError("chunk_duration and sampling_frequency must produce at least one sample.")
 
     runtime_detectors = list(detectors)
     if not runtime_detectors:
