@@ -6,6 +6,7 @@ from importlib import resources
 from pathlib import Path
 
 import numpy as np
+import pytest_mock
 
 from gwmock_noise import DefaultNoiseSimulator
 from gwmock_noise.config import NoiseConfig, OutputConfig
@@ -43,7 +44,7 @@ def test_noise_config_preserves_http_psd_url() -> None:
     assert config.psd_file == psd_url
 
 
-def test_colored_noise_simulator_preserves_http_psd_url(mocker) -> None:
+def test_colored_noise_simulator_preserves_http_psd_url(mocker: pytest_mock.MockerFixture) -> None:
     """ColoredNoiseSimulator keeps URL PSDs as remote references."""
     psd_url = "https://example.com/noise_psd.txt"
     mocker.patch(
