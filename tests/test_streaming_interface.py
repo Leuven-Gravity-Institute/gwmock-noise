@@ -12,6 +12,7 @@ import pytest
 
 from gwmock_noise import take as top_level_take
 from gwmock_noise.simulators import ARNoiseSimulator, ColoredNoiseSimulator, take
+from gwmock_noise.simulators.streaming import open_stream
 
 
 def _write_psd_file(path: Path, *, sampling_frequency: float = 256.0, value: float = 2.0e-3) -> Path:
@@ -132,3 +133,52 @@ def test_colored_stream_peak_memory_is_stable_over_longer_runs(tmp_path: Path) -
     long_peak = _peak_bytes_for_stream(long_simulator.generate_stream(4.0, 256.0, ["H1"]), n_chunks=32)
 
     assert long_peak <= max(short_peak * 2, short_peak + 200_000)
+
+
+def test_open_stream_validates_simulator_and_arguments(tmp_path: Path) -> None:
+    """open_stream rejects invalid protocol/argument combinations."""
+    psd_path = _write_psd_file(tmp_path / "open_stream_validation_psd.txt")
+    simulator = ColoredNoiseSimulator(psd_file=psd_path, detectors=["H1"], sampling_frequency=256.0)
+
+    with pytest.raises(TypeError, match="NoiseSimulator protocol"):
+        open_stream(  # type: ignore[arg-type]
+            object(),
+            chunk_duration=1.0,
+            sampling_frequency=256.0,
+            detectors=["H1"],
+        )
+    with pytest.raises(ValueError, match="chunk_duration must be greater than zero"):
+        open_stream(simulator, chunk_duration=0.0, sampling_frequency=256.0, detectors=["H1"])
+    with pytest.raises(ValueError, match="sampling_frequency must be greater than zero"):
+        open_stream(simulator, chunk_duration=1.0, sampling_frequency=0.0, detectors=["H1"])
+    with pytest.raises(TypeError, match="not a single string"):
+        open_stream(simulator, chunk_duration=1.0, sampling_frequency=256.0, detectors="H1")
+    with pytest.raises(ValueError, match="at least one sample"):
+        open_stream(simulator, chunk_duration=1e-6, sampling_frequency=1.0, detectors=["H1"])
+    with pytest.raises(ValueError, match="at least one detector"):
+        open_stream(simulator, chunk_duration=1.0, sampling_frequency=256.0, detectors=[])
+
+
+def test_take_validates_and_handles_stream_edge_cases() -> None:
+    """Take validates input and stream consistency/finality."""
+    with pytest.raises(ValueError, match="total_duration must be greater than zero"):
+        take(iter(()), total_duration=0.0, chunk_duration=1.0, sampling_frequency=1.0)
+    with pytest.raises(ValueError, match="chunk_duration must be greater than zero"):
+        take(iter(()), total_duration=1.0, chunk_duration=0.0, sampling_frequency=1.0)
+    with pytest.raises(ValueError, match="sampling_frequency must be greater than zero"):
+        take(iter(()), total_duration=1.0, chunk_duration=1.0, sampling_frequency=0.0)
+    with pytest.raises(ValueError, match="must produce at least one sample"):
+        take(iter(()), total_duration=1e-9, chunk_duration=1.0, sampling_frequency=1.0)
+
+    def short_stream():
+        yield {"H1": np.array([1.0])}
+
+    with pytest.raises(ValueError, match="stream ended before total_duration"):
+        take(short_stream(), total_duration=2.0, chunk_duration=1.0, sampling_frequency=1.0)
+
+    def inconsistent_stream():
+        yield {"H1": np.array([1.0])}
+        yield {"L1": np.array([2.0])}
+
+    with pytest.raises(ValueError, match="consistent detector set"):
+        take(inconsistent_stream(), total_duration=2.0, chunk_duration=1.0, sampling_frequency=1.0)

@@ -82,3 +82,32 @@ def test_gwpy_adapter_wraps_timeseries_when_gwpy_is_available() -> None:
     assert np.allclose(first["H1"].value, np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]))
     assert float(second["H1"].t0.value) == pytest.approx(102.5)
     assert adapter.gps_start == pytest.approx(104.5)
+
+
+def test_gwpy_adapter_generate_and_metadata_without_real_gwpy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """generate()/metadata remain testable with a fake TimeSeries module."""
+    gwpy_output = import_module("gwmock_noise.output.gwpy")
+
+    class FakeTimeSeries:
+        def __init__(self, data, *, t0, sample_rate, channel):
+            self.value = np.asarray(data)
+            self.t0 = t0
+            self.sample_rate = sample_rate
+            self.channel = channel
+
+    class FakeModule:
+        TimeSeries = FakeTimeSeries
+
+    monkeypatch.setattr(gwpy_output, "import_module", lambda name: FakeModule())
+
+    adapter = GWpyAdapter(FixedNoiseSimulator(), gps_start=10.0)
+    wrapped = adapter.generate(duration=1.5, sampling_frequency=4.0, detectors=["H1"], seed=3)
+
+    assert isinstance(wrapped["H1"], FakeTimeSeries)
+    np.testing.assert_allclose(wrapped["H1"].value, np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0]))
+    assert wrapped["H1"].t0 == pytest.approx(10.0)
+    assert wrapped["H1"].sample_rate == pytest.approx(4.0)
+    assert wrapped["H1"].channel == "H1"
+    assert adapter.gps_start == pytest.approx(11.5)
+    assert adapter.metadata["output_adapter"] == "gwpy"
+    assert adapter.metadata["gps_start"] == pytest.approx(11.5)

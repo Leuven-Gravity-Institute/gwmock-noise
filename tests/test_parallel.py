@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from gwmock_noise.parallel import ParallelAdapter
+from gwmock_noise.parallel import ParallelAdapter, _derive_seeds
 from gwmock_noise.simulators import ARNoiseSimulator, ColoredNoiseSimulator, CorrelatedNoiseSimulator, NoiseSimulator
 
 FLAT_CSD = 8.0e-4
@@ -199,3 +199,32 @@ def test_parallel_adapter_benchmark_smoke(tmp_path: Path) -> None:
 
     assert single_elapsed > 0.0
     assert parallel_elapsed > 0.0
+
+
+def test_derive_seeds_validates_detectors_and_none_seed() -> None:
+    """Seed derivation handles duplicate names and seed=None passthrough."""
+    with pytest.raises(ValueError, match="must not contain duplicate names"):
+        _derive_seeds(1, ["H1", "H1"])
+
+    assert _derive_seeds(None, ["H1", "L1"]) == {"H1": None, "L1": None}
+
+
+def test_parallel_adapter_input_validation_and_metadata(tmp_path: Path) -> None:
+    """Adapter validates init/generate arguments and reports resolved metadata."""
+    with pytest.raises(ValueError, match="max_workers must be greater than zero"):
+        ParallelAdapter(_MutableStateSimulator, max_workers=0)
+    with pytest.raises(ValueError, match="backend must be one of"):
+        ParallelAdapter(_MutableStateSimulator, backend="bogus")  # type: ignore[arg-type]
+
+    adapter = ParallelAdapter(_MutableStateSimulator, max_workers=1, backend="thread")
+    with pytest.raises(ValueError, match="at least one detector"):
+        adapter.generate(1.0, 8.0, [], seed=1)
+    with pytest.raises(ValueError, match="must not contain duplicate names"):
+        adapter.generate(1.0, 8.0, ["H1", "H1"], seed=1)
+
+    result = adapter.generate(1.0, 8.0, ["H1"], seed=1)
+    assert result["H1"].shape == (8,)
+    meta = adapter.metadata
+    assert meta["implementation"] == "parallel"
+    assert meta["parallel"]["backend"] == "thread"
+    assert meta["parallel"]["resolved_max_workers"] == 1

@@ -56,6 +56,49 @@ For integration with the upstream `gwmock` package, the same structure can be
 nested under a `noise` key inside a larger configuration file. In that case the
 CLI still works; it automatically looks for a `noise` section if present.
 
+## Gengli blip glitches
+
+`gwmock-noise[gengli]` adds a file-backed `GengliBlipGlitch` model that plugs
+into the existing `glitches=` list. The expected population file is an HDF5 file
+with an `snr` dataset; the built-in CLI can generate that file from a GravitySpy
+CSV export:
+
+```bash
+gwmock-noise build-blip-glitch-table --gravity-spy-csv gravity_spy.csv --out glitches.h5
+```
+
+Programmatic configuration uses the same `NoiseConfig` surface as the built-in
+parametric glitches:
+
+```python
+from pathlib import Path
+
+from gwmock_noise import (
+    GengliBlipGlitch,
+    LogNormalAmplitudeDistribution,
+    NoiseConfig,
+)
+
+config = NoiseConfig(
+    detectors=["L1"],
+    duration=8.0,
+    sampling_frequency=4096.0,
+    psd_file=Path("noise_psd.txt"),
+    glitches=[
+        GengliBlipGlitch.from_population_file(
+            "glitches.h5",
+            rate=0.25,
+            psd_file=Path("noise_psd.txt"),
+            amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        )
+    ],
+)
+```
+
+The model samples an SNR from the population table for each injected event,
+generates one whitened gengli blip, and colors it against the configured PSD
+before additive injection through `InjectGlitches`.
+
 ## Programmatic usage
 
 You can also construct configurations and run the simulator directly from

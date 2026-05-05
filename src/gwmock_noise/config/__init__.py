@@ -17,9 +17,11 @@ from gwmock_noise.config.models import (
     ScatteredLightGlitch,
     SpectralLine,
 )
+from gwmock_noise.glitches import GengliBlipGlitch
 
 __all__ = [
     "BlipGlitch",
+    "GengliBlipGlitch",
     "GlitchModel",
     "LogNormalAmplitudeDistribution",
     "NoiseConfig",

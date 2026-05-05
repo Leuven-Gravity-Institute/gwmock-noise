@@ -131,3 +131,51 @@ def test_frame_writer_writes_multiple_segments(tmp_path: Path) -> None:
         "seg_H-H1:MOCK_NOISE_102-1.gwf",
     ]
     assert writer.gps_start == pytest.approx(103.0)
+
+
+def test_frame_writer_write_and_write_segments_without_real_gwpy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Frame writer logic can be exercised via fake gwpy backend/series objects."""
+    frame_output = import_module("gwmock_noise.output.frame")
+
+    class FakeGwfModule:
+        @staticmethod
+        def get_backend() -> str:
+            return "fake"
+
+    class FakeSeries:
+        def __init__(self) -> None:
+            self.channel = ""
+            self.writes: list[tuple[Path, str, bool]] = []
+
+        def write(self, path: Path, *, format: str, overwrite: bool) -> None:  # noqa: A002
+            self.writes.append((path, format, overwrite))
+
+    class FakeAdapter:
+        def __init__(self, base: FixedNoiseSimulator, gps_start: float) -> None:
+            self.base = base
+            self.gps_start = gps_start
+            self._series = {"H1": FakeSeries()}
+
+        def generate(self, *, duration: float, sampling_frequency: float, detectors: list[str], seed: int | None):
+            self.base.generate(duration, sampling_frequency, detectors, seed=seed)
+            self.gps_start += duration
+            return {detector: self._series[detector] for detector in detectors}
+
+    monkeypatch.setattr(frame_output, "import_module", lambda name: FakeGwfModule())
+    monkeypatch.setattr(frame_output, "GWpyAdapter", FakeAdapter)
+
+    writer = FrameWriter(FixedNoiseSimulator(), gps_start=100.25, output_dir=tmp_path, prefix="unit")
+    output = writer.write(duration=1.25, sampling_frequency=8.0, detectors=["H1"], seed=9)
+
+    path = output["H1"]
+    assert path.name == "unit_H-H1:MOCK_NOISE_100p25-1p25.gwf"
+    assert writer.gps_start == pytest.approx(101.5)
+
+    with pytest.raises(ValueError, match="expected gps_end > gps_start"):
+        writer.write_segments(segments=[(3.0, 3.0)], sampling_frequency=8.0, detectors=["H1"])
+
+    assert FrameWriter._format_time_token(10.0) == "10"
+    assert FrameWriter._format_time_token(10.125) == "10p125"

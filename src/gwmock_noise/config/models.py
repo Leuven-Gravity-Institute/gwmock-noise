@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Any, Literal, Self
+from typing import Any, Literal, Self
 
 import numpy as np
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -188,10 +189,13 @@ class ScatteredLightGlitch(GlitchModel):
         }
 
 
-SUPPORTED_GLITCH_KINDS = {
-    "blip": BlipGlitch,
-    "scattered_light": ScatteredLightGlitch,
-}
+def supported_glitch_kinds() -> dict[str, type[GlitchModel]]:
+    """Return all supported glitch-model kinds."""
+    return {
+        "blip": BlipGlitch,
+        "scattered_light": ScatteredLightGlitch,
+        "gengli_blip": importlib.import_module("gwmock_noise.glitches").GengliBlipGlitch,
+    }
 
 
 class OutputConfig(BaseModel):
@@ -274,7 +278,7 @@ class NoiseConfig(BaseModel):
         default=None,
         description="Optional additive spectral lines injected on top of the configured simulator.",
     )
-    glitches: list[Annotated[BlipGlitch | ScatteredLightGlitch, Field(discriminator="kind")]] | None = Field(
+    glitches: list[GlitchModel] | None = Field(
         default=None,
         description="Optional transient glitches injected on top of the configured simulator.",
         min_length=1,
@@ -297,16 +301,17 @@ class NoiseConfig(BaseModel):
         if not isinstance(value, dict):
             raise ValueError("glitches entries must be mappings or GlitchModel instances.")
 
+        kinds = supported_glitch_kinds()
         kind = value.get("kind")
-        if kind not in SUPPORTED_GLITCH_KINDS:
-            raise ValueError(f"glitch kind must be one of {', '.join(sorted(SUPPORTED_GLITCH_KINDS))}.")
+        if kind not in kinds:
+            raise ValueError(f"glitch kind must be one of {', '.join(sorted(kinds))}.")
 
         parsed = dict(value)
         if "amplitude_distribution" not in parsed:
             raise ValueError("glitch configs require an amplitude_distribution mapping.")
         parsed["amplitude_distribution"] = cls._parse_amplitude_distribution(parsed["amplitude_distribution"])
         parsed.pop("kind", None)
-        glitch_class = SUPPORTED_GLITCH_KINDS[kind]
+        glitch_class = kinds[kind]
         return glitch_class(**parsed)
 
     @field_validator("glitches", mode="before")

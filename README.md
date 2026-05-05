@@ -44,6 +44,7 @@ Optional extras (declared in `pyproject.toml`):
 
 - `gwmock-noise[gwpy]` — GWpy-based helpers (for example `GWpyAdapter`)
 - `gwmock-noise[frame]` — GWF frame output (`FrameWriter` / GWpy GWF stack)
+- `gwmock-noise[gengli]` — gengli-backed blip glitches (`GengliBlipGlitch`)
 
 ### CLI
 
@@ -51,6 +52,12 @@ Create a TOML (or YAML/JSON) config and run:
 
 ```bash
 gwmock-noise simulate examples/noise_config_example.toml
+```
+
+To turn a GravitySpy CSV export into a gengli population file:
+
+```bash
+gwmock-noise build-blip-glitch-table --gravity-spy-csv gravity_spy.csv --out glitches.h5
 ```
 
 See [examples/noise_config_example.toml](examples/noise_config_example.toml) and
@@ -80,6 +87,36 @@ For PSD/CSD-driven colored noise, spectral lines, glitches, and streaming
 behavior, use the same `NoiseConfig` fields described in the user guide and API
 reference. For stateful continuation across chunk boundaries, prefer the public
 `open_stream(...)` helper over reseeding separate runs.
+
+The gengli backend plugs into the same `glitches=` surface:
+
+```python
+from pathlib import Path
+
+from gwmock_noise import (
+    DefaultNoiseSimulator,
+    GengliBlipGlitch,
+    LogNormalAmplitudeDistribution,
+    NoiseConfig,
+    OutputConfig,
+)
+
+config = NoiseConfig(
+    detectors=["L1"],
+    duration=8.0,
+    psd_file=Path("noise_psd.txt"),
+    glitches=[
+        GengliBlipGlitch.from_population_file(
+            "glitches.h5",
+            rate=0.25,
+            psd_file=Path("noise_psd.txt"),
+            amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        )
+    ],
+    output=OutputConfig(directory=Path("output"), prefix="gengli"),
+)
+DefaultNoiseSimulator().run(config)
+```
 
 ## Installation
 
