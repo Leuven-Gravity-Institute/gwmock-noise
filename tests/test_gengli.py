@@ -83,7 +83,11 @@ def test_generate_waveform_requires_optional_dependency(tmp_path: Path, monkeypa
     write_blip_population_file(population_file, snr_samples=np.array([8.0]))
     _write_flat_psd(psd_file)
 
-    monkeypatch.setattr(gengli_module, "_load_gengli", lambda: (_ for _ in ()).throw(ModuleNotFoundError("gengli")))
+    monkeypatch.setattr(
+        gengli_module.importlib,
+        "import_module",
+        lambda name: (_ for _ in ()).throw(ModuleNotFoundError(name=name)),
+    )
 
     model = GengliBlipGlitch.from_population_file(
         population_file,
@@ -92,7 +96,7 @@ def test_generate_waveform_requires_optional_dependency(tmp_path: Path, monkeypa
         amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
     )
 
-    with pytest.raises(ModuleNotFoundError, match="gengli"):
+    with pytest.raises(ImportError, match="requires the optional dependency 'gengli'"):
         model.generate_waveform(256.0, rng=np.random.default_rng(2))
 
 
