@@ -4,14 +4,37 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 from typing import Any, Literal, Self
+from urllib.parse import urlparse
 
 import numpy as np
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 DETECTOR_PAIR_SIZE = 2
 TWO_PI = 2.0 * np.pi
+PSD_PRESET_PACKAGE = "gwmock_noise.data.psd"
+PSD_PRESET_SUFFIX = ".txt"
+REMOTE_PSD_SCHEMES = {"http", "https"}
+
+
+def _is_remote_psd_reference(value: str) -> bool:
+    """Return whether a PSD reference is an HTTP(S) URL."""
+    parsed = urlparse(value)
+    return parsed.scheme in REMOTE_PSD_SCHEMES and bool(parsed.netloc)
+
+
+def _resolve_bundled_psd_preset(value: str) -> Path | None:
+    """Resolve a bare preset name to a bundled PSD asset."""
+    if any(separator in value for separator in ("/", "\\")) or Path(value).suffix:
+        return None
+
+    resource = resources.files(PSD_PRESET_PACKAGE).joinpath(f"{value}{PSD_PRESET_SUFFIX}")
+    if not resource.is_file():
+        return None
+
+    return Path(str(resource))
 
 
 @dataclass(slots=True)
@@ -247,9 +270,9 @@ class NoiseConfig(BaseModel):
         default=None,
         description="Random seed for reproducibility. If None, use system entropy.",
     )
-    psd_file: Path | None = Field(
+    psd_file: str | Path | None = Field(
         default=None,
-        description="Optional PSD file for FFT-based colored-noise simulation.",
+        description="Optional PSD reference for FFT-based colored-noise simulation as a local path, HTTP(S) URL, or bundled preset name.",
     )
     psd_schedule: list[tuple[float, Path]] | None = Field(
         default=None,
@@ -321,6 +344,22 @@ class NoiseConfig(BaseModel):
         if value is None:
             return value
         return [cls._parse_glitch(entry) for entry in value]
+
+    @field_validator("psd_file", mode="before")
+    @classmethod
+    def parse_psd_file(cls, value: Any) -> str | Path | None:
+        """Normalize PSD inputs to local paths, remote URLs, or bundled presets."""
+        if value is None or isinstance(value, Path):
+            return value
+        if not isinstance(value, str):
+            raise TypeError("psd_file must be a string, Path, or None.")
+
+        bundled_preset = _resolve_bundled_psd_preset(value)
+        if bundled_preset is not None:
+            return bundled_preset
+        if _is_remote_psd_reference(value):
+            return value
+        return Path(value)
 
     def _validate_frequency_bounds(self, *, nyquist: float) -> None:
         """Validate low/high cutoff values against Nyquist."""
