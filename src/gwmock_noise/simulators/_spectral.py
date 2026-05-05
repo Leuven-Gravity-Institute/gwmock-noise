@@ -3,10 +3,30 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 import numpy as np
 
 SPECTRAL_COLUMNS = 2
+REMOTE_SPECTRAL_SCHEMES = {"http", "https"}
+
+
+def _is_remote_spectral_reference(file_path: str | Path) -> bool:
+    """Return whether the reference points to an HTTP(S) resource."""
+    if isinstance(file_path, Path):
+        return False
+
+    parsed = urlparse(file_path)
+    return parsed.scheme in REMOTE_SPECTRAL_SCHEMES and bool(parsed.netloc)
+
+
+def normalize_spectral_reference(file_path: str | Path) -> str | Path:
+    """Normalize spectral references while preserving remote URLs."""
+    if isinstance(file_path, Path):
+        return file_path
+
+    return file_path if _is_remote_spectral_reference(file_path) else Path(file_path)
 
 
 def load_spectral_series(
@@ -14,20 +34,50 @@ def load_spectral_series(
     *,
     kind: str,
     complex_values: bool = False,
+    timeout: float = 10.0,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Load a two-column spectral series from disk."""
-    path = Path(file_path)
-    if not path.exists():
+    """Load a two-column spectral series from disk or a remote URL.
+
+    Args:
+        file_path: Path to the spectral file.
+        kind: The type of spectral series to load.
+        complex_values: Whether the spectral values are complex-valued.
+        timeout: The timeout for remote requests.
+
+    Returns:
+        A tuple of frequency and value arrays.
+
+    Raises:
+        FileNotFoundError: If the file is not found.
+        ValueError: If the file format is unsupported.
+    """
+    source = normalize_spectral_reference(file_path)
+    is_remote = isinstance(source, str)
+    suffix_source = urlparse(source).path if is_remote else str(source)
+    suffix = Path(suffix_source).suffix.lower()
+
+    if not is_remote and not source.exists():
+        path = source
         raise FileNotFoundError(f"{kind} file not found: {path}")
 
-    if path.suffix == ".npy":
-        data = np.load(path)
-    elif path.suffix == ".txt":
-        data = np.loadtxt(path, dtype=np.complex128 if complex_values else float)
-    elif path.suffix == ".csv":
-        data = np.loadtxt(path, delimiter=",", dtype=np.complex128 if complex_values else float)
+    if suffix == ".npy":
+        if is_remote:
+            raise ValueError(f"Unsupported remote {kind} file format: {suffix}. Use .txt or .csv for URL sources.")
+        data = np.load(source)
+    elif suffix == ".txt":
+        if is_remote:
+            with urlopen(source, timeout=timeout) as response:  # noqa: S310
+                data = np.loadtxt(response, dtype=np.complex128 if complex_values else float)
+        else:
+            data = np.loadtxt(source, dtype=np.complex128 if complex_values else float)
+    elif suffix == ".csv":
+        if is_remote:
+            with urlopen(source, timeout=timeout) as response:  # noqa: S310
+                data = np.loadtxt(response, delimiter=",", dtype=np.complex128 if complex_values else float)
+        else:
+            data = np.loadtxt(source, delimiter=",", dtype=np.complex128 if complex_values else float)
     else:
-        raise ValueError(f"Unsupported {kind} file format: {path.suffix}. Use .npy, .txt, or .csv.")
+        raise ValueError(f"Unsupported {kind} file format: {suffix}. Use .npy, .txt, or .csv.")
 
     if data.ndim != SPECTRAL_COLUMNS or data.shape[1] != SPECTRAL_COLUMNS:
         raise ValueError(f"{kind} file must have shape (N, 2).")

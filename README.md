@@ -118,6 +118,13 @@ config = NoiseConfig(
 DefaultNoiseSimulator().run(config)
 ```
 
+`NoiseConfig.psd_file` also accepts bundled Einstein Telescope preset names, so
+you can use `psd_file="ET_10_full_cryo_psd"` without managing the PSD file
+yourself. Available presets are `ET_D_psd`, `ET_10_HF_psd`,
+`ET_10_full_cryo_psd`, `ET_15_HF_psd`, `ET_15_full_cryo_psd`, `ET_20_HF_psd`,
+and `ET_20_full_cryo_psd`. Local paths and HTTP(S) URLs remain supported too
+(for remote sources, use `.txt` or `.csv`).
+
 ## Installation
 
 We recommend using `uv` to manage virtual environments for installing

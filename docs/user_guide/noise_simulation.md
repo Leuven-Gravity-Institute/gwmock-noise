@@ -124,6 +124,11 @@ for detector, path in result.output_paths.items():
     print(detector, "->", path)
 ```
 
+`NoiseConfig.psd_file` accepts local paths, HTTP(S) URLs, and bundled Einstein
+Telescope preset names. The built-in presets are `ET_D_psd`, `ET_10_HF_psd`,
+`ET_10_full_cryo_psd`, `ET_15_HF_psd`, `ET_15_full_cryo_psd`, `ET_20_HF_psd`,
+and `ET_20_full_cryo_psd`.
+
 The upstream `gwmock` package is expected to import and compose
 `gwmock_noise.NoiseConfig` into its own configuration model and to drive a noise
 simulator that implements the `gwmock_noise.BaseNoiseSimulator` interface.

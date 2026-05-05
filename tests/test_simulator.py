@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -243,8 +244,9 @@ def test_default_simulator_rejects_empty_spectral_lines_when_bypassing_model_val
 def test_simulation_result_attributes() -> None:
     """SimulationResult has expected attributes for upstream consumers."""
     config = NoiseConfig()
-    result = SimulationResult(output_paths={"H1": Path("/tmp/h1.json")}, config=config)
-    assert result.output_paths["H1"] == Path("/tmp/h1.json")
+    tmp_path = Path(tempfile.gettempdir()) / "h1.json"
+    result = SimulationResult(output_paths={"H1": tmp_path}, config=config)
+    assert result.output_paths["H1"] == tmp_path
     assert result.config is config
 
 

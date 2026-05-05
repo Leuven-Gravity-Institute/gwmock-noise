@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 
-from gwmock_noise.simulators._spectral import load_spectral_series
+from gwmock_noise.simulators._spectral import load_spectral_series, normalize_spectral_reference
 from gwmock_noise.simulators._stitching import OVERLAP_SIZE, WINDOW_SIZE, OverlapAddStitcher
 
 PSD_WINDOW_ALPHA = 1e-3
@@ -65,9 +65,12 @@ class ColoredNoiseSimulator:
             if len(offsets) != len(set(offsets)):
                 raise ValueError("psd_schedule entries must use distinct GPS offsets.")
 
-        self.psd_file = Path(psd_file) if psd_file is not None else None
+        self.psd_file = normalize_spectral_reference(psd_file) if psd_file is not None else None
         self.psd_schedule = (
-            [(float(gps_offset_seconds), Path(path)) for gps_offset_seconds, path in psd_schedule]
+            [
+                (float(gps_offset_seconds), normalize_spectral_reference(path))
+                for gps_offset_seconds, path in psd_schedule
+            ]
             if psd_schedule is not None
             else None
         )
