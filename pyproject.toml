@@ -62,9 +62,6 @@ style = "semver" # or pep440, semver, etc.
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
 
-[tool.hatch.build]
-include = ["src/gwmock_noise/data/psd/*.txt"]
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/gwmock_noise"]
 
