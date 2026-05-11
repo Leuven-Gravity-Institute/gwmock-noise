@@ -29,7 +29,6 @@ def _resolve_bundled_psd(name: str) -> Path | None:
                 return Path(str(candidate))
         except (TypeError, AttributeError):
             logger.debug(f"Candidate {candidate} is not a file in the bundled PSDs.")
-            pass
     return None
 
 
