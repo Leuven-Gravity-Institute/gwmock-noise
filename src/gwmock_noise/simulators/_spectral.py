@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import importlib.resources
+import logging
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 SPECTRAL_COLUMNS = 2
 REMOTE_SPECTRAL_SCHEMES = {"http", "https"}
@@ -25,6 +28,7 @@ def _resolve_bundled_psd(name: str) -> Path | None:
             if candidate.is_file():
                 return Path(str(candidate))
         except (TypeError, AttributeError):
+            logger.debug(f"Candidate {candidate} is not a file in the bundled PSDs.")
             pass
     return None
 
