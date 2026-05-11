@@ -40,17 +40,17 @@ TOML, YAML, or JSON into the same model.
 
 Supported top-level fields:
 
-| Field                   | Type        | Description                                                        |
-| ----------------------- | ----------- | ------------------------------------------------------------------ |
-| `detectors`             | list[str]   | Names of detectors to simulate (for example `H1`, `L1`)            |
-| `duration`              | float       | Duration of the realization in seconds (`> 0`)                     |
-| `sampling_frequency`    | float       | Sampling frequency in Hz (`> 0`)                                   |
-| `output.directory`      | path        | Output directory for generated files                               |
-| `output.prefix`         | str         | Prefix for output file names                                       |
-| `output.format`         | str         | Artifact format written by `run(config)`: `npy` (default) or `gwf` |
-| `output.gps_start`      | float       | GPS start time used for timestamped formats such as `gwf`          |
-| `output.channel_prefix` | str         | Channel-name prefix for `gwf` output (default: `MOCK`)             |
-| `seed`                  | int or null | Optional random seed for reproducibility                           |
+| Field                   | Type            | Description                                                        |
+| ----------------------- | --------------- | ------------------------------------------------------------------ |
+| `detectors`             | `list[str]`     | Names of detectors to simulate (for example `H1`, `L1`)            |
+| `duration`              | `float`         | Duration of the realization in seconds (`> 0`)                     |
+| `sampling_frequency`    | `float`         | Sampling frequency in Hz (`> 0`)                                   |
+| `output.directory`      | `path`          | Output directory for generated files                               |
+| `output.prefix`         | `str`           | Prefix for output file names                                       |
+| `output.format`         | `str`           | Artifact format written by `run(config)`: `npy` (default) or `gwf` |
+| `output.gps_start`      | `float`         | GPS start time used for timestamped formats such as `gwf`          |
+| `output.channel_prefix` | `str`           | Channel-name prefix for `gwf` output (default: `MOCK`)             |
+| `seed`                  | `int` or `null` | Optional random seed for reproducibility                           |
 
 For integration with the upstream `gwmock` package, the same structure can be
 nested under a `noise` key inside a larger configuration file. In that case the

@@ -52,10 +52,12 @@ extras).
 
 ## GWOSC real-noise fetching
 
-Models, segment filtering, and data fetching for retrieving real detector strain
-data from GWOSC.
+Models, segment filtering, data fetching, and a `NoiseSimulator` wrapper for
+retrieving real detector strain data from GWOSC.
 
 ::: gwmock_noise.gwosc
+
+::: gwmock_noise.simulators.real_noise
 
 ## Command-line interface
 

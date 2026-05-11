@@ -106,7 +106,7 @@ class TestGwoscNoiseConfig:
         assert config.detectors == ["H1", "L1"]
         assert config.sample_rate == 4096.0
         assert config.host == "https://gwosc.org"
-        assert config.cache is False
+        assert config.cache_dir is None
 
     def test_duration_property(self) -> None:
         """Duration is gps_end - gps_start."""

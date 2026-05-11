@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import Path
 from typing import Self
 
 from pydantic import BaseModel, Field, model_validator
@@ -93,7 +94,10 @@ class GwoscNoiseConfig(BaseModel):
             4096 Hz, with some event datasets at 16384 Hz.
         filters: Filter configuration for excluding segments.
         host: GWOSC host URL.
-        cache: Whether to cache downloaded files locally.
+        cache_dir: Optional directory for file-level caching. When set,
+            downloaded HDF5 frame files are saved locally and reused on
+            subsequent requests for the same GPS interval. When ``None``,
+            data is downloaded on every call without caching.
     """
 
     detectors: list[str] = Field(
@@ -122,9 +126,9 @@ class GwoscNoiseConfig(BaseModel):
         default="https://gwosc.org",
         description="GWOSC host URL.",
     )
-    cache: bool = Field(
-        default=False,
-        description="Whether to cache downloaded files locally.",
+    cache_dir: Path | None = Field(
+        default=None,
+        description="Optional directory for file-level caching of downloaded HDF5 files.",
     )
 
     model_config = {"frozen": False, "extra": "ignore"}

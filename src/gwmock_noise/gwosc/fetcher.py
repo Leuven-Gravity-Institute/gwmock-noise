@@ -1,14 +1,16 @@
 """Fetch real detector strain data from GWOSC.
 
-Uses ``gwpy.timeseries.TimeSeries.fetch_open_data()`` to download
-HDF5 strain files and applies user-configured filters to return
-clean noise segments.
+Downloads HDF5 strain files from GWOSC, supports file-level caching to
+a local directory, and applies user-configured filters to return clean
+noise segments.
 """
 
 from __future__ import annotations
 
 from importlib import import_module
+from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.request import urlretrieve
 
 from gwmock_noise.gwosc.filters import GwoscSegmentFilter
 from gwmock_noise.gwosc.models import GwoscNoiseConfig
@@ -17,6 +19,7 @@ if TYPE_CHECKING:
     from gwpy.timeseries import TimeSeries
 
 _GWPY_IMPORT_ERROR = "gwpy is required to use GwoscNoiseFetcher. Install it with `pip install gwmock-noise[gwpy]`."
+_GWOSC_IMPORT_ERROR = "gwosc is required to use GwoscNoiseFetcher. Install it with `pip install gwmock-noise[gwosc]`."
 
 
 def _load_timeseries() -> type[TimeSeries]:
@@ -28,12 +31,89 @@ def _load_timeseries() -> type[TimeSeries]:
     return module.TimeSeries
 
 
+def _import_gwosc_locate():
+    """Import and return gwosc.locate on demand."""
+    try:
+        return import_module("gwosc.locate")
+    except ImportError as exc:
+        raise ImportError(_GWOSC_IMPORT_ERROR) from exc
+
+
+def _fetch_via_cache(  # noqa: PLR0913
+    detector: str,
+    gps_start: float,
+    gps_end: float,
+    sample_rate: int,
+    cache_dir: Path,
+    host: str,
+) -> TimeSeries:
+    """Fetch strain data using a local file cache.
+
+    Downloads HDF5 files from GWOSC to ``cache_dir``, reusing cached
+    files on subsequent calls for the same GPS interval.
+
+    Args:
+        detector: Detector prefix (e.g. ``"H1"``).
+        gps_start: GPS start time.
+        gps_end: GPS end time.
+        sample_rate: Sampling rate in Hz.
+        cache_dir: Local directory for cached HDF5 files.
+        host: GWOSC host URL.
+
+    Returns:
+        A ``gwpy.TimeSeries`` for the full GPS interval.
+
+    Raises:
+        ValueError: If no GWOSC data URLs are found or download fails.
+    """
+    locate = _import_gwosc_locate()
+    timeseries_cls = _load_timeseries()
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    urls = locate.get_urls(
+        detector=detector,
+        start=int(gps_start),
+        end=int(gps_end),
+        sample_rate=sample_rate,
+        host=host,
+    )
+
+    if not urls:
+        raise ValueError(f"No GWOSC data URLs found for {detector} [{gps_start}, {gps_end}) at {sample_rate} Hz.")
+
+    series_parts: list[TimeSeries] = []
+    for url in urls:
+        filename = url.rstrip("/").rsplit("/", 1)[-1]
+        cache_path = cache_dir / filename
+
+        if not cache_path.exists():
+            urlretrieve(url, cache_path)  # noqa: S310
+
+        series_part = timeseries_cls.read(cache_path, format="hdf5")
+        series_parts.append(series_part)
+
+    if len(series_parts) == 1:
+        full_series = series_parts[0]
+    else:
+        full_series = series_parts[0]
+        for part in series_parts[1:]:
+            full_series = full_series.append(part)
+
+    cropped = full_series.crop(gps_start, gps_end)
+    cropped.name = detector
+    return cropped
+
+
 class GwoscNoiseFetcher:
     """Fetch real detector noise data from GWOSC with optional filtering.
 
-    Downloads strain data via ``gwpy.TimeSeries.fetch_open_data()`` and
-    applies user-configured filters to exclude segments containing GW
-    signals and data-quality issues.
+    Downloads strain data from GWOSC and applies user-configured filters
+    to exclude segments containing GW signals and data-quality issues.
+
+    When ``cache_dir`` is configured, HDF5 files are saved locally and
+    reused on subsequent requests — avoiding repeated downloads for the
+    same GPS interval.
 
     Attributes:
         config: The GWOSC noise fetching configuration.
@@ -44,11 +124,43 @@ class GwoscNoiseFetcher:
 
         Args:
             config: Configuration specifying detectors, GPS range,
-                sample rate, and filtering options.
+                sample rate, filtering options, and optional cache
+                directory.
         """
         _load_timeseries()
         self.config = config
         self._segment_filter = GwoscSegmentFilter(config.filters)
+
+    def _fetch_detector(self, detector: str) -> TimeSeries:
+        """Fetch strain data for a single detector, using cache if configured.
+
+        Args:
+            detector: Detector prefix.
+
+        Returns:
+            A ``gwpy.TimeSeries`` for the full GPS interval.
+        """
+        timeseries_cls = _load_timeseries()
+        # gwpy 4.x expects int sample_rate, not float
+        sample_rate = int(self.config.sample_rate)
+
+        if self.config.cache_dir is not None:
+            return _fetch_via_cache(
+                detector=detector,
+                gps_start=self.config.gps_start,
+                gps_end=self.config.gps_end,
+                sample_rate=sample_rate,
+                cache_dir=self.config.cache_dir,
+                host=self.config.host,
+            )
+
+        return timeseries_cls.fetch_open_data(
+            detector,
+            self.config.gps_start,
+            self.config.gps_end,
+            sample_rate=sample_rate,
+            host=self.config.host,
+        )
 
     def fetch_raw(self) -> dict[str, TimeSeries]:
         """Fetch raw strain data for all detectors without filtering.
@@ -60,19 +172,10 @@ class GwoscNoiseFetcher:
         Raises:
             ValueError: If no data is available for any detector.
         """
-        timeseries_cls = _load_timeseries()
         result: dict[str, TimeSeries] = {}
         for detector in self.config.detectors:
             try:
-                series = timeseries_cls.fetch_open_data(
-                    detector,
-                    self.config.gps_start,
-                    self.config.gps_end,
-                    sample_rate=self.config.sample_rate,
-                    host=self.config.host,
-                    cache=self.config.cache,
-                )
-                result[detector] = series
+                result[detector] = self._fetch_detector(detector)
             except Exception as exc:
                 raise ValueError(
                     f"Failed to fetch data for {detector} [{self.config.gps_start}, {self.config.gps_end}): {exc}"
@@ -93,8 +196,6 @@ class GwoscNoiseFetcher:
             ValueError: If no data is available for any detector or
                 no clean segments are found.
         """
-        timeseries_cls = _load_timeseries()
-
         clean_segments = self._segment_filter.compute_clean_segments(
             self.config.gps_start,
             self.config.gps_end,
@@ -111,14 +212,7 @@ class GwoscNoiseFetcher:
                     f"Try relaxing the filter criteria."
                 )
 
-            full_series = timeseries_cls.fetch_open_data(
-                detector,
-                self.config.gps_start,
-                self.config.gps_end,
-                sample_rate=self.config.sample_rate,
-                host=self.config.host,
-                cache=self.config.cache,
-            )
+            full_series = self._fetch_detector(detector)
 
             clean_list: list[TimeSeries] = []
             for seg_start, seg_end in segments:
