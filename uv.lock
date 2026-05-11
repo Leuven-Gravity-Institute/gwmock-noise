@@ -840,7 +840,7 @@ release = [
 [package.metadata]
 requires-dist = [
     { name = "gengli", marker = "extra == 'gengli'", specifier = ">=0.2.0" },
-    { name = "gwosc", marker = "extra == 'gwosc'", specifier = ">=0.7" },
+    { name = "gwosc", marker = "extra == 'gwosc'", specifier = ">=0.8.2" },
     { name = "gwpy", marker = "extra == 'frame'" },
     { name = "gwpy", marker = "extra == 'gwosc'" },
     { name = "gwpy", marker = "extra == 'gwpy'" },
