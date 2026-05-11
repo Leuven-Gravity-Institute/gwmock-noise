@@ -39,16 +39,18 @@ uv pip install gwmock-noise
 
 Published wheels expose three optional dependency groups:
 
-| Extra    | Purpose                                                        |
-| -------- | -------------------------------------------------------------- |
-| `gwpy`   | GWpy-based helpers (`GWpyAdapter`, parts of the GWF stack)     |
-| `frame`  | GWF frame writing (`FrameWriter`; pulls `gwpy` and `lalsuite`) |
-| `gengli` | gengli-backed blip glitches (`GengliBlipGlitch`)               |
+| Extra    | Purpose                                                               |
+| -------- | --------------------------------------------------------------------- |
+| `gwpy`   | GWpy-based helpers (`GWpyAdapter`, parts of the GWF stack)            |
+| `frame`  | GWF frame writing (`FrameWriter`; pulls `gwpy` and `lalsuite`)        |
+| `gengli` | gengli-backed blip glitches (`GengliBlipGlitch`)                      |
+| `gwosc`  | Real noise from GWOSC (`GwoscNoiseFetcher`; pulls `gwpy` and `gwosc`) |
 
 ```bash
 uv pip install "gwmock-noise[gwpy]"
 uv pip install "gwmock-noise[frame]"
 uv pip install "gwmock-noise[gengli]"
+uv pip install "gwmock-noise[gwosc]"
 ```
 
 Development and documentation tooling **are not extras**; they live in uv
