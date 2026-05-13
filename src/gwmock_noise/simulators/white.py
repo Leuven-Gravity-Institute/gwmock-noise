@@ -58,6 +58,8 @@ class WhiteNoiseSimulator(ConfigurableNoiseSimulator):
         self.seed = seed
         rng = np.random.default_rng(seed)
         n_samples = round(duration * sampling_frequency)
+        if n_samples < 1:
+            raise ValueError("duration and sampling_frequency must produce at least one sample.")
         return {detector: rng.standard_normal(n_samples).astype(float, copy=False) for detector in detectors}
 
     def generate_stream(
