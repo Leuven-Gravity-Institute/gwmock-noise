@@ -142,7 +142,7 @@ Injects **realistic blip glitches** sampled from a GravitySpy population — mor
 physically accurate than the built-in parametric glitch model.
 
 ```bash
-uv pip install gwmock-noise[gengli]
+uv pip install "gwmock-noise[gengli]"
 ```
 
 First build a population file from a GravitySpy CSV:
@@ -243,7 +243,7 @@ Centre — use this when you need authentic detector noise for a specific GPS
 interval.
 
 ```bash
-uv pip install gwmock-noise[gwosc]
+uv pip install "gwmock-noise[gwosc]"
 ```
 
 ```python
@@ -352,7 +352,7 @@ config = NoiseConfig(
 )
 ```
 
-Requires `uv pip install gwmock-noise[frame]`.
+Requires `uv pip install "gwmock-noise[frame]"`.
 
 ---
 
