@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -12,19 +11,23 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
-# Executable path of gwmock-noise CLI
-CLI_BIN = str(shutil.which("gwmock-noise"))
 
 
-def _run_python(*args: str, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    """Run Python with the project source tree on ``PYTHONPATH``."""
+def _runtime_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """Environment with ``src`` on ``PYTHONPATH`` (matches uninstalled dev runs)."""
     runtime_env = os.environ.copy()
     pythonpath = str(SRC_DIR)
     if runtime_env.get("PYTHONPATH"):
         pythonpath = f"{pythonpath}{os.pathsep}{runtime_env['PYTHONPATH']}"
     runtime_env["PYTHONPATH"] = pythonpath
-    if env is not None:
-        runtime_env.update(env)
+    if extra is not None:
+        runtime_env.update(extra)
+    return runtime_env
+
+
+def _run_python(*args: str, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Run Python with the project source tree on ``PYTHONPATH``."""
+    runtime_env = _runtime_env(env)
 
     return subprocess.run(  # noqa: S603
         [sys.executable, *args],
@@ -79,12 +82,12 @@ def test_example_configs_run(tmp_path: Path) -> None:
         local_config = workdir / source.name
         local_config.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
         result = subprocess.run(  # noqa: S603
-            [CLI_BIN, "simulate", local_config.name],
+            [sys.executable, "-m", "gwmock_noise.cli.main", "simulate", local_config.name],
             cwd=workdir,
             capture_output=True,
             text=True,
             check=False,
-            env={**os.environ, "TMPDIR": str(tmp_path)},
+            env=_runtime_env({"TMPDIR": str(tmp_path)}),
         )
         assert result.returncode == 0, result.stderr
         assert list(workdir.rglob("*.npy"))

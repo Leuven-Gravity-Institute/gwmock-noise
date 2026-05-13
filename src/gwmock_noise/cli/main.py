@@ -91,3 +91,6 @@ def register_commands() -> None:
 
 
 register_commands()
+
+if __name__ == "__main__":
+    app()
