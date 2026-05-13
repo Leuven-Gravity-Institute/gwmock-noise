@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -11,7 +12,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
-CLI_BIN = REPO_ROOT / ".venv" / "bin" / "gwmock-noise"
+# Executable path of gwmock-noise CLI
+CLI_BIN = str(shutil.which("gwmock-noise"))
 
 
 def _run_python(*args: str, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -77,7 +79,7 @@ def test_example_configs_run(tmp_path: Path) -> None:
         local_config = workdir / source.name
         local_config.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
         result = subprocess.run(  # noqa: S603
-            [str(CLI_BIN), "simulate", local_config.name],
+            [CLI_BIN, "simulate", local_config.name],
             cwd=workdir,
             capture_output=True,
             text=True,
