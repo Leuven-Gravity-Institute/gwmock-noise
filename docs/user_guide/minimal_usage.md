@@ -363,6 +363,9 @@ simulator** — lets you generate synthetic noise that mimics real detector
 behaviour.
 
 ```python
+from pathlib import Path
+
+import numpy as np
 from gwmock_noise.gwosc import GwoscNoiseConfig, GwoscNoiseFetcher
 from gwmock_noise.diagnostics import estimate_psd
 from gwmock_noise import ColoredNoiseSimulator
@@ -370,8 +373,11 @@ from gwmock_noise import ColoredNoiseSimulator
 config = GwoscNoiseConfig(detectors=["H1"], gps_start=1135136000, gps_end=1135146000)
 fetcher = GwoscNoiseFetcher(config)
 clean = fetcher.fetch_clean()
-freqs, psd = estimate_psd(clean["H1"][0].value, fs=4096.0)
+freqs, psd = estimate_psd(clean["H1"][0].value, sampling_frequency=4096.0)
 
-# Use the estimated PSD for synthetic colored noise
-sim = ColoredNoiseSimulator(psd_file=("freqs", "psd"), detectors=["H1"])
+# ColoredNoiseSimulator.psd_file is a str | Path (or URL str), not in-memory arrays —
+# write the (frequency, PSD) columns from estimate_psd(), then pass that path.
+psd_path = Path("estimated_psd.txt")
+np.savetxt(psd_path, np.column_stack((freqs, psd)))
+sim = ColoredNoiseSimulator(psd_file=psd_path, detectors=["H1"], sampling_frequency=4096.0)
 ```
