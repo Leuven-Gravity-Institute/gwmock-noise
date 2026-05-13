@@ -47,10 +47,12 @@ Copyright &copy; 2026 Isaac C. F. Wong
 nav = [
   { "Get Started" = "index.md" },
   { "Installation" = "user_guide/installation.md" },
-  { "Quick Start" = "user_guide/quick_start.md" },
-  { "Noise Simulation" = "user_guide/noise_simulation.md" },
-  { "GWOSC Real Noise" = "user_guide/gwosc_noise.md" },
-  { "Custom Simulators" = "user_guide/custom_simulators.md" },
+  { "Minimal Usage" = "user_guide/minimal_usage.md" },
+  { "Advanced" = [
+    { "Noise Simulation" = "user_guide/noise_simulation.md" },
+    { "GWOSC Real Noise" = "user_guide/gwosc_noise.md" },
+    { "Custom Simulators" = "user_guide/custom_simulators.md" },
+  ] },
   { "Development" = [
     { "Code Quality" = "dev/code_quality.md" },
     { "Troubleshooting" = "dev/troubleshooting.md" },

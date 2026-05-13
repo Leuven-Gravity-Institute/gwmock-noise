@@ -5,6 +5,9 @@ options and dependency groups, see [Installation](installation.md). For every
 `NoiseConfig` field and output format, see
 [Noise simulation](noise_simulation.md).
 
+!!! tip "Just want a quick answer?" See [Minimal Usage](minimal_usage.md) for
+copy-paste CLI and Python snippets organised by what you want to do.
+
 ## 1. Install from PyPI
 
 ```bash

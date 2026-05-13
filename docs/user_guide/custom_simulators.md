@@ -1,4 +1,6 @@
-# Custom simulators
+# Advanced: Custom simulators
+
+For minimal usage snippets see [Minimal usage](minimal_usage.md).
 
 `gwmock-noise` exposes a public structural protocol,
 `gwmock_noise.NoiseSimulator`, for simulator implementations that want to plug

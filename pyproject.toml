@@ -19,12 +19,12 @@ classifiers = [
 requires-python = ">=3.12"
 dynamic = ["version"]
 dependencies = [
-    "numpy>=2.4.4",
-    "h5py>=3.16.0",
-    "pydantic>=2.13.4",
-    "scipy>=1.17.1",
-    "pyyaml>=6.0.3",
-    "typer>=0.25.1",
+  "numpy>=2.4.4",
+  "h5py>=3.16.0",
+  "pydantic>=2.13.4",
+  "scipy>=1.17.1",
+  "pyyaml>=6.0.3",
+  "typer>=0.25.1",
 ]
 
 [project.optional-dependencies]
@@ -36,11 +36,11 @@ gwosc = ["gwpy", "gwosc>=0.8.2"]
 [dependency-groups]
 dev = [
   "ruff>=0.15.12",
-  "pre-commit>=4.6.0",
+  "prek>=0.3.13",
   "pytest-cov>=7.1.0",
   "pytest-mock>=3.15.1",
   "pytest>=9.0.3",
-  "pytest-github-actions-annotate-failures>=0.4.0"
+  "pytest-github-actions-annotate-failures>=0.4.0",
 ]
 docs = ["zensical>=0.0.40", "mkdocstrings-python>=2.0.3"]
 build = ["hatch>=1.16.5"]

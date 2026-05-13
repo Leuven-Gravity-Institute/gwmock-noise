@@ -1,4 +1,6 @@
-# Real noise from GWOSC
+# Advanced: Real noise from GWOSC
+
+For CLI and minimal usage snippets see [Minimal usage](minimal_usage.md).
 
 The `gwmock_noise.gwosc` subpackage fetches real gravitational-wave detector
 strain data from the

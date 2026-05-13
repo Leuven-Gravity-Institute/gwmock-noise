@@ -1,7 +1,9 @@
-# Noise simulation
+# Advanced: Noise simulation
 
-This page shows how to run a basic noise simulation with `gwmock-noise`, using
-the simulator interface and the configuration-file-based CLI.
+For CLI and Python snippets see [Minimal usage](minimal_usage.md).
+
+This page details every configuration option, simulator variant, and output
+format in `gwmock-noise`.
 
 ## Quick example (CLI, TOML)
 
