@@ -17,7 +17,7 @@ lines = [{ frequency = 60.0, amplitude = 1.0e-3 }]
 [[components]]
 simulator = "glitches"
 models = [
-  { kind = "blip", rate = 0.25, width = 0.01, amplitude_distribution = { distribution = "lognormal", mean = 0.5, std = 0.0 } }
+  { kind = "blip", rate = 0.25, width = 0.01, amplitude_distribution = { distribution = "lognormal", mean = 0.5, std = 0.1 } }
 ]
 
 [output]
