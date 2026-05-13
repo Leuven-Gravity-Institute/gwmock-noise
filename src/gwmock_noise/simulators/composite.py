@@ -51,13 +51,14 @@ class CompositeNoiseSimulator:
         self.duration = duration
         self.sampling_frequency = sampling_frequency
         self.detectors = runtime_detectors
-        self.seed = seed if seed is not None else self.seed
+        effective_seed = self.seed if seed is None else seed
+        self.seed = effective_seed
 
         combined: dict[str, np.ndarray] | None = None
         for index, (simulator_name, simulator) in enumerate(self._components):
             component_seed = None
-            if seed is not None:
-                component_seed = _stable_component_seed(seed, index=index, simulator_name=simulator_name)
+            if effective_seed is not None:
+                component_seed = _stable_component_seed(effective_seed, index=index, simulator_name=simulator_name)
             component_result = simulator.generate(duration, sampling_frequency, runtime_detectors, seed=component_seed)
 
             if combined is None:
