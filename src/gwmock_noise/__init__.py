@@ -5,16 +5,14 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-from gwmock_noise.config import (
+from gwmock_noise.config import NoiseComponentConfig, NoiseConfig, OutputConfig, load_config
+from gwmock_noise.gaussian import SpectralLine
+from gwmock_noise.glitches import (
     BlipGlitch,
     GengliBlipGlitch,
     GlitchModel,
     LogNormalAmplitudeDistribution,
-    NoiseConfig,
-    OutputConfig,
     ScatteredLightGlitch,
-    SpectralLine,
-    load_config,
 )
 from gwmock_noise.parallel import ParallelAdapter
 from gwmock_noise.simulators import (
@@ -22,9 +20,12 @@ from gwmock_noise.simulators import (
     ARNoiseSimulator,
     BaseNoiseSimulator,
     ColoredNoiseSimulator,
+    CompositeNoiseSimulator,
+    ConfigurableNoiseSimulator,
     CorrelatedARNoiseSimulator,
     CorrelatedNoiseSimulator,
     DefaultNoiseSimulator,
+    GlitchNoiseSimulator,
     InjectGlitches,
     NoiseSimulator,
     SchumannNoiseSimulator,
@@ -32,6 +33,7 @@ from gwmock_noise.simulators import (
     SimulationResult,
     SpectralLineSimulator,
     TimeVaryingColoredNoiseSimulator,
+    WhiteNoiseSimulator,
     open_stream,
     take,
 )
@@ -58,6 +60,8 @@ __all__ = [
     "BaseNoiseSimulator",
     "BlipGlitch",
     "ColoredNoiseSimulator",
+    "CompositeNoiseSimulator",
+    "ConfigurableNoiseSimulator",
     "CorrelatedARNoiseSimulator",
     "CorrelatedNoiseSimulator",
     "DefaultNoiseSimulator",
@@ -67,6 +71,7 @@ __all__ = [
     "GWpyAdapter",
     "GengliBlipGlitch",
     "GlitchModel",
+    "GlitchNoiseSimulator",
     "GwoscFilterConfig",
     "GwoscNoiseConfig",
     "GwoscNoiseFetcher",
@@ -74,6 +79,7 @@ __all__ = [
     "GwoscSegmentFilter",
     "InjectGlitches",
     "LogNormalAmplitudeDistribution",
+    "NoiseComponentConfig",
     "NoiseConfig",
     "NoiseSimulator",
     "OutputConfig",
@@ -85,6 +91,7 @@ __all__ = [
     "SpectralLine",
     "SpectralLineSimulator",
     "TimeVaryingColoredNoiseSimulator",
+    "WhiteNoiseSimulator",
     "__version__",
     "compare_psd",
     "estimate_psd",

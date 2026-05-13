@@ -17,15 +17,29 @@ lazy diagnostics/output symbols).
 
 ## Configuration
 
-Pydantic models, dataclass glitch/line helpers, and `load_config` for
-TOML/YAML/JSON.
+Pydantic schema models and `load_config` for TOML/YAML/JSON.
 
 ::: gwmock_noise.config
 
+## Gaussian noise models and helpers
+
+Spectral-line definitions plus PSD reference helpers used by Gaussian-noise
+configuration and simulators.
+
+::: gwmock_noise.gaussian
+
+## Glitch models
+
+Runtime glitch model definitions, including phenomenological models and the
+optional gengli-backed blip implementation.
+
+::: gwmock_noise.glitches
+
 ## Simulators
 
-Simulator implementations, the `NoiseSimulator` protocol, `SimulationResult`,
-and streaming helpers such as `open_stream` and `take`.
+Simulator implementations, the `NoiseSimulator` protocol,
+`ConfigurableNoiseSimulator`, `SimulationResult`, and streaming helpers such as
+`open_stream` and `take`.
 
 ::: gwmock_noise.simulators
 

@@ -57,12 +57,13 @@ realistic detector noise curves.
 
 ```python
 config = NoiseConfig(
-    detectors=["H1"], duration=8.0,
-    psd_file=Path("my_psd.txt"),  # local file
+    detectors=["H1"],
+    duration=8.0,
+    components=[{"simulator": "colored", "psd_file": Path("my_psd.txt")}],
 )
 ```
 
-`psd_file` also accepts HTTP(S) URLs.
+`psd_file` inside the colored component also accepts HTTP(S) URLs.
 
 ---
 
@@ -72,7 +73,7 @@ Produces **colored noise** matching a published Einstein Telescope design
 sensitivity curve — no external PSD file needed.
 
 ```python
-config = NoiseConfig(psd_file="ET_D_psd")
+config = NoiseConfig(components=[{"simulator": "colored", "psd_file": "ET_D_psd"}])
 ```
 
 Available presets: `ET_D_psd`, `ET_10_HF_psd`, `ET_10_full_cryo_psd`,
@@ -89,8 +90,13 @@ environmental coupling).
 ```python
 config = NoiseConfig(
     detectors=["H1", "L1"],
-    psd_files={"H1": Path("h1_psd.txt"), "L1": Path("l1_psd.txt")},
-    csd_files={"H1-L1": Path("hl_csd.txt")},
+    components=[
+        {
+            "simulator": "correlated",
+            "psd_files": {"H1": Path("h1_psd.txt"), "L1": Path("l1_psd.txt")},
+            "csd_files": {"H1-L1": Path("hl_csd.txt")},
+        }
+    ],
 )
 ```
 
@@ -105,8 +111,12 @@ lines) on top of the underlying noise.
 from gwmock_noise import SpectralLine
 
 config = NoiseConfig(
-    detectors=["H1"], duration=8.0,
-    spectral_lines=[SpectralLine(frequency=60.0, amplitude=1e-22)],
+    detectors=["H1"],
+    duration=8.0,
+    components=[
+        {"simulator": "white"},
+        {"simulator": "spectral_lines", "lines": [SpectralLine(frequency=60.0, amplitude=1e-22)]},
+    ],
 )
 ```
 
@@ -121,13 +131,19 @@ the underlying noise — mimics real detector glitches.
 from gwmock_noise import BlipGlitch, LogNormalAmplitudeDistribution
 
 config = NoiseConfig(
-    detectors=["H1"], duration=8.0,
-    glitches=[
-        BlipGlitch(
-            rate=0.5,
-            width=0.01,
-            amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.5),
-        ),
+    detectors=["H1"],
+    duration=8.0,
+    components=[
+        {
+            "simulator": "glitches",
+            "models": [
+                BlipGlitch(
+                    rate=0.5,
+                    width=0.01,
+                    amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.5),
+                )
+            ],
+        }
     ],
 )
 ```
@@ -157,13 +173,21 @@ Then use it in config:
 from gwmock_noise import GengliBlipGlitch, LogNormalAmplitudeDistribution
 
 config = NoiseConfig(
-    detectors=["L1"], duration=8.0,
-    psd_file=Path("noise_psd.txt"),
-    glitches=[
-        GengliBlipGlitch.from_population_file(
-            "glitches.h5", rate=0.25, psd_file=Path("noise_psd.txt"),
-            amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
-        )
+    detectors=["L1"],
+    duration=8.0,
+    components=[
+        {"simulator": "colored", "psd_file": Path("noise_psd.txt")},
+        {
+            "simulator": "glitches",
+            "models": [
+                GengliBlipGlitch.from_population_file(
+                    "glitches.h5",
+                    rate=0.25,
+                    psd_file=Path("noise_psd.txt"),
+                    amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+                )
+            ],
+        },
     ],
 )
 ```
@@ -198,8 +222,15 @@ from gwmock_noise import ARNoiseSimulator, NoiseConfig
 sim = ARNoiseSimulator(order=16, detectors=["H1"], duration=4.0, sampling_frequency=4096.0)
 ```
 
-Can also be configured via `NoiseConfig` when using a TOML/YAML file with
-`ar_order` and `ar_coefficients` fields.
+Can also be configured via `NoiseConfig.components`:
+
+```python
+config = NoiseConfig(
+    detectors=["H1"],
+    duration=4.0,
+    components=[{"simulator": "ar", "psd_file": Path("psd.txt"), "order": 16}],
+)
+```
 
 ---
 
@@ -210,10 +241,47 @@ detector conditions (e.g. moving from science mode to injection mode).
 
 ```python
 config = NoiseConfig(
-    detectors=["H1"], duration=16.0,
-    psd_schedule=[(0.0, Path("early_psd.txt")), (8.0, Path("late_psd.txt"))],
+    detectors=["H1"],
+    duration=16.0,
+    components=[
+        {
+            "simulator": "colored",
+            "psd_schedule": [(0.0, Path("early_psd.txt")), (8.0, Path("late_psd.txt"))],
+        }
+    ],
 )
 ```
+
+---
+
+## I want to combine multiple components in one simulation
+
+Builds one simulation from an ordered list of peer components.
+
+```python
+from gwmock_noise import BlipGlitch, LogNormalAmplitudeDistribution, SpectralLine
+
+config = NoiseConfig(
+    detectors=["H1"],
+    duration=8.0,
+    components=[
+        {"simulator": "colored", "psd_file": "ET_D_psd"},
+        {"simulator": "spectral_lines", "lines": [SpectralLine(frequency=60.0, amplitude=1.0e-3)]},
+        {
+            "simulator": "glitches",
+            "models": [
+                BlipGlitch(
+                    rate=0.25,
+                    width=0.01,
+                    amplitude_distribution=LogNormalAmplitudeDistribution(mean=0.5, std=0.0),
+                )
+            ],
+        },
+    ],
+)
+```
+
+See `examples/noise_config_multiple_components.toml` for a runnable CLI example.
 
 ---
 

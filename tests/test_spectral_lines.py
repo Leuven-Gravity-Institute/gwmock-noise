@@ -8,7 +8,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from gwmock_noise.config import NoiseConfig, OutputConfig, SpectralLine
+from gwmock_noise.config import NoiseConfig, OutputConfig
+from gwmock_noise.gaussian import SpectralLine
 from gwmock_noise.simulators import AddLines, DefaultNoiseSimulator, SpectralLineSimulator
 
 
@@ -188,7 +189,12 @@ def test_default_simulator_reports_line_only_metadata(tmp_path: Path) -> None:
         sampling_frequency=256.0,
         output=OutputConfig(directory=out_dir, prefix="lines"),
         seed=42,
-        spectral_lines=[SpectralLine(frequency=60.0, amplitude=1.0e-2, phase=0.0)],
+        components=[
+            {
+                "simulator": "spectral_lines",
+                "lines": [SpectralLine(frequency=60.0, amplitude=1.0e-2, phase=0.0)],
+            }
+        ],
     )
 
     simulator = DefaultNoiseSimulator()
@@ -202,7 +208,7 @@ def test_default_simulator_reports_line_only_metadata(tmp_path: Path) -> None:
 
 
 def test_default_simulator_reports_additive_line_metadata(tmp_path: Path) -> None:
-    """DefaultNoiseSimulator wraps colored noise when spectral lines are configured."""
+    """Colored and line components compose additively."""
     psd_path = tmp_path / "flat_psd.txt"
     frequencies = np.linspace(0.0, 128.0, 129)
     np.savetxt(psd_path, np.column_stack((frequencies, np.full_like(frequencies, 2.0e-3))))
@@ -214,19 +220,21 @@ def test_default_simulator_reports_additive_line_metadata(tmp_path: Path) -> Non
         sampling_frequency=256.0,
         output=OutputConfig(directory=out_dir, prefix="colored_lines"),
         seed=7,
-        psd_file=psd_path,
-        spectral_lines=[SpectralLine(frequency=48.0, amplitude=2.0e-2, phase=0.0)],
+        components=[
+            {"simulator": "colored", "psd_file": psd_path},
+            {
+                "simulator": "spectral_lines",
+                "lines": [SpectralLine(frequency=48.0, amplitude=2.0e-2, phase=0.0)],
+            },
+        ],
     )
 
     simulator = DefaultNoiseSimulator()
     simulator.run(config)
 
     metadata = json.loads((out_dir / "colored_lines_H1.json").read_text())
-    assert metadata["implementation"] == "add_lines"
-    assert metadata["base_implementation"] == "colored"
-    assert metadata["spectral_lines"]["lines"] == [
-        {"frequency": 48.0, "amplitude": 2.0e-2, "phase": 0.0, "drift_rate": 0.0}
-    ]
+    assert metadata["implementation"] == "composed"
+    assert [component["simulator"] for component in metadata["components"]] == ["colored", "spectral_lines"]
 
 
 @pytest.mark.parametrize(

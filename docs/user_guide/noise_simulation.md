@@ -15,6 +15,13 @@ detectors = ["H1", "L1"]
 duration = 4.0
 sampling_frequency = 4096.0
 
+[[components]]
+simulator = "white"
+
+[[components]]
+simulator = "spectral_lines"
+lines = [{ frequency = 60.0, amplitude = 1.0e-3 }]
+
 [output]
 directory = "./output"
 prefix = "noise"
@@ -42,28 +49,61 @@ TOML, YAML, or JSON into the same model.
 
 Supported top-level fields:
 
-| Field                   | Type            | Description                                                        |
-| ----------------------- | --------------- | ------------------------------------------------------------------ |
-| `detectors`             | `list[str]`     | Names of detectors to simulate (for example `H1`, `L1`)            |
-| `duration`              | `float`         | Duration of the realization in seconds (`> 0`)                     |
-| `sampling_frequency`    | `float`         | Sampling frequency in Hz (`> 0`)                                   |
-| `output.directory`      | `path`          | Output directory for generated files                               |
-| `output.prefix`         | `str`           | Prefix for output file names                                       |
-| `output.format`         | `str`           | Artifact format written by `run(config)`: `npy` (default) or `gwf` |
-| `output.gps_start`      | `float`         | GPS start time used for timestamped formats such as `gwf`          |
-| `output.channel_prefix` | `str`           | Channel-name prefix for `gwf` output (default: `MOCK`)             |
-| `seed`                  | `int` or `null` | Optional random seed for reproducibility                           |
+| Field                   | Type                   | Description                                                             |
+| ----------------------- | ---------------------- | ----------------------------------------------------------------------- |
+| `detectors`             | `list[str]`            | Names of detectors to simulate (for example `H1`, `L1`)                 |
+| `duration`              | `float`                | Duration of the realization in seconds (`> 0`)                          |
+| `sampling_frequency`    | `float`                | Sampling frequency in Hz (`> 0`)                                        |
+| `components`            | `list[str \| mapping]` | Ordered simulator components; each entry is a simulator name or mapping |
+| `output.directory`      | `path`                 | Output directory for generated files                                    |
+| `output.prefix`         | `str`                  | Prefix for output file names                                            |
+| `output.format`         | `str`                  | Artifact format written by `run(config)`: `npy` (default) or `gwf`      |
+| `output.gps_start`      | `float`                | GPS start time used for timestamped formats such as `gwf`               |
+| `output.channel_prefix` | `str`                  | Channel-name prefix for `gwf` output (default: `MOCK`)                  |
+| `seed`                  | `int` or `null`        | Optional random seed for reproducibility                                |
 
 For integration with the upstream `gwmock` package, the same structure can be
 nested under a `noise` key inside a larger configuration file. In that case the
 CLI still works; it automatically looks for a `noise` section if present.
 
+## Component composition
+
+`NoiseConfig.components` is the extension point for built-in simulations. Each
+entry is either a string shorthand such as `"white"` or a mapping with a
+`simulator` name plus simulator-specific options.
+
+Components are evaluated in order and combined additively, so users can build a
+simulation from whichever parts they need without editing the top-level schema.
+For example, colored background noise, spectral lines, and glitches can live in
+one config:
+
+```toml
+detectors = ["H1", "L1"]
+duration = 8.0
+sampling_frequency = 4096.0
+seed = 42
+
+[[components]]
+simulator = "colored"
+psd_file = "ET_D_psd"
+
+[[components]]
+simulator = "spectral_lines"
+lines = [{ frequency = 60.0, amplitude = 1.0e-3 }]
+
+[[components]]
+simulator = "glitches"
+models = [
+  { kind = "blip", rate = 0.25, width = 0.01, amplitude_distribution = { distribution = "lognormal", mean = 0.5, std = 0.0 } }
+]
+```
+
 ## Gengli blip glitches
 
 `gwmock-noise[gengli]` adds a file-backed `GengliBlipGlitch` model that plugs
-into the existing `glitches=` list. The expected population file is an HDF5 file
-with an `snr` dataset; the built-in CLI can generate that file from a GravitySpy
-CSV export:
+into a `glitches` component. The expected population file is an HDF5 file with
+an `snr` dataset; the built-in CLI can generate that file from a GravitySpy CSV
+export:
 
 ```bash
 gwmock-noise build-blip-glitch-table --gravity-spy-csv gravity_spy.csv --out glitches.h5
@@ -85,14 +125,19 @@ config = NoiseConfig(
     detectors=["L1"],
     duration=8.0,
     sampling_frequency=4096.0,
-    psd_file=Path("noise_psd.txt"),
-    glitches=[
-        GengliBlipGlitch.from_population_file(
-            "glitches.h5",
-            rate=0.25,
-            psd_file=Path("noise_psd.txt"),
-            amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
-        )
+    components=[
+        {"simulator": "colored", "psd_file": Path("noise_psd.txt")},
+        {
+            "simulator": "glitches",
+            "models": [
+                GengliBlipGlitch.from_population_file(
+                    "glitches.h5",
+                    rate=0.25,
+                    psd_file=Path("noise_psd.txt"),
+                    amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+                )
+            ],
+        },
     ],
 )
 ```
@@ -126,10 +171,10 @@ for detector, path in result.output_paths.items():
     print(detector, "->", path)
 ```
 
-`NoiseConfig.psd_file` accepts local paths, HTTP(S) URLs, and bundled Einstein
-Telescope preset names. The built-in presets are `ET_D_psd`, `ET_10_HF_psd`,
-`ET_10_full_cryo_psd`, `ET_15_HF_psd`, `ET_15_full_cryo_psd`, `ET_20_HF_psd`,
-and `ET_20_full_cryo_psd`.
+Colored-noise components accept `psd_file` values as local paths, HTTP(S) URLs,
+and bundled Einstein Telescope preset names. The built-in presets are
+`ET_D_psd`, `ET_10_HF_psd`, `ET_10_full_cryo_psd`, `ET_15_HF_psd`,
+`ET_15_full_cryo_psd`, `ET_20_HF_psd`, and `ET_20_full_cryo_psd`.
 
 The upstream `gwmock` package is expected to import and compose
 `gwmock_noise.NoiseConfig` into its own configuration model and to drive a noise

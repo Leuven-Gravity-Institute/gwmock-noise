@@ -97,10 +97,15 @@ def test_default_simulator_uses_correlated_noise_when_csd_is_configured(tmp_path
         sampling_frequency=256.0,
         output=OutputConfig(directory=out_dir, prefix="correlated"),
         seed=42,
-        psd_files=psd_files,
-        csd_files=csd_config,
-        low_frequency_cutoff=8.0,
-        high_frequency_cutoff=96.0,
+        components=[
+            {
+                "simulator": "correlated",
+                "psd_files": psd_files,
+                "csd_files": csd_config,
+                "low_frequency_cutoff": 8.0,
+                "high_frequency_cutoff": 96.0,
+            }
+        ],
     )
 
     simulator = DefaultNoiseSimulator()

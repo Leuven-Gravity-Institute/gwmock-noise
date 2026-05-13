@@ -8,7 +8,7 @@ navigation sidebar to browse:
 - **[Advanced](user_guide/noise_simulation.md)** — detailed configuration,
   simulator internals, custom protocols, and GWOSC integration.
 - **[API Reference](api/index.md)** — generated from docstrings.
-- **[Development](dev/code_quality.md)** — code quality, testing, and
-  troubleshooting.
+- **[Development](dev/code_quality.md)** — code quality, testing,
+  troubleshooting, and contributor guides for extending the simulator package.
 
 --8<-- "README.md"

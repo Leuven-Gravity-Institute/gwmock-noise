@@ -241,9 +241,14 @@ def test_default_simulator_uses_colored_noise_when_psd_is_configured(tmp_path: P
         sampling_frequency=256.0,
         output=OutputConfig(directory=out_dir, prefix="colored"),
         seed=42,
-        psd_file=psd_path,
-        low_frequency_cutoff=8.0,
-        high_frequency_cutoff=96.0,
+        components=[
+            {
+                "simulator": "colored",
+                "psd_file": psd_path,
+                "low_frequency_cutoff": 8.0,
+                "high_frequency_cutoff": 96.0,
+            }
+        ],
     )
 
     simulator = DefaultNoiseSimulator()
@@ -267,9 +272,14 @@ def test_default_simulator_uses_colored_noise_when_psd_schedule_is_configured(tm
         sampling_frequency=256.0,
         output=OutputConfig(directory=out_dir, prefix="colored_schedule"),
         seed=42,
-        psd_schedule=[(0.0, start_psd_path), (64.0, end_psd_path)],
-        low_frequency_cutoff=8.0,
-        high_frequency_cutoff=96.0,
+        components=[
+            {
+                "simulator": "colored",
+                "psd_schedule": [(0.0, start_psd_path), (64.0, end_psd_path)],
+                "low_frequency_cutoff": 8.0,
+                "high_frequency_cutoff": 96.0,
+            }
+        ],
     )
 
     simulator = DefaultNoiseSimulator()

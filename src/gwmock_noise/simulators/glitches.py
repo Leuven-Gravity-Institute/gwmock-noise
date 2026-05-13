@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from gwmock_noise.config.models import GlitchModel
+from gwmock_noise.glitches.models import GlitchModel
 from gwmock_noise.simulators.protocol import NoiseSimulator
 
 

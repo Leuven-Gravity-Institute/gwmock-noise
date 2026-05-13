@@ -55,6 +55,7 @@ nav = [
   ] },
   { "Development" = [
     { "Code Quality" = "dev/code_quality.md" },
+    { "Adding Simulation Types" = "dev/adding_simulators.md" },
     { "Troubleshooting" = "dev/troubleshooting.md" },
   ] },
   { "Security" = "security.md" },

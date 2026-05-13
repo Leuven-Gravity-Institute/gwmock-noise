@@ -9,13 +9,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-from gwmock_noise.config import (
-    BlipGlitch,
-    LogNormalAmplitudeDistribution,
-    NoiseConfig,
-    OutputConfig,
-    ScatteredLightGlitch,
-)
+from gwmock_noise.config import NoiseConfig, OutputConfig
+from gwmock_noise.glitches import BlipGlitch, LogNormalAmplitudeDistribution, ScatteredLightGlitch
 from gwmock_noise.simulators import DefaultNoiseSimulator, InjectGlitches
 from gwmock_noise.simulators.glitches import _ZeroNoiseSimulator
 
@@ -199,16 +194,21 @@ def test_default_simulator_reports_glitch_metadata(tmp_path: Path) -> None:
         sampling_frequency=256.0,
         output=OutputConfig(directory=out_dir, prefix="glitches"),
         seed=19,
-        glitches=[
+        components=[
             {
-                "kind": "blip",
-                "rate": 0.25,
-                "width": 0.01,
-                "amplitude_distribution": {
-                    "distribution": "lognormal",
-                    "mean": 0.5,
-                    "std": 0.0,
-                },
+                "simulator": "glitches",
+                "models": [
+                    {
+                        "kind": "blip",
+                        "rate": 0.25,
+                        "width": 0.01,
+                        "amplitude_distribution": {
+                            "distribution": "lognormal",
+                            "mean": 0.5,
+                            "std": 0.0,
+                        },
+                    }
+                ],
             }
         ],
     )
@@ -234,7 +234,7 @@ def test_default_simulator_reports_glitch_metadata(tmp_path: Path) -> None:
 
 
 def test_default_simulator_wraps_existing_simulator_when_glitches_enabled(tmp_path: Path) -> None:
-    """Glitches wrap a preconfigured colored simulator instead of zero base."""
+    """Colored and glitch components compose additively."""
     psd_path = tmp_path / "flat_psd.txt"
     frequencies = np.linspace(0.0, 128.0, 129)
     np.savetxt(psd_path, np.column_stack((frequencies, np.full_like(frequencies, 2.0e-3))))
@@ -246,20 +246,25 @@ def test_default_simulator_wraps_existing_simulator_when_glitches_enabled(tmp_pa
         sampling_frequency=256.0,
         output=OutputConfig(directory=out_dir, prefix="colored_glitches"),
         seed=5,
-        psd_file=psd_path,
-        glitches=[
+        components=[
+            {"simulator": "colored", "psd_file": psd_path},
             {
-                "kind": "blip",
-                "rate": 0.2,
-                "width": 0.01,
-                "amplitude_distribution": {"distribution": "lognormal", "mean": 0.5, "std": 0.0},
-            }
+                "simulator": "glitches",
+                "models": [
+                    {
+                        "kind": "blip",
+                        "rate": 0.2,
+                        "width": 0.01,
+                        "amplitude_distribution": {"distribution": "lognormal", "mean": 0.5, "std": 0.0},
+                    }
+                ],
+            },
         ],
     )
     DefaultNoiseSimulator().run(config)
     metadata = json.loads((out_dir / "colored_glitches_H1.json").read_text())
-    assert metadata["implementation"] == "inject_glitches"
-    assert metadata["base_implementation"] == "colored"
+    assert metadata["implementation"] == "composed"
+    assert [component["simulator"] for component in metadata["components"]] == ["colored", "glitches"]
 
 
 def test_zero_noise_simulator_reset_returns_none() -> None:

@@ -21,27 +21,40 @@ def _bundled_psd_path(name: str) -> Path:
     return Path(str(resources.files(PSD_PACKAGE).joinpath(f"{name}.txt")))
 
 
-def test_noise_config_resolves_bundled_psd_preset() -> None:
-    """Bare preset names resolve to packaged PSD files."""
-    config = NoiseConfig(psd_file=PRESET_NAME)
-    assert config.psd_file == _bundled_psd_path(PRESET_NAME)
+def test_colored_component_preserves_bundled_psd_reference() -> None:
+    """Bare preset names can be carried through component construction."""
+    simulator = DefaultNoiseSimulator()._configure_simulator(
+        NoiseConfig(components=[{"simulator": "colored", "psd_file": PRESET_NAME}])
+    )
+    assert isinstance(simulator, ColoredNoiseSimulator)
+    assert simulator.psd_file == Path(PRESET_NAME)
 
 
-def test_noise_config_normalizes_absolute_psd_path_string(tmp_path: Path) -> None:
+def test_colored_component_normalizes_absolute_psd_path_string(tmp_path: Path) -> None:
     """Explicit path strings continue to resolve as filesystem paths."""
     psd_path = tmp_path / "noise_psd.txt"
     np.savetxt(psd_path, np.column_stack((np.array([0.0, 128.0]), np.array([1.0, 1.0]))))
 
-    config = NoiseConfig(psd_file=str(psd_path))
-    assert config.psd_file == psd_path
+    simulator = DefaultNoiseSimulator()._configure_simulator(
+        NoiseConfig(components=[{"simulator": "colored", "psd_file": str(psd_path)}])
+    )
+    assert isinstance(simulator, ColoredNoiseSimulator)
+    assert simulator.psd_file == psd_path
 
 
-def test_noise_config_preserves_http_psd_url() -> None:
+def test_colored_component_preserves_http_psd_url(mocker: pytest_mock.MockerFixture) -> None:
     """HTTP(S) PSD references remain URL strings."""
     psd_url = "https://example.com/noise_psd.txt"
+    mocker.patch(
+        "gwmock_noise.simulators.colored.load_spectral_series",
+        return_value=(np.array([0.0, 128.0]), np.array([1.0, 1.0])),
+    )
 
-    config = NoiseConfig(psd_file=psd_url)
-    assert config.psd_file == psd_url
+    simulator = DefaultNoiseSimulator()._configure_simulator(
+        NoiseConfig(components=[{"simulator": "colored", "psd_file": psd_url}])
+    )
+    assert isinstance(simulator, ColoredNoiseSimulator)
+    assert simulator.psd_file == psd_url
 
 
 def test_colored_noise_simulator_preserves_http_psd_url(mocker: pytest_mock.MockerFixture) -> None:
@@ -70,7 +83,7 @@ def test_preset_noise_matches_direct_bundled_file(tmp_path: Path) -> None:
             sampling_frequency=256.0,
             output=OutputConfig(directory=preset_output, prefix="noise"),
             seed=1234,
-            psd_file=PRESET_NAME,
+            components=[{"simulator": "colored", "psd_file": PRESET_NAME}],
         )
     )
     simulator.run(
@@ -80,7 +93,7 @@ def test_preset_noise_matches_direct_bundled_file(tmp_path: Path) -> None:
             sampling_frequency=256.0,
             output=OutputConfig(directory=direct_output, prefix="noise"),
             seed=1234,
-            psd_file=direct_psd_path,
+            components=[{"simulator": "colored", "psd_file": direct_psd_path}],
         )
     )
 

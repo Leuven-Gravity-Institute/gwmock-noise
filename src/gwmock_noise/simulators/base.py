@@ -5,8 +5,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar
 
-from gwmock_noise.config import NoiseConfig
+if TYPE_CHECKING:
+    from gwmock_noise.config.models import NoiseComponentConfig, NoiseConfig
+    from gwmock_noise.simulators.protocol import NoiseSimulator
 
 
 @dataclass
@@ -39,3 +42,15 @@ class BaseNoiseSimulator(ABC):
         Returns:
             Result containing paths to generated outputs and the config used.
         """
+
+
+class ConfigurableNoiseSimulator(ABC):
+    """Abstract mixin for built-in simulators usable as composed components."""
+
+    simulator_name: ClassVar[str]
+    auto_register: ClassVar[bool] = True
+
+    @classmethod
+    @abstractmethod
+    def from_component(cls, component: NoiseComponentConfig, config: NoiseConfig) -> NoiseSimulator:
+        """Construct one simulator instance from a generic component config."""

@@ -6,14 +6,18 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from scipy.special import eval_legendre
 
 from gwmock_noise.simulators._spectral import load_spectral_series
 from gwmock_noise.simulators._stitching import OVERLAP_SIZE, WINDOW_SIZE, OverlapAddStitcher
+from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
 from gwmock_noise.simulators.colored import _tukey_window
+
+if TYPE_CHECKING:
+    from gwmock_noise.config.models import NoiseComponentConfig, NoiseConfig
 
 EARTH_RADIUS_METERS = 6_371_000.0
 SPEED_OF_LIGHT_METERS_PER_SECOND = 299_792_458.0
@@ -51,8 +55,10 @@ class SchumannParams:
             raise ValueError("regularization_epsilon must be greater than zero.")
 
 
-class SchumannNoiseSimulator:
+class SchumannNoiseSimulator(ConfigurableNoiseSimulator):
     """Generate correlated strain noise from an isotropic Schumann-resonance model."""
+
+    simulator_name = "schumann"
 
     def __init__(  # noqa: PLR0913
         self,
@@ -88,6 +94,28 @@ class SchumannNoiseSimulator:
         self._validate_detector_inputs()
         self._configure_frequency_grid()
         self._configure_spectral_factors()
+
+    @classmethod
+    def from_component(cls, component: NoiseComponentConfig, config: NoiseConfig) -> SchumannNoiseSimulator:
+        """Construct a Schumann-noise simulator from one component definition."""
+        options = dict(component.options)
+        positions = options.pop("positions", None)
+        coupling_files = options.pop("coupling_files", None)
+        if positions is None or coupling_files is None:
+            raise ValueError("Schumann simulator requires 'positions' and 'coupling_files' in the component options.")
+        schumann_params = options.pop("schumann_params", None)
+        if isinstance(schumann_params, dict):
+            schumann_params = SchumannParams(**schumann_params)
+        return cls(
+            positions=positions,
+            coupling_files=coupling_files,
+            detectors=config.detectors,
+            schumann_params=schumann_params,
+            duration=config.duration,
+            sampling_frequency=config.sampling_frequency,
+            seed=config.seed,
+            **options,
+        )
 
     @property
     def previous_strain(self) -> dict[str, np.ndarray]:

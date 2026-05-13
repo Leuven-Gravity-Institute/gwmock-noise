@@ -1,0 +1,25 @@
+# Example multi-component noise simulation configuration for gwmock_noise (TOML)
+# Use with: gwmock-noise simulate examples/noise_config_multiple_components.toml
+
+detectors = ["H1", "L1"]
+duration = 4.0
+sampling_frequency = 4096.0
+seed = 42
+
+[[components]]
+simulator = "colored"
+psd_file = "ET_D_psd"
+
+[[components]]
+simulator = "spectral_lines"
+lines = [{ frequency = 60.0, amplitude = 1.0e-3 }]
+
+[[components]]
+simulator = "glitches"
+models = [
+  { kind = "blip", rate = 0.25, width = 0.01, amplitude_distribution = { distribution = "lognormal", mean = 0.5, std = 0.0 } }
+]
+
+[output]
+directory = "./output"
+prefix = "multi_component_noise"

@@ -10,7 +10,7 @@ from typing import Any, Literal
 import h5py
 import numpy as np
 
-from gwmock_noise.config.models import GlitchModel
+from gwmock_noise.glitches.models import GlitchModel
 from gwmock_noise.simulators._spectral import load_spectral_series
 from gwmock_noise.simulators.colored import _tukey_window
 

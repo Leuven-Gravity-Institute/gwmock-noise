@@ -1,4 +1,4 @@
-# Example noise simulation configuration for gwsim_noise (YAML alternative)
+# Example noise simulation configuration for gwmock_noise (YAML alternative)
 # Primary examples use TOML; this file is kept for users who prefer YAML.
 
 detectors:
@@ -6,6 +6,12 @@ detectors:
     - L1
 duration: 4.0
 sampling_frequency: 4096.0
+components:
+    - simulator: white
+    - simulator: spectral_lines
+      lines:
+          - frequency: 60.0
+            amplitude: 1.0e-3
 output:
     directory: ./output
     prefix: noise

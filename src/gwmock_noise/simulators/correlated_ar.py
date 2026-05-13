@@ -6,14 +6,18 @@ import time
 from collections.abc import Iterator
 from itertools import combinations
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
 from gwmock_noise.simulators._spectral import load_spectral_series
+from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
 from gwmock_noise.simulators.colored import _tukey_window
 from gwmock_noise.simulators.correlated import parse_csd_file_map
+
+if TYPE_CHECKING:
+    from gwmock_noise.config.models import NoiseComponentConfig, NoiseConfig
 
 DEFAULT_VMA_ORDER = 256
 DEFAULT_BLOCK_SIZE = 65_536
@@ -22,8 +26,10 @@ DETECTOR_PAIR_SIZE = 2
 MIN_SPECTRAL_POINTS = 2
 
 
-class CorrelatedARNoiseSimulator:
+class CorrelatedARNoiseSimulator(ConfigurableNoiseSimulator):
     """Generate correlated detector noise with a truncated VMA representation."""
+
+    simulator_name = "correlated_ar"
 
     def __init__(  # noqa: PLR0913
         self,
@@ -64,6 +70,22 @@ class CorrelatedARNoiseSimulator:
         self._filter_taps = np.zeros((self.order + 1, len(self.detectors), len(self.detectors)), dtype=float)
 
         self._fit_model()
+
+    @classmethod
+    def from_component(cls, component: NoiseComponentConfig, config: NoiseConfig) -> CorrelatedARNoiseSimulator:
+        """Construct a correlated-AR simulator from one component definition."""
+        options = dict(component.options)
+        psd_files = options.pop("psd_files", None)
+        csd_files = options.pop("csd_files", None)
+        return cls(
+            psd_files=psd_files or {},
+            csd_files=csd_files,
+            detectors=config.detectors,
+            duration=config.duration,
+            sampling_frequency=config.sampling_frequency,
+            seed=config.seed,
+            **options,
+        )
 
     def _validate_runtime(
         self,

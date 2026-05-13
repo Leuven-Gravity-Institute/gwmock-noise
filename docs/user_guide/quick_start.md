@@ -32,6 +32,9 @@ From the repository root (or with your own config path):
 gwmock-noise simulate examples/noise_config_example.toml
 ```
 
+For a runnable multi-component configuration, see
+`examples/noise_config_multiple_components.toml`.
+
 Use `gwmock-noise --help` and `gwmock-noise simulate --help` for Typer/Rich
 usage.
 
@@ -59,10 +62,10 @@ result = DefaultNoiseSimulator().run(config)
 print(result.output_paths)
 ```
 
-`DefaultNoiseSimulator().run(config)` validates the config, builds the
-appropriate backend (white noise by default; PSD/CSD, lines, glitches, Schumann,
-etc. when configured), and writes NumPy strain files plus JSON sidecars unless
-`output.format` requests GWF output.
+`DefaultNoiseSimulator().run(config)` validates the config, builds the requested
+ordered `components` list (white noise by default; PSD/CSD, lines, glitches,
+Schumann, etc. when configured), and writes NumPy strain files plus JSON
+sidecars unless `output.format` requests GWF output.
 
 ## 4. Clone and develop
 

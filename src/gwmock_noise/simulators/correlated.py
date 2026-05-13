@@ -5,13 +5,17 @@ from __future__ import annotations
 from collections.abc import Iterator
 from itertools import combinations
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from gwmock_noise.simulators._spectral import load_spectral_series
 from gwmock_noise.simulators._stitching import OVERLAP_SIZE, WINDOW_SIZE, OverlapAddStitcher
+from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
 from gwmock_noise.simulators.colored import _tukey_window
+
+if TYPE_CHECKING:
+    from gwmock_noise.config.models import NoiseComponentConfig, NoiseConfig
 
 DETECTOR_PAIR_SIZE = 2
 
@@ -40,8 +44,10 @@ def parse_csd_file_map(csd_files: dict[str, Path] | None) -> dict[tuple[str, str
     return parsed
 
 
-class CorrelatedNoiseSimulator:
+class CorrelatedNoiseSimulator(ConfigurableNoiseSimulator):
     """Generate correlated detector noise from PSD and CSD inputs."""
+
+    simulator_name = "correlated"
 
     def __init__(  # noqa: PLR0913
         self,
@@ -73,6 +79,25 @@ class CorrelatedNoiseSimulator:
         self._normalized_csd_files = self._normalize_csd_files(csd_files or {})
         self._configure_frequency_grid()
         self._configure_spectral_factors()
+
+    @classmethod
+    def from_component(cls, component: NoiseComponentConfig, config: NoiseConfig) -> CorrelatedNoiseSimulator:
+        """Construct a correlated-noise simulator from one component definition."""
+        options = dict(component.options)
+        psd_files = options.pop("psd_files", None)
+        csd_files = options.pop("csd_files", None)
+        normalized_csd_files = (
+            parse_csd_file_map(csd_files) if isinstance(next(iter(csd_files or {}), None), str) else csd_files
+        )
+        return cls(
+            psd_files=psd_files or {},
+            csd_files=normalized_csd_files,
+            detectors=config.detectors,
+            duration=config.duration,
+            sampling_frequency=config.sampling_frequency,
+            seed=config.seed,
+            **options,
+        )
 
     @property
     def previous_strain(self) -> dict[str, np.ndarray]:

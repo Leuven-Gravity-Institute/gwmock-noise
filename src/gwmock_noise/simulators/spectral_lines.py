@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from gwmock_noise.config import SpectralLine
+from gwmock_noise.gaussian import SpectralLine, normalize_spectral_lines
+from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
 from gwmock_noise.simulators.protocol import NoiseSimulator
+
+if TYPE_CHECKING:
+    from gwmock_noise.config.models import NoiseComponentConfig, NoiseConfig
 
 TWO_PI = 2.0 * np.pi
 
@@ -23,8 +27,10 @@ def _serialize_line(line: SpectralLine) -> dict[str, float | None]:
     }
 
 
-class SpectralLineSimulator:
+class SpectralLineSimulator(ConfigurableNoiseSimulator):
     """Generate additive spectral lines directly in the time domain."""
+
+    simulator_name = "spectral_lines"
 
     def __init__(
         self,
@@ -50,6 +56,22 @@ class SpectralLineSimulator:
         self._phase_state = np.zeros(len(self.lines), dtype=float)
 
         self._validate_runtime(duration=duration, sampling_frequency=sampling_frequency, detectors=self.detectors)
+
+    @classmethod
+    def from_component(cls, component: NoiseComponentConfig, config: NoiseConfig) -> SpectralLineSimulator:
+        """Construct a spectral-line simulator from one component definition."""
+        options = dict(component.options)
+        lines = normalize_spectral_lines(options.pop("lines", []))
+        if not lines:
+            raise ValueError("SpectralLineSimulator requires at least one spectral line.")
+        return cls(
+            lines=lines,
+            detectors=config.detectors,
+            duration=config.duration,
+            sampling_frequency=config.sampling_frequency,
+            seed=config.seed,
+            **options,
+        )
 
     def _validate_runtime(
         self,

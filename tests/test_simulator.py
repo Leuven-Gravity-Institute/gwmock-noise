@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 import gwmock_noise
-from gwmock_noise.config import NoiseConfig, OutputConfig
+from gwmock_noise.config import NoiseComponentConfig, NoiseConfig, OutputConfig
 from gwmock_noise.parallel import ParallelAdapter
 from gwmock_noise.simulators import (
     AddLines,
@@ -33,6 +33,7 @@ from gwmock_noise.simulators import (
     SpectralLineSimulator,
     take,
 )
+from gwmock_noise.simulators.registry import available_simulator_names, discover_configurable_simulators
 
 
 class DuckNoiseSimulator:
@@ -200,18 +201,23 @@ def test_default_simulator_run_uses_frame_writer_for_gwf_output(
 
 
 def test_default_simulator_uses_zero_base_for_glitch_only_configuration(tmp_path: Path) -> None:
-    """Glitch-only config wraps the internal zero-noise base."""
+    """Glitch-only components still use the internal zero-noise base."""
     config = NoiseConfig(
         detectors=["H1"],
         duration=2.0,
         sampling_frequency=128.0,
         output=OutputConfig(directory=tmp_path, prefix="glitch_only"),
-        glitches=[
-            BlipGlitch(
-                rate=0.2,
-                width=0.01,
-                amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
-            )
+        components=[
+            {
+                "simulator": "glitches",
+                "models": [
+                    BlipGlitch(
+                        rate=0.2,
+                        width=0.01,
+                        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+                    )
+                ],
+            }
         ],
     )
     simulator = DefaultNoiseSimulator()
@@ -220,25 +226,93 @@ def test_default_simulator_uses_zero_base_for_glitch_only_configuration(tmp_path
     assert runtime.metadata["base_implementation"] == "zero"
 
 
-def test_default_simulator_rejects_empty_spectral_lines_when_bypassing_model_validation() -> None:
-    """_configure_simulator guards against empty spectral_lines defensively."""
+def test_default_simulator_rejects_empty_spectral_line_component() -> None:
+    """A malformed spectral-line component is rejected during runtime construction."""
     config = NoiseConfig.model_construct(
         detectors=["H1"],
         duration=2.0,
         sampling_frequency=128.0,
         output=OutputConfig(directory=Path("."), prefix="x"),
         seed=None,
-        psd_file=None,
-        psd_schedule=None,
-        psd_files=None,
-        csd_files=None,
-        low_frequency_cutoff=2.0,
-        high_frequency_cutoff=None,
-        spectral_lines=[],
-        glitches=None,
+        components=[NoiseComponentConfig(simulator="spectral_lines", options={"lines": []})],
     )
-    with pytest.raises(ValueError, match="spectral_lines must contain at least one spectral line"):
+    with pytest.raises(ValueError, match="at least one spectral line"):
         DefaultNoiseSimulator()._configure_simulator(config)
+
+
+def test_registry_discovers_only_configurable_simulators() -> None:
+    """Automatic discovery registers only concrete config-driven simulators."""
+    simulator_classes = discover_configurable_simulators()
+    discovered_names = {simulator_class.simulator_name for simulator_class in simulator_classes}
+    discovered_class_names = {simulator_class.__name__ for simulator_class in simulator_classes}
+
+    assert {
+        "ar",
+        "colored",
+        "correlated",
+        "correlated_ar",
+        "glitches",
+        "schumann",
+        "spectral_lines",
+        "white",
+    } <= discovered_names
+    assert "white" in available_simulator_names()
+    assert "AddLines" not in discovered_class_names
+    assert "InjectGlitches" not in discovered_class_names
+    assert "DefaultNoiseSimulator" not in discovered_class_names
+
+
+def test_default_simulator_supports_explicit_ar_selection(tmp_path: Path) -> None:
+    """A component list can route DefaultNoiseSimulator to AR noise."""
+    psd_path = tmp_path / "flat_psd.txt"
+    frequencies = np.linspace(0.0, 64.0, 65)
+    np.savetxt(psd_path, np.column_stack((frequencies, np.full_like(frequencies, 2.0e-3))))
+
+    config = NoiseConfig(
+        detectors=["H1"],
+        duration=2.0,
+        sampling_frequency=128.0,
+        output=OutputConfig(directory=tmp_path, prefix="ar_explicit"),
+        seed=9,
+        components=[{"simulator": "ar", "psd_file": psd_path, "order": 8}],
+    )
+
+    DefaultNoiseSimulator().run(config)
+
+    metadata = json.loads((tmp_path / "ar_explicit_H1.json").read_text())
+    assert metadata["implementation"] == "autoregressive"
+    assert metadata["autoregressive_noise"]["order"] == 8
+
+
+def test_default_simulator_rejects_unknown_explicit_simulator() -> None:
+    """Unknown component simulator names fail with the discovered-name list."""
+    config = NoiseConfig(components=[{"simulator": "not_a_backend"}])
+    with pytest.raises(ValueError, match="Unknown simulator component"):
+        DefaultNoiseSimulator()._configure_simulator(config)
+
+
+def test_default_simulator_explicit_white_base_supports_additive_lines(tmp_path: Path) -> None:
+    """White plus line components compose into one additive simulation."""
+    config = NoiseConfig(
+        detectors=["H1"],
+        duration=2.0,
+        sampling_frequency=128.0,
+        output=OutputConfig(directory=tmp_path, prefix="white_lines"),
+        seed=21,
+        components=[
+            "white",
+            {
+                "simulator": "spectral_lines",
+                "lines": [gwmock_noise.SpectralLine(frequency=16.0, amplitude=1.0e-2, phase=0.0)],
+            },
+        ],
+    )
+
+    DefaultNoiseSimulator().run(config)
+
+    metadata = json.loads((tmp_path / "white_lines_H1.json").read_text())
+    assert metadata["implementation"] == "composed"
+    assert [component["simulator"] for component in metadata["components"]] == ["white", "spectral_lines"]
 
 
 def test_simulation_result_attributes() -> None:

@@ -6,11 +6,15 @@ import hashlib
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from gwmock_noise.simulators._spectral import load_spectral_series
+from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
+
+if TYPE_CHECKING:
+    from gwmock_noise.config.models import NoiseComponentConfig, NoiseConfig
 
 DEFAULT_AR_ORDER = 256
 DEFAULT_BLOCK_SIZE = 65_536
@@ -30,8 +34,10 @@ def _toeplitz_from_autocorrelation(autocorrelation: np.ndarray) -> np.ndarray:
     return autocorrelation[offsets]
 
 
-class ARNoiseSimulator:
+class ARNoiseSimulator(ConfigurableNoiseSimulator):
     """Generate stateful detector noise from an AR model fit to a target PSD."""
+
+    simulator_name = "ar"
 
     def __init__(  # noqa: PLR0913
         self,
@@ -70,6 +76,22 @@ class ARNoiseSimulator:
         self._high_frequency_cutoff = 0.0
 
         self._fit_model()
+
+    @classmethod
+    def from_component(cls, component: NoiseComponentConfig, config: NoiseConfig) -> ARNoiseSimulator:
+        """Construct an AR-noise simulator from one component definition."""
+        options = dict(component.options)
+        psd_file = options.pop("psd_file", None)
+        if psd_file is None:
+            raise ValueError("AR simulator requires 'psd_file' in the component options.")
+        return cls(
+            psd_file=psd_file,
+            detectors=config.detectors,
+            duration=config.duration,
+            sampling_frequency=config.sampling_frequency,
+            seed=config.seed,
+            **options,
+        )
 
     def _validate_runtime(
         self,

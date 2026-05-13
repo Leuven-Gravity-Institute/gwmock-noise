@@ -5,27 +5,23 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from gwmock_noise.config import NoiseConfig
 from gwmock_noise.output.frame import FrameWriter
 from gwmock_noise.simulators.base import BaseNoiseSimulator, SimulationResult
-from gwmock_noise.simulators.colored import ColoredNoiseSimulator
-from gwmock_noise.simulators.correlated import CorrelatedNoiseSimulator, parse_csd_file_map
-from gwmock_noise.simulators.glitches import InjectGlitches, _ZeroNoiseSimulator
+from gwmock_noise.simulators.composite import CompositeNoiseSimulator
+from gwmock_noise.simulators.glitches import _ZeroNoiseSimulator
 from gwmock_noise.simulators.protocol import NoiseSimulator
-from gwmock_noise.simulators.spectral_lines import AddLines, SpectralLineSimulator
+from gwmock_noise.simulators.registry import build_component_simulator
+
+if TYPE_CHECKING:
+    from gwmock_noise.config.models import NoiseConfig
 
 
 class DefaultNoiseSimulator(BaseNoiseSimulator):
-    """Default noise simulator implementation.
-
-    This implementation keeps ``run(config)`` as the public orchestration
-    boundary, dispatching to lower-level generators and writing real strain
-    artifacts plus descriptive metadata sidecars.
-    """
+    """Default noise simulator implementation."""
 
     def __init__(
         self,
@@ -84,58 +80,30 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
             yield self.generate(chunk_duration, sampling_frequency, detectors, seed)
             seed = None
 
-    def _configure_simulator(self, config: NoiseConfig) -> NoiseSimulator | None:
-        """Build the runtime simulator implied by the validated config."""
-        simulator: NoiseSimulator | None = None
-        if config.psd_files is not None or config.csd_files is not None:
-            simulator = CorrelatedNoiseSimulator(
-                psd_files=config.psd_files or {},
-                csd_files=parse_csd_file_map(config.csd_files),
+    def _configure_simulator(self, config: NoiseConfig) -> NoiseSimulator:
+        """Build the runtime simulator implied by the validated component config."""
+        self._active_metadata = None
+        if not config.components:
+            return _ZeroNoiseSimulator(
                 detectors=config.detectors,
                 duration=config.duration,
                 sampling_frequency=config.sampling_frequency,
                 seed=config.seed,
-                low_frequency_cutoff=config.low_frequency_cutoff,
-                high_frequency_cutoff=config.high_frequency_cutoff,
-            )
-        elif config.psd_file is not None or config.psd_schedule is not None:
-            simulator = ColoredNoiseSimulator(
-                psd_file=config.psd_file,
-                psd_schedule=config.psd_schedule,
-                detectors=config.detectors,
-                duration=config.duration,
-                sampling_frequency=config.sampling_frequency,
-                seed=config.seed,
-                low_frequency_cutoff=config.low_frequency_cutoff,
-                high_frequency_cutoff=config.high_frequency_cutoff,
             )
 
-        if config.spectral_lines is not None:
-            if not config.spectral_lines:
-                raise ValueError("spectral_lines must contain at least one spectral line.")
+        built_components = [
+            (component.simulator, build_component_simulator(component, config)) for component in config.components
+        ]
+        if len(built_components) == 1:
+            return built_components[0][1]
 
-            if simulator is None:
-                simulator = SpectralLineSimulator(
-                    lines=config.spectral_lines,
-                    detectors=config.detectors,
-                    duration=config.duration,
-                    sampling_frequency=config.sampling_frequency,
-                    seed=config.seed,
-                )
-            else:
-                simulator = AddLines(simulator, config.spectral_lines)
-
-        if config.glitches is not None:
-            if simulator is None:
-                simulator = _ZeroNoiseSimulator(
-                    detectors=config.detectors,
-                    duration=config.duration,
-                    sampling_frequency=config.sampling_frequency,
-                    seed=config.seed,
-                )
-            simulator = InjectGlitches(simulator, config.glitches)
-
-        return simulator
+        return CompositeNoiseSimulator(
+            built_components,
+            detectors=config.detectors,
+            duration=config.duration,
+            sampling_frequency=config.sampling_frequency,
+            seed=config.seed,
+        )
 
     def _write_numpy_outputs(
         self,
@@ -197,42 +165,22 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         self._active_metadata = metadata
 
     def run(self, config: NoiseConfig) -> SimulationResult:
-        """Run the noise simulation with the given configuration.
-
-        Args:
-            config: Validated noise simulation configuration.
-
-        Returns:
-            Result containing paths to generated outputs and the config used.
-        """
+        """Run the noise simulation with the given configuration."""
         Path(config.output.directory).mkdir(parents=True, exist_ok=True)
 
         simulator = self._configure_simulator(config)
 
         if config.output.format == "gwf":
-            active_simulator = self if simulator is None else simulator
-            output_paths = self._write_frame_outputs(config=config, simulator=active_simulator)
-            if simulator is None:
-                self._sync_public_state(config=config)
-            else:
-                self._sync_public_state(config=config, metadata=simulator.metadata)
+            output_paths = self._write_frame_outputs(config=config, simulator=simulator)
+            self._sync_public_state(config=config, metadata=simulator.metadata)
         else:
-            if simulator is None:
-                strain_by_detector = self.generate(
-                    duration=config.duration,
-                    sampling_frequency=config.sampling_frequency,
-                    detectors=config.detectors,
-                    seed=config.seed,
-                )
-            else:
-                strain_by_detector = simulator.generate(
-                    duration=config.duration,
-                    sampling_frequency=config.sampling_frequency,
-                    detectors=config.detectors,
-                    seed=config.seed,
-                )
-                self._sync_public_state(config=config, metadata=simulator.metadata)
-
+            strain_by_detector = simulator.generate(
+                duration=config.duration,
+                sampling_frequency=config.sampling_frequency,
+                detectors=config.detectors,
+                seed=config.seed,
+            )
+            self._sync_public_state(config=config, metadata=simulator.metadata)
             output_paths = self._write_numpy_outputs(
                 config=config,
                 strain_by_detector=strain_by_detector,

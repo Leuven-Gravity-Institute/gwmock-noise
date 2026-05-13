@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from gwmock_noise.simulators._spectral import load_spectral_series, normalize_spectral_reference
 from gwmock_noise.simulators._stitching import OVERLAP_SIZE, WINDOW_SIZE, OverlapAddStitcher
+from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
+
+if TYPE_CHECKING:
+    from gwmock_noise.config.models import NoiseComponentConfig, NoiseConfig
 
 PSD_WINDOW_ALPHA = 1e-3
 MIN_TAPER_BINS = 2
@@ -36,8 +40,10 @@ def _tukey_window(length: int, alpha: float = PSD_WINDOW_ALPHA) -> np.ndarray:
     return window
 
 
-class ColoredNoiseSimulator:
+class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
     """Generate colored detector noise from an input PSD."""
+
+    simulator_name = "colored"
 
     def __init__(  # noqa: PLR0913
         self,
@@ -88,6 +94,22 @@ class ColoredNoiseSimulator:
 
         self._validate_runtime(duration=duration, sampling_frequency=sampling_frequency, detectors=self.detectors)
         self._configure_frequency_grid()
+
+    @classmethod
+    def from_component(cls, component: NoiseComponentConfig, config: NoiseConfig) -> ColoredNoiseSimulator:
+        """Construct a colored-noise simulator from one component definition."""
+        options = dict(component.options)
+        psd_file = options.pop("psd_file", None)
+        psd_schedule = options.pop("psd_schedule", None)
+        return cls(
+            psd_file=psd_file,
+            psd_schedule=psd_schedule,
+            detectors=config.detectors,
+            duration=config.duration,
+            sampling_frequency=config.sampling_frequency,
+            seed=config.seed,
+            **options,
+        )
 
     @property
     def previous_strain(self) -> dict[str, np.ndarray]:
