@@ -31,6 +31,7 @@ class WhiteNoiseSimulator(ConfigurableNoiseSimulator):
         self.sampling_frequency = sampling_frequency
         self.detectors = list(detectors) if detectors is not None else ["H1", "L1"]
         self.seed = seed
+        self._rng: np.random.Generator | None = None
 
     @classmethod
     def from_component(cls, component: NoiseComponentConfig, config: NoiseConfig) -> WhiteNoiseSimulator:
@@ -55,8 +56,12 @@ class WhiteNoiseSimulator(ConfigurableNoiseSimulator):
         self.duration = duration
         self.sampling_frequency = sampling_frequency
         self.detectors = list(detectors)
-        self.seed = seed
-        rng = np.random.default_rng(seed)
+        if seed is not None:
+            self.seed = seed
+            self._rng = np.random.default_rng(seed)
+        elif self._rng is None:
+            self._rng = np.random.default_rng(self.seed)
+        rng = self._rng
         n_samples = round(duration * sampling_frequency)
         if n_samples < 1:
             raise ValueError("duration and sampling_frequency must produce at least one sample.")
