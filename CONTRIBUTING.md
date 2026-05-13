@@ -46,7 +46,7 @@ submitting a pull request—this guide will help you get started.
     After installing dependencies, run:
 
     ```shell
-    uv run pre-commit install
+    uv run prek install
     ```
 
     This ensures checks like code formatting, linting, and basic hygiene run automatically when you commit.

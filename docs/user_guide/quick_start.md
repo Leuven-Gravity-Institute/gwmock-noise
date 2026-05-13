@@ -83,7 +83,7 @@ uv sync --group dev --group docs
 Install Git hooks (from the repo root):
 
 ```bash
-uv run pre-commit install
+uv run prek install
 ```
 
 ## 5. Tests and docs

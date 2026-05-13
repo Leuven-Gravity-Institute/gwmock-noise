@@ -83,7 +83,7 @@ uv venv --python 3.12
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv sync --group dev --group docs
 
-uv run pre-commit install
+uv run prek install
 ```
 
 ## Verify installation

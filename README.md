@@ -188,7 +188,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv sync --group dev --group docs
 
 # Install pre-commit hooks
-uv run pre-commit install
+uv run prek install
 ```
 
 ### Verify Installation
