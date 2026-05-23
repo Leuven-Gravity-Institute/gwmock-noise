@@ -217,7 +217,6 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
             self._stitcher._validate_chunk_map(warmup)
             current_raw = {detector: warmup[detector].copy() for detector in self.detectors}
 
-        raw_buffers = {detector: current_raw[detector].copy() for detector in self.detectors}
         emitted_segments = {detector: [] for detector in self.detectors}
         produced_samples = 0
 
@@ -231,7 +230,6 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
                     + (next_raw[detector][:OVERLAP_SIZE] * self._stitcher._window_in)
                 ) / self._stitcher._blend_norm
                 emitted_segments[detector].append(blended_overlap)
-                raw_buffers[detector] = np.concatenate((raw_buffers[detector], next_raw[detector][OVERLAP_SIZE:]))
                 current_raw[detector] = next_raw[detector].copy()
 
             produced_samples += FRAME_STEP
@@ -240,9 +238,7 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
             detector: np.concatenate(segments)[:n_samples] for detector, segments in emitted_segments.items()
         }
         self.previous_strain.clear()
-        self.previous_strain.update(
-            {detector: raw_buffers[detector][n_samples : n_samples + WINDOW_SIZE].copy() for detector in self.detectors}
-        )
+        self.previous_strain.update({detector: current_raw[detector].copy() for detector in self.detectors})
         return realization
 
     def _initialize_generators(self, seed: int | None) -> None:
