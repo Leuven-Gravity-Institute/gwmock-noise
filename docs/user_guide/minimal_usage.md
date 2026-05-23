@@ -59,7 +59,10 @@ realistic detector noise curves.
 config = NoiseConfig(
     detectors=["H1"],
     duration=8.0,
+    sampling_frequency=4096.0,
     components=[{"simulator": "colored", "psd_file": Path("my_psd.txt")}],
+    output=OutputConfig(directory=Path("output"), prefix="noise"),
+    seed=42,
 )
 ```
 
@@ -73,7 +76,14 @@ Produces **colored noise** matching a published Einstein Telescope design
 sensitivity curve — no external PSD file needed.
 
 ```python
-config = NoiseConfig(components=[{"simulator": "colored", "psd_file": "ET_D_psd"}])
+config = NoiseConfig(
+    detectors=["H1"],
+    duration=8.0,
+    sampling_frequency=4096.0,
+    components=[{"simulator": "colored", "psd_file": "ET_D_psd"}],
+    output=OutputConfig(directory=Path("output"), prefix="noise"),
+    seed=42,
+)
 ```
 
 Available presets: `ET_D_psd`, `ET_10_HF_psd`, `ET_10_full_cryo_psd`,
@@ -90,13 +100,17 @@ environmental coupling).
 ```python
 config = NoiseConfig(
     detectors=["H1", "L1"],
+    duration=8.0,
+    sampling_frequency=4096.0,
     components=[
         {
             "simulator": "correlated",
             "psd_files": {"H1": Path("h1_psd.txt"), "L1": Path("l1_psd.txt")},
-            "csd_files": {"H1-L1": Path("hl_csd.txt")},
+            "csd_files": {"H1-L1": Path("h1l1_csd.txt")},
         }
     ],
+    output=OutputConfig(directory=Path("output"), prefix="noise"),
+    seed=42,
 )
 ```
 
@@ -113,10 +127,13 @@ from gwmock_noise import SpectralLine
 config = NoiseConfig(
     detectors=["H1"],
     duration=8.0,
+    sampling_frequency=4096.0,
     components=[
-        {"simulator": "white"},
+        {"simulator": "colored", "psd_file": "ET_D_psd"},
         {"simulator": "spectral_lines", "lines": [SpectralLine(frequency=60.0, amplitude=1e-22)]},
     ],
+    output=OutputConfig(directory=Path("output"), prefix="noise"),
+    seed=42,
 )
 ```
 
@@ -133,7 +150,9 @@ from gwmock_noise import BlipGlitch, LogNormalAmplitudeDistribution
 config = NoiseConfig(
     detectors=["H1"],
     duration=8.0,
+    sampling_frequency=4096.0,
     components=[
+        {"simulator": "white"},
         {
             "simulator": "glitches",
             "models": [
@@ -145,6 +164,8 @@ config = NoiseConfig(
             ],
         }
     ],
+    output=OutputConfig(directory=Path("output"), prefix="noise"),
+    seed=42,
 )
 ```
 
@@ -175,20 +196,23 @@ from gwmock_noise import GengliBlipGlitch, LogNormalAmplitudeDistribution
 config = NoiseConfig(
     detectors=["L1"],
     duration=8.0,
+    sampling_frequency=4096.0,
     components=[
-        {"simulator": "colored", "psd_file": Path("noise_psd.txt")},
+        {"simulator": "colored", "psd_file": "ET_D_psd"},
         {
             "simulator": "glitches",
             "models": [
                 GengliBlipGlitch.from_population_file(
                     "glitches.h5",
                     rate=0.25,
-                    psd_file=Path("noise_psd.txt"),
+                    psd_file="ET_D_psd",
                     amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
                 )
             ],
         },
     ],
+    output=OutputConfig(directory=Path("output"), prefix="noise"),
+    seed=42,
 )
 ```
 
@@ -200,14 +224,30 @@ Produces **magnetically coupled correlated noise** from Earth's Schumann
 resonances — adds frequency-dependent correlation between detector sites.
 
 ```python
-from gwmock_noise import SchumannNoiseSimulator, SchumannParams
+from gwmock_noise import SchumannParams
 
-sim = SchumannNoiseSimulator(
+config = NoiseConfig(
     detectors=["H1", "L1"],
-    detector_positions=[(43.6, 10.5), (46.5, 9.4)],  # lat, lon in degrees
-    schumann_params=SchumannParams(),
+    duration=4.0,
+    sampling_frequency=4096.0,
+    components=[
+        {
+            "simulator": "schumann",
+            "positions": {"H1": (43.6, 10.5), "L1": (46.5, 9.4)},  # lat, lon in degrees
+            "coupling_files": {
+                "H1": Path("h1_magnetic_coupling.txt"),
+                "L1": Path("l1_magnetic_coupling.txt"),
+            },
+            "schumann_params": SchumannParams(),
+        }
+    ],
+    output=OutputConfig(directory=Path("output"), prefix="noise"),
+    seed=42,
 )
 ```
+
+> `coupling_files` must be user-supplied ASCII files with
+> `(frequency, coupling)` columns.
 
 ---
 
@@ -217,18 +257,19 @@ Produces **colored noise via an autoregressive filter** — an alternative to
 FFT-based coloring, useful for low-latency or streaming applications.
 
 ```python
-from gwmock_noise import ARNoiseSimulator, NoiseConfig
-
-sim = ARNoiseSimulator(order=16, detectors=["H1"], duration=4.0, sampling_frequency=4096.0)
-```
-
-Can also be configured via `NoiseConfig.components`:
-
-```python
 config = NoiseConfig(
     detectors=["H1"],
     duration=4.0,
-    components=[{"simulator": "ar", "psd_file": Path("psd.txt"), "order": 16}],
+    sampling_frequency=4096.0,
+    components=[
+        {
+            "simulator": "ar",
+            "psd_file": "ET_D_psd",
+            "order": 16
+        }
+    ],
+    output=OutputConfig(directory=Path("output"), prefix="noise"),
+    seed=42,
 )
 ```
 
@@ -243,12 +284,15 @@ detector conditions (e.g. moving from science mode to injection mode).
 config = NoiseConfig(
     detectors=["H1"],
     duration=16.0,
+    sampling_frequency=4096.0,
     components=[
         {
             "simulator": "colored",
             "psd_schedule": [(0.0, Path("early_psd.txt")), (8.0, Path("late_psd.txt"))],
         }
     ],
+    output=OutputConfig(directory=Path("output"), prefix="noise"),
+    seed=42,
 )
 ```
 
@@ -264,9 +308,10 @@ from gwmock_noise import BlipGlitch, LogNormalAmplitudeDistribution, SpectralLin
 config = NoiseConfig(
     detectors=["H1"],
     duration=8.0,
+    sampling_frequency=4096.0,
     components=[
         {"simulator": "colored", "psd_file": "ET_D_psd"},
-        {"simulator": "spectral_lines", "lines": [SpectralLine(frequency=60.0, amplitude=1.0e-3)]},
+        {"simulator": "spectral_lines", "lines": [SpectralLine(frequency=60.0, amplitude=1.0e-22)]},
         {
             "simulator": "glitches",
             "models": [
@@ -278,6 +323,8 @@ config = NoiseConfig(
             ],
         },
     ],
+    output=OutputConfig(directory=Path("output"), prefix="noise"),
+    seed=42,
 )
 ```
 
@@ -294,12 +341,16 @@ memory-constrained or real-time processing.
 ```python
 from gwmock_noise import ColoredNoiseSimulator, open_stream, take
 
-sim = ColoredNoiseSimulator(psd_file="psd.txt", detectors=["H1", "L1"], sampling_frequency=4096.0)
+sim = ColoredNoiseSimulator(psd_file="ET_D_psd", detectors=["H1", "L1"], sampling_frequency=4096.0)
 stream = open_stream(sim, chunk_duration=4.0, sampling_frequency=4096.0, detectors=["H1"])
 chunk = next(stream)
 
+print(chunk)
+
 # Or collect a specific duration
 strain_dict = take(stream, total_duration=12.0, chunk_duration=4.0, sampling_frequency=4096.0)
+
+print(strain_dict)     # strain_dict["H1"].shape == (round(12.0 * 4096.0),)  ← 12 s of seamless noise
 ```
 
 ---
@@ -325,15 +376,13 @@ config = GwoscNoiseConfig(
 fetcher = GwoscNoiseFetcher(config)
 clean_data = fetcher.fetch_clean()
 
+print(clean_data)
+
 # Or inspect segments before downloading
 print(fetcher.clean_segments)
-
-# Cache files locally to avoid repeated downloads
-config = GwoscNoiseConfig(
-    detectors=["H1"], gps_start=1135136000, gps_end=1135137000,
-    cache_dir=Path("./gwosc_cache"),
-)
 ```
+
+Use `cache_dir` argument to cache files locally and avoid repeated downloads
 
 ---
 
@@ -343,17 +392,21 @@ Excludes **known gravitational-wave signals** and **data-quality flagged
 segments** from real GWOSC data — leaves only clean noise for your analysis.
 
 ```python
-from gwmock_noise.gwosc import FilterType, GwoscFilterConfig
+from gwmock_noise.gwosc import GwoscNoiseConfig, GwoscNoiseFetcher, FilterType, GwoscFilterConfig
 
 config = GwoscNoiseConfig(
     detectors=["H1", "L1"],
-    gps_start=1135136000, gps_end=1135137000,
+    gps_start=1135136000,
+    gps_end=1135137000,
     filters=GwoscFilterConfig(
         filter_types=[FilterType.HIGH_CONFIDENCE_GW],
         far_threshold=1.0,
         event_padding=16.0,
     ),
 )
+
+fetcher = GwoscNoiseFetcher(config)
+print(fetcher.clean_segments)
 ```
 
 ---
@@ -368,9 +421,11 @@ execution, etc.).
 from gwmock_noise import GwoscNoiseSimulator, open_stream
 from gwmock_noise.gwosc import GwoscNoiseConfig
 
-config = GwoscNoiseConfig(detectors=["H1"], gps_start=1135136000, gps_end=1135137000)
+config = GwoscNoiseConfig(detectors=["H1"], gps_start=1135136000, gps_end=1135136100)
 sim = GwoscNoiseSimulator(config)
-strain = sim.generate(duration=1000.0, sampling_frequency=4096.0, detectors=["H1"])
+strain = sim.generate(duration=100.0, sampling_frequency=4096.0, detectors=["H1"])
+
+print(strain)
 ```
 
 ---
@@ -381,14 +436,24 @@ Runs **multiple independent noise simulations concurrently** across threads or
 processes — accelerates batch jobs for parameter scans or Monte Carlo studies.
 
 ```python
-from gwmock_noise import DefaultNoiseSimulator, NoiseConfig, ParallelAdapter
+from gwmock_noise import ColoredNoiseSimulator, ParallelAdapter
 
-sim = DefaultNoiseSimulator()
-parallel = ParallelAdapter(sim, backend="process")  # or "thread"
-results = parallel.run([config_1, config_2, config_3])
+# Pass a factory callable — ParallelAdapter calls it once per worker
+parallel = ParallelAdapter(
+    lambda: ColoredNoiseSimulator(psd_file="ET_D_psd"),
+    backend="thread",
+)
+result = parallel.generate(
+    duration=4.0,
+    sampling_frequency=4096.0,
+    detectors=["H1", "L1", "V1"],
+)
+
+print(result)       # result is dict[str, np.ndarray] — each detector generated in parallel
 ```
 
-Note: correlated simulators are not parallelizable.
+Note: `ParallelAdapter` runs independent detectors concurrently — it does not
+run multiple configs. Correlated simulators are not supported.
 
 ---
 
@@ -399,11 +464,14 @@ stationarity/gaussianity checks — use this to catch implementation bugs or
 misconfiguration.
 
 ```python
-from gwmock_noise import estimate_psd, compare_psd, run_diagnostics
+from pathlib import Path
+from gwmock_noise import compare_psd, estimate_psd, run_diagnostics
 
-freqs, psd = estimate_psd(strain, fs=4096.0)
-result = compare_psd(freqs, psd, reference_freqs, reference_psd)
-diagnostics = run_diagnostics(strain, fs=4096.0)
+freqs, psd = estimate_psd(strain, sampling_frequency=4096.0)
+matches = compare_psd(strain, Path("reference_psd.txt"), sampling_frequency=4096.0)
+diagnostics = run_diagnostics(strain, sampling_frequency=4096.0)
+for name, res in diagnostics.items():
+    print(f"{name}: {'PASS' if res.passed else 'FAIL'} — {res.message}")
 ```
 
 ---
