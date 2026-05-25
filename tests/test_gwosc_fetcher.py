@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from gwmock_noise.gwosc.fetcher import GwoscNoiseFetcher
 from gwmock_noise.gwosc.filters import GwoscSegmentFilter
 from gwmock_noise.gwosc.models import FilterType, GwoscFilterConfig, GwoscNoiseConfig
 
@@ -302,3 +303,49 @@ class TestGwoscNoiseFetcher:
         import gwmock_noise
 
         assert gwmock_noise.GwoscSegmentFilter is GwoscSegmentFilter
+
+    def test_fetch_clean_with_cache_dir(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """fetch_clean passes format='hdf5.gwosc' when reading from cache."""
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+
+        # Pre-create a fake cached file matching the expected filename pattern
+        fake_file = cache_dir / "H-H1_GWOSC_O3b_4KHZ_R1-1261875618-4096.hdf5"
+        fake_file.write_text("dummy")
+
+        captured_formats: list[str] = []
+        original_read = FakeTimeSeries.read
+
+        @staticmethod
+        def read_spy(source, format=""):  # noqa: A002
+            captured_formats.append(format)
+            return original_read(source, format=format)
+
+        config = GwoscNoiseConfig(
+            detectors=["H1"],
+            gps_start=1261875618.0,
+            gps_end=1261879714.0,
+            sample_rate=4096,
+            cache_dir=cache_dir,
+        )
+
+        class _FakeLoc:
+            @staticmethod
+            def get_urls(**kw) -> list[str]:
+                return ["https://gwosc.org/H-H1_GWOSC_O3b_4KHZ_R1-1261875618-4096.hdf5"]
+
+        monkeypatch.setattr("gwmock_noise.gwosc.fetcher._import_gwosc_locate", _FakeLoc)
+        monkeypatch.setattr("gwmock_noise.gwosc.fetcher._load_timeseries", lambda: FakeTimeSeries)
+        monkeypatch.setattr(FakeTimeSeries, "read", read_spy)
+
+        monkeypatch.setattr(
+            "gwmock_noise.gwosc.fetcher.GwoscSegmentFilter.compute_clean_segments",
+            lambda self, start, end, detectors: {"H1": [(1261875618.0, 1261876000.0)]},
+        )
+
+        fetcher = GwoscNoiseFetcher(config)
+        result = fetcher.fetch_clean()
+
+        assert "H1" in result
+        assert len(result["H1"]) == 1
+        assert "hdf5.gwosc" in captured_formats, f"Expected format='hdf5.gwosc' but got: {captured_formats}"

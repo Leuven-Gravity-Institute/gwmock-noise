@@ -90,7 +90,7 @@ def _fetch_via_cache(  # noqa: PLR0913
         if not cache_path.exists():
             urlretrieve(url, cache_path)  # noqa: S310
 
-        series_part = timeseries_cls.read(cache_path, format="hdf5")
+        series_part = timeseries_cls.read(cache_path, format="hdf5.gwosc")
         series_parts.append(series_part)
 
     if len(series_parts) == 1:
