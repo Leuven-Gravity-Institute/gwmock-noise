@@ -69,9 +69,15 @@ class OutputConfig(BaseModel):
         default=0.0,
         description="GPS start time used for timestamped output formats such as GWF.",
     )
-    channel_prefix: str = Field(
-        default="MOCK",
-        description="Channel-name prefix used for GWF frame output.",
+    channel: str = Field(
+        default="MOCK_NOISE",
+        description="Channel name suffix for GWF frame output. Assembled as {detector}:{channel}.",
+    )
+    channels: dict[str, str] | None = Field(
+        default=None,
+        description=(
+            "Per-detector full channel names, e.g. {'H1': 'H1:STRAIN_NOISE'}. When set, takes precedence over channel."
+        ),
     )
 
 

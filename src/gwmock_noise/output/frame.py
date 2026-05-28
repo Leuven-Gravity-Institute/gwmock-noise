@@ -30,12 +30,13 @@ class FrameWriter:
     LALFrame path used here preserves float64 samples.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         base: NoiseSimulator,
         gps_start: float,
         output_dir: Path,
-        channel_prefix: str = "MOCK",
+        channel: str = "MOCK_NOISE",
+        channels: dict[str, str] | None = None,
         prefix: str = "",
     ) -> None:
         """Initialize the writer for contiguous GWF output."""
@@ -43,7 +44,8 @@ class FrameWriter:
         self.base = base
         self.gps_start = gps_start
         self.output_dir = Path(output_dir)
-        self.channel_prefix = channel_prefix
+        self.channel = channel
+        self.channels = channels
         self.prefix = prefix
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -101,7 +103,9 @@ class FrameWriter:
 
     def _channel_name(self, detector: str) -> str:
         """Return the frame channel name for a detector."""
-        return f"{detector}:{self.channel_prefix}_NOISE"
+        if self.channels is not None:
+            return self.channels[detector]
+        return f"{detector}:{self.channel}"
 
     def _frame_path(self, detector: str, channel: str, gps_start: float, duration: float) -> Path:
         """Return the output path for a detector frame segment."""

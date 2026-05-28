@@ -129,18 +129,20 @@ def test_default_simulator_run_uses_frame_writer_for_gwf_output(
     captured: dict[str, object] = {}
 
     class StubFrameWriter:
-        def __init__(
+        def __init__(  # noqa: PLR0913
             self,
             base: NoiseSimulator,
             gps_start: float,
             output_dir: Path,
-            channel_prefix: str = "MOCK",
+            channel: str = "MOCK_NOISE",
+            channels: dict | None = None,
             prefix: str = "",
         ) -> None:
             captured["base"] = base
             captured["gps_start"] = gps_start
             captured["output_dir"] = output_dir
-            captured["channel_prefix"] = channel_prefix
+            captured["channel"] = channel
+            captured["channels"] = channels
             captured["prefix"] = prefix
             self.output_dir = output_dir
             self.prefix = prefix
@@ -175,7 +177,7 @@ def test_default_simulator_run_uses_frame_writer_for_gwf_output(
             prefix="frame",
             format="gwf",
             gps_start=100.5,
-            channel_prefix="SIM",
+            channel="SIM",
         ),
         seed=11,
     )
@@ -187,7 +189,8 @@ def test_default_simulator_run_uses_frame_writer_for_gwf_output(
         "base": captured["base"],
         "gps_start": 100.5,
         "output_dir": tmp_path,
-        "channel_prefix": "SIM",
+        "channel": "SIM",
+        "channels": None,
         "prefix": "frame",
         "duration": 2.0,
         "sampling_frequency": 128.0,

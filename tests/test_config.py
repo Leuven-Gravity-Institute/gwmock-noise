@@ -21,7 +21,7 @@ def test_noise_config_defaults() -> None:
     assert config.output.prefix == "noise"
     assert config.output.format == "npy"
     assert config.output.gps_start == 0.0
-    assert config.output.channel_prefix == "MOCK"
+    assert config.output.channel == "MOCK_NOISE"
     assert config.seed is None
     assert config.components == [NoiseComponentConfig(simulator="white", options={})]
 
@@ -37,7 +37,7 @@ def test_noise_config_custom_values() -> None:
             prefix="run1",
             format="gwf",
             gps_start=1234567890.5,
-            channel_prefix="GWMOCK",
+            channel="GWMOCK",
         ),
         seed=123,
         components=[
@@ -52,7 +52,7 @@ def test_noise_config_custom_values() -> None:
     assert config.output.prefix == "run1"
     assert config.output.format == "gwf"
     assert config.output.gps_start == 1234567890.5
-    assert config.output.channel_prefix == "GWMOCK"
+    assert config.output.channel == "GWMOCK"
     assert config.seed == 123
     assert [component.simulator for component in config.components] == ["colored", "spectral_lines"]
     assert config.components[0].options == {"psd_file": "noise_psd.txt"}

@@ -179,3 +179,33 @@ def test_frame_writer_write_and_write_segments_without_real_gwpy(
 
     assert FrameWriter._format_time_token(10.0) == "10"
     assert FrameWriter._format_time_token(10.125) == "10p125"
+
+
+def test_frame_writer_channel_name_uses_channel_field(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_channel_name assembles {detector}:{channel} from the channel field."""
+    frame_output = import_module("gwmock_noise.output.frame")
+    monkeypatch.setattr(frame_output, "_require_gwf_backend", lambda: None)
+    writer = FrameWriter(FixedNoiseSimulator(), gps_start=0.0, output_dir=tmp_path, channel="STRAIN_NOISE")
+    assert writer._channel_name("H1") == "H1:STRAIN_NOISE"
+    assert writer._channel_name("L1") == "L1:STRAIN_NOISE"
+
+
+def test_frame_writer_channels_dict_takes_precedence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_channel_name returns verbatim per-detector name from channels dict, ignoring channel."""
+    frame_output = import_module("gwmock_noise.output.frame")
+    monkeypatch.setattr(frame_output, "_require_gwf_backend", lambda: None)
+    writer = FrameWriter(
+        FixedNoiseSimulator(),
+        gps_start=0.0,
+        output_dir=tmp_path,
+        channel="IGNORED",
+        channels={"H1": "H1:CUSTOM", "L1": "L1:CUSTOM"},
+    )
+    assert writer._channel_name("H1") == "H1:CUSTOM"
+    assert writer._channel_name("L1") == "L1:CUSTOM"
