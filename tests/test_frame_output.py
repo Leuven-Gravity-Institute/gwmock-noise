@@ -204,8 +204,26 @@ def test_frame_writer_channels_dict_takes_precedence(
         FixedNoiseSimulator(),
         gps_start=0.0,
         output_dir=tmp_path,
-        channel="IGNORED",
+        channel="FALLBACK",
         channels={"H1": "H1:CUSTOM", "L1": "L1:CUSTOM"},
     )
     assert writer._channel_name("H1") == "H1:CUSTOM"
     assert writer._channel_name("L1") == "L1:CUSTOM"
+
+
+def test_frame_writer_channels_dict_falls_back_for_unmapped_detector(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_channel_name falls back to channel field for detectors absent from channels dict."""
+    frame_output = import_module("gwmock_noise.output.frame")
+    monkeypatch.setattr(frame_output, "_require_gwf_backend", lambda: None)
+    writer = FrameWriter(
+        FixedNoiseSimulator(),
+        gps_start=0.0,
+        output_dir=tmp_path,
+        channel="FALLBACK",
+        channels={"H1": "H1:CUSTOM"},
+    )
+    assert writer._channel_name("H1") == "H1:CUSTOM"
+    assert writer._channel_name("L1") == "L1:FALLBACK"

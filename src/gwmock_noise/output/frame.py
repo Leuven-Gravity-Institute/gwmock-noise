@@ -104,7 +104,9 @@ class FrameWriter:
     def _channel_name(self, detector: str) -> str:
         """Return the frame channel name for a detector."""
         if self.channels is not None:
-            return self.channels[detector]
+            override = self.channels.get(detector)
+            if override is not None:
+                return override
         return f"{detector}:{self.channel}"
 
     def _frame_path(self, detector: str, channel: str, gps_start: float, duration: float) -> Path:
