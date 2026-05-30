@@ -838,7 +838,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "scipy", specifier = ">=1.17.1" },
-    { name = "typer", specifier = ">=0.26.1" },
+    { name = "typer", specifier = ">=0.26.2" },
 ]
 provides-extras = ["frame", "gengli", "gwosc", "gwpy"]
 
