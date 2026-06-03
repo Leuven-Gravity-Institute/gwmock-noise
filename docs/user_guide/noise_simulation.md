@@ -181,6 +181,33 @@ The upstream `gwmock` package is expected to import and compose
 `gwmock_noise.NoiseConfig` into its own configuration model and to drive a noise
 simulator that implements the `gwmock_noise.BaseNoiseSimulator` interface.
 
+## Spectral covariance utilities
+
+`gwmock_noise.spectral` exposes the lower-level PSD/CSD operations used by the
+correlated-noise simulator. These helpers are signal-agnostic, so
+`gwmock-signal` can use them when building multi-detector SGWB data products
+without depending on simulator internals.
+
+The convention is one-sided spectra in units of strain squared per Hz. For each
+positive real-FFT bin with spacing `df`, a spectral covariance matrix `S(f)` is
+converted to complex coefficient covariance `S(f) / (2 df)`. The inverse real
+FFT then applies the simulator normalization `df * n`, where `n` is the chunk
+length. With this convention, a one-sided periodogram of long generated strain
+segments recovers the input PSD/CSD away from taper and edge effects.
+
+The public workflow is:
+
+1. Load and interpolate detector PSDs with `load_and_interpolate_psd(...)`.
+2. Load and interpolate pairwise complex CSDs with
+   `load_and_interpolate_csd(...)`.
+3. Assemble per-frequency Hermitian matrices with
+   `assemble_hermitian_spectral_matrices(...)`.
+4. Build regularized coefficient-space Cholesky factors with
+   `cholesky_factors_from_spectral_matrices(...)`, or use
+   `build_spectral_covariance_from_files(...)` to perform the whole file-backed
+   path.
+5. Draw real detector chunks with `simulate_spectral_covariance_chunk(...)`.
+
 When `output.format = "gwf"`, `run(config)` reuses the built-in GWpy/GWF output
 stack to write frame files instead of NumPy artifacts. The metadata sidecar is
 still written, and `SimulationResult.output_paths` points to the generated GWF

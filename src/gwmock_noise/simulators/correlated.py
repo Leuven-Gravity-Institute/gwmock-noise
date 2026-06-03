@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from itertools import combinations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from gwmock_noise.simulators._spectral import load_spectral_series
 from gwmock_noise.simulators._stitching import OVERLAP_SIZE, WINDOW_SIZE, OverlapAddStitcher
 from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
 from gwmock_noise.simulators.colored import _tukey_window
+from gwmock_noise.spectral import (
+    build_spectral_covariance_from_files,
+    regularized_cholesky,
+    simulate_spectral_covariance_chunk,
+)
 
 if TYPE_CHECKING:
     from gwmock_noise.config.models import NoiseComponentConfig, NoiseConfig
@@ -172,76 +175,28 @@ class CorrelatedNoiseSimulator(ConfigurableNoiseSimulator):
         if not np.any(self._frequency_mask):
             raise ValueError("The requested frequency range contains no simulation bins.")
 
-    def _interpolate_psd(self, detector: str, masked_frequencies: np.ndarray, taper: np.ndarray) -> np.ndarray:
-        """Interpolate a detector PSD onto the FFT grid."""
-        frequencies, values = load_spectral_series(self.psd_files[detector], kind="PSD")
-        interpolated = np.interp(masked_frequencies, frequencies, values, left=0.0, right=0.0)
-        return np.clip(interpolated, a_min=0.0, a_max=None) * taper
-
-    def _interpolate_csd(
-        self,
-        pair: tuple[str, str],
-        masked_frequencies: np.ndarray,
-        taper: np.ndarray,
-    ) -> np.ndarray:
-        """Interpolate a detector-pair CSD onto the FFT grid."""
-        frequencies, values = load_spectral_series(self._normalized_csd_files[pair], kind="CSD", complex_values=True)
-        real = np.interp(masked_frequencies, frequencies, values.real, left=0.0, right=0.0)
-        imag = np.interp(masked_frequencies, frequencies, values.imag, left=0.0, right=0.0)
-        return (real + 1j * imag) * taper
-
     def _configure_spectral_factors(self) -> None:
         """Construct regularized spectral factors on the FFT grid."""
         masked_frequencies = self._frequency_grid[self._frequency_mask]
         taper = _tukey_window(masked_frequencies.size)
-
-        self._detector_index = {detector: index for index, detector in enumerate(self.detectors)}
-        self._psd = {
-            detector: self._interpolate_psd(detector, masked_frequencies, taper) for detector in self.detectors
-        }
-        self._csd = {
-            pair: self._interpolate_csd(pair, masked_frequencies, taper)
-            for pair in combinations(sorted(self.detectors), 2)
-            if pair in self._normalized_csd_files
-        }
-
-        n_detectors = len(self.detectors)
-        n_frequencies = masked_frequencies.size
-        self._cholesky_factors = np.zeros((n_frequencies, n_detectors, n_detectors), dtype=np.complex128)
-
-        for frequency_index in range(n_frequencies):
-            spectral_matrix = np.zeros((n_detectors, n_detectors), dtype=np.complex128)
-            for detector, psd in self._psd.items():
-                detector_index = self._detector_index[detector]
-                spectral_matrix[detector_index, detector_index] = psd[frequency_index]
-
-            for pair, csd in self._csd.items():
-                detector_a, detector_b = pair
-                index_a = self._detector_index[detector_a]
-                index_b = self._detector_index[detector_b]
-                spectral_matrix[index_a, index_b] = csd[frequency_index]
-                spectral_matrix[index_b, index_a] = np.conj(csd[frequency_index])
-
-            self._cholesky_factors[frequency_index] = self._regularized_cholesky(
-                spectral_matrix * (0.5 / self._delta_frequency)
-            )
+        covariance = build_spectral_covariance_from_files(
+            detectors=self.detectors,
+            psd_files=self.psd_files,
+            csd_files=self._normalized_csd_files,
+            frequencies=masked_frequencies,
+            taper=taper,
+            delta_frequency=self._delta_frequency,
+            regularization_epsilon=self.regularization_epsilon,
+        )
+        self._detector_index = covariance.detector_index
+        self._psd = covariance.psd
+        self._csd = covariance.csd
+        self._spectral_matrices = covariance.matrices
+        self._cholesky_factors = covariance.cholesky_factors
 
     def _regularized_cholesky(self, spectral_matrix: np.ndarray) -> np.ndarray:
         """Return a numerically stable Cholesky-like factor."""
-        hermitian_matrix = 0.5 * (spectral_matrix + spectral_matrix.conj().T)
-        diagonal_scale = max(float(np.max(np.real(np.diag(hermitian_matrix)))), 1.0)
-        epsilon = self.regularization_epsilon * diagonal_scale
-        minimum_eigenvalue = float(np.min(np.linalg.eigvalsh(hermitian_matrix)))
-
-        regularized = hermitian_matrix
-        if minimum_eigenvalue < epsilon:
-            regularized = regularized + np.eye(hermitian_matrix.shape[0]) * (epsilon - minimum_eigenvalue)
-
-        try:
-            return np.linalg.cholesky(regularized)
-        except np.linalg.LinAlgError:
-            diagonal = np.clip(np.real(np.diag(hermitian_matrix)), a_min=0.0, a_max=None)
-            return np.diag(np.sqrt(diagonal + epsilon))
+        return regularized_cholesky(spectral_matrix, regularization_epsilon=self.regularization_epsilon)
 
     def _initialize_generator(self, seed: int | None) -> None:
         """Initialize the shared random-number generator."""
@@ -252,17 +207,15 @@ class CorrelatedNoiseSimulator(ConfigurableNoiseSimulator):
         if self._rng is None:
             raise RuntimeError("Random number generator not initialized.")
 
-        n_frequencies = int(np.count_nonzero(self._frequency_mask))
-        white_noise = (
-            self._rng.standard_normal((n_frequencies, len(self.detectors)))
-            + 1j * self._rng.standard_normal((n_frequencies, len(self.detectors)))
-        ) / np.sqrt(2.0)
-        colored_noise = np.einsum("fij,fj->fi", self._cholesky_factors, white_noise)
-
-        frequency_series = np.zeros((len(self.detectors), self._frequency_grid.size), dtype=np.complex128)
-        frequency_series[:, self._frequency_mask] = colored_noise.T
-        time_series = np.fft.irfft(frequency_series, n=WINDOW_SIZE, axis=1) * self._delta_frequency * WINDOW_SIZE
-        return {detector: time_series[self._detector_index[detector]].copy() for detector in self.detectors}
+        return simulate_spectral_covariance_chunk(
+            self._rng,
+            self._cholesky_factors,
+            detectors=self.detectors,
+            frequency_grid_size=self._frequency_grid.size,
+            frequency_mask=self._frequency_mask,
+            delta_frequency=self._delta_frequency,
+            window_size=WINDOW_SIZE,
+        )
 
     def _simulate(self, *, n_samples: int) -> dict[str, np.ndarray]:
         """Generate a prefix-consistent realization from shared correlated chunks."""

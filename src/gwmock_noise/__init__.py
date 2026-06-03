@@ -37,6 +37,22 @@ from gwmock_noise.simulators import (
     open_stream,
     take,
 )
+from gwmock_noise.spectral import (
+    SpectralCovariance,
+    assemble_hermitian_spectral_matrices,
+    build_spectral_covariance_from_files,
+    cholesky_factors_from_spectral_matrices,
+    interpolate_complex_spectral_series,
+    interpolate_real_spectral_series,
+    load_and_interpolate_csd,
+    load_and_interpolate_psd,
+    normalize_csd_mapping,
+    normalize_detector_pair,
+    regularized_cholesky,
+    sample_complex_frequency_coefficients,
+    simulate_spectral_covariance_chunk,
+    time_series_from_frequency_coefficients,
+)
 from gwmock_noise.version import __version__
 
 _OPTIONAL_EXPORTS = {
@@ -88,17 +104,31 @@ __all__ = [
     "SchumannNoiseSimulator",
     "SchumannParams",
     "SimulationResult",
+    "SpectralCovariance",
     "SpectralLine",
     "SpectralLineSimulator",
     "TimeVaryingColoredNoiseSimulator",
     "WhiteNoiseSimulator",
     "__version__",
+    "assemble_hermitian_spectral_matrices",
+    "build_spectral_covariance_from_files",
+    "cholesky_factors_from_spectral_matrices",
     "compare_psd",
     "estimate_psd",
+    "interpolate_complex_spectral_series",
+    "interpolate_real_spectral_series",
+    "load_and_interpolate_csd",
+    "load_and_interpolate_psd",
     "load_config",
+    "normalize_csd_mapping",
+    "normalize_detector_pair",
     "open_stream",
+    "regularized_cholesky",
     "run_diagnostics",
+    "sample_complex_frequency_coefficients",
+    "simulate_spectral_covariance_chunk",
     "take",
+    "time_series_from_frequency_coefficients",
 ]
 
 

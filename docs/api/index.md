@@ -28,6 +28,14 @@ configuration and simulators.
 
 ::: gwmock_noise.gaussian
 
+## Spectral covariance utilities
+
+Signal-agnostic helpers for loading PSD/CSD files, interpolating spectra onto an
+FFT grid, assembling Hermitian covariance matrices, regularizing Cholesky
+factors, and sampling real multi-detector time series.
+
+::: gwmock_noise.spectral
+
 ## Glitch models
 
 Runtime glitch model definitions, including phenomenological models and the
