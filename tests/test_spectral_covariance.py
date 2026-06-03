@@ -16,7 +16,9 @@ from gwmock_noise.spectral import (
     interpolate_real_spectral_series,
     normalize_detector_pair,
     regularized_cholesky,
+    sample_complex_frequency_coefficients,
     simulate_spectral_covariance_chunk,
+    time_series_from_frequency_coefficients,
 )
 
 FLAT_PSD = 2.0e-3
@@ -149,6 +151,50 @@ def test_simulate_spectral_covariance_chunk_returns_real_detector_series() -> No
     assert set(chunk) == set(detectors)
     assert all(strain.shape == (8,) for strain in chunk.values())
     assert all(np.issubdtype(strain.dtype, np.floating) for strain in chunk.values())
+
+
+def test_endpoint_frequency_bins_are_real_only_before_irfft() -> None:
+    """Masked DC and Nyquist bins must stay real before np.fft.irfft."""
+    rng = np.random.default_rng(0)
+    detectors = ["H1"]
+    window_size = 8
+    frequency_grid_size = window_size // 2 + 1
+    frequency_mask = np.ones(frequency_grid_size, dtype=bool)
+    cholesky_factors = np.tile(np.eye(1, dtype=np.complex128)[None, :, :], (frequency_grid_size, 1, 1))
+
+    coefficients = sample_complex_frequency_coefficients(
+        rng,
+        cholesky_factors,
+        real_only_indices=(0, frequency_grid_size - 1),
+    )
+
+    assert np.allclose(coefficients[0].imag, 0.0)
+    assert np.allclose(coefficients[-1].imag, 0.0)
+
+    chunk = time_series_from_frequency_coefficients(
+        coefficients,
+        detectors=detectors,
+        frequency_grid_size=frequency_grid_size,
+        frequency_mask=frequency_mask,
+        delta_frequency=0.25,
+        window_size=window_size,
+    )
+
+    assert chunk["H1"].shape == (window_size,)
+    assert np.all(np.isfinite(chunk["H1"]))
+
+    chunk = simulate_spectral_covariance_chunk(
+        np.random.default_rng(1),
+        cholesky_factors,
+        detectors=detectors,
+        frequency_grid_size=frequency_grid_size,
+        frequency_mask=frequency_mask,
+        delta_frequency=0.25,
+        window_size=window_size,
+    )
+
+    assert chunk["H1"].shape == (window_size,)
+    assert np.all(np.isfinite(chunk["H1"]))
 
 
 def test_normalize_detector_pair_rejects_auto_pairs() -> None:

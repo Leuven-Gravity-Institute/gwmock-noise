@@ -240,7 +240,14 @@ def build_spectral_covariance_from_files(  # noqa: PLR0913
     psd = {
         detector: load_and_interpolate_psd(str(path), frequencies, taper=taper) for detector, path in psd_files.items()
     }
-    normalized_csd_files = {normalize_detector_pair(pair): path for pair, path in (csd_files or {}).items()}
+    normalized_csd_files: dict[tuple[str, str], StrPath] = {}
+    for pair, path in (csd_files or {}).items():
+        detector_a, detector_b = normalize_detector_pair(pair)
+        normalized_key = (detector_a, detector_b)
+        if normalized_key in normalized_csd_files:
+            msg = f"Duplicate CSD mapping for detector pair {detector_a}-{detector_b}."
+            raise ValueError(msg)
+        normalized_csd_files[normalized_key] = path
     csd = {
         pair: load_and_interpolate_csd(str(path), frequencies, taper=taper)
         for pair, path in normalized_csd_files.items()
@@ -261,9 +268,36 @@ def build_spectral_covariance_from_files(  # noqa: PLR0913
     )
 
 
+def _real_only_rfft_grid_indices(window_size: int) -> tuple[int, ...]:
+    """Return rfft grid indices that must carry real-only coefficients."""
+    indices = [0]
+    if window_size % 2 == 0:
+        indices.append(window_size // 2)
+    return tuple(indices)
+
+
+def _real_only_masked_coefficient_indices(
+    frequency_mask: NDArray[np.bool_],
+    *,
+    window_size: int,
+) -> tuple[int, ...]:
+    """Map masked DC/Nyquist grid bins to coefficient rows."""
+    masked_grid_indices = np.flatnonzero(frequency_mask)
+    coefficient_index_by_grid = {
+        grid_index: coefficient_index for coefficient_index, grid_index in enumerate(masked_grid_indices)
+    }
+    return tuple(
+        coefficient_index_by_grid[grid_index]
+        for grid_index in _real_only_rfft_grid_indices(window_size)
+        if grid_index in coefficient_index_by_grid
+    )
+
+
 def sample_complex_frequency_coefficients(
     rng: np.random.Generator,
     cholesky_factors: NDArray[np.complex128],
+    *,
+    real_only_indices: Sequence[int] | None = None,
 ) -> NDArray[np.complex128]:
     """Sample complex Gaussian frequency coefficients from Cholesky factors."""
     factors = np.asarray(cholesky_factors, dtype=np.complex128)
@@ -271,7 +305,13 @@ def sample_complex_frequency_coefficients(
     white_noise = (
         rng.standard_normal((n_frequencies, n_detectors)) + 1j * rng.standard_normal((n_frequencies, n_detectors))
     ) / np.sqrt(2.0)
-    return np.einsum("fij,fj->fi", factors, white_noise)
+    if real_only_indices:
+        real_only = np.asarray(real_only_indices, dtype=int)
+        white_noise[real_only] = rng.standard_normal((real_only.size, n_detectors))
+    coefficients = np.einsum("fij,fj->fi", factors, white_noise)
+    if real_only_indices:
+        coefficients[real_only] = coefficients[real_only].real
+    return coefficients
 
 
 def time_series_from_frequency_coefficients(  # noqa: PLR0913
@@ -287,6 +327,11 @@ def time_series_from_frequency_coefficients(  # noqa: PLR0913
     detector_list = list(detectors)
     frequency_series = np.zeros((len(detector_list), frequency_grid_size), dtype=np.complex128)
     frequency_series[:, frequency_mask] = np.asarray(coefficients).T
+    real_only_grid_indices = [
+        grid_index for grid_index in _real_only_rfft_grid_indices(window_size) if frequency_mask[grid_index]
+    ]
+    if real_only_grid_indices:
+        frequency_series[:, real_only_grid_indices] = frequency_series[:, real_only_grid_indices].real
     time_series = np.fft.irfft(frequency_series, n=window_size, axis=1) * delta_frequency * window_size
     return {detector: time_series[index].copy() for index, detector in enumerate(detector_list)}
 
@@ -302,7 +347,14 @@ def simulate_spectral_covariance_chunk(  # noqa: PLR0913
     window_size: int,
 ) -> dict[str, NDArray[np.float64]]:
     """Sample one real multi-detector chunk from spectral covariance factors."""
-    coefficients = sample_complex_frequency_coefficients(rng, cholesky_factors)
+    coefficients = sample_complex_frequency_coefficients(
+        rng,
+        cholesky_factors,
+        real_only_indices=_real_only_masked_coefficient_indices(
+            frequency_mask,
+            window_size=window_size,
+        ),
+    )
     return time_series_from_frequency_coefficients(
         coefficients,
         detectors=detectors,
