@@ -185,10 +185,13 @@ simulator that implements the `gwmock_noise.BaseNoiseSimulator` interface.
 
 The colored, correlated, and Schumann simulators synthesize noise in
 `window_duration`-second blocks and stitch them together. The frequency
-resolution of the generated noise is therefore `Δf = 1 / window_duration`
-(default `4.0 s` → `0.25 Hz`), **independent of `sampling_frequency`**. Input
-PSD structure finer than `Δf` cannot be reproduced, so increase
-`window_duration` to resolve narrow or fast-varying features:
+resolution of the generated noise is therefore **approximately**
+`Δf ≈ 1 / window_duration` (default `4.0 s` → `0.25 Hz`), largely independent of
+`sampling_frequency`. The block length is rounded to a whole number of samples
+(`round(window_duration × sampling_frequency)`), so the realized `Δf` can differ
+slightly from `1 / window_duration` — most noticeably for short windows or low
+sampling rates. Input PSD structure finer than `Δf` cannot be reproduced, so
+increase `window_duration` to resolve narrow or fast-varying features:
 
 ```python
 from gwmock_noise import CorrelatedNoiseSimulator
