@@ -2,22 +2,34 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from gwmock_noise.simulators._spectral import load_spectral_series, normalize_spectral_reference
-from gwmock_noise.simulators._stitching import OVERLAP_SIZE, WINDOW_SIZE, OverlapAddStitcher
+from gwmock_noise.simulators._spectral import (
+    load_spectral_series,
+    median_frequency_spacing,
+    normalize_spectral_reference,
+)
+from gwmock_noise.simulators._stitching import (
+    DEFAULT_WINDOW_DURATION,
+    OverlapAddStitcher,
+    resolve_window_sizes,
+    warn_if_underresolved,
+)
 from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
+from gwmock_noise.utils.log import LOGGER_NAME
 
 if TYPE_CHECKING:
     from gwmock_noise.config.models import NoiseComponentConfig, NoiseConfig
 
+logger = logging.getLogger(LOGGER_NAME)
+
 PSD_WINDOW_ALPHA = 1e-3
 MIN_TAPER_BINS = 2
-FRAME_STEP = WINDOW_SIZE - OVERLAP_SIZE
 
 
 def _tukey_window(length: int, alpha: float = PSD_WINDOW_ALPHA) -> np.ndarray:
@@ -56,6 +68,7 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         seed: int | None = None,
         low_frequency_cutoff: float = 2.0,
         high_frequency_cutoff: float | None = None,
+        window_duration: float = DEFAULT_WINDOW_DURATION,
     ) -> None:
         """Initialize the simulator."""
         if psd_file is None and psd_schedule is None:
@@ -86,13 +99,19 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         self.seed = seed
         self.low_frequency_cutoff = low_frequency_cutoff
         self.high_frequency_cutoff = high_frequency_cutoff
+        self.window_duration = window_duration
 
         self._rngs: dict[str, np.random.Generator] = {}
-        self._stitcher = OverlapAddStitcher(self.detectors)
         self._generated_samples = 0
         self._psd_anchors: list[tuple[float, np.ndarray]] = []
 
         self._validate_runtime(duration=duration, sampling_frequency=sampling_frequency, detectors=self.detectors)
+        self._window_size, self._overlap_size = resolve_window_sizes(window_duration, sampling_frequency)
+        self._stitcher = OverlapAddStitcher(
+            self.detectors,
+            window_size=self._window_size,
+            overlap_size=self._overlap_size,
+        )
         self._configure_frequency_grid()
 
     @classmethod
@@ -142,8 +161,8 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
 
     def _configure_frequency_grid(self) -> None:
         """Configure the FFT grid and interpolated PSD."""
-        self._delta_frequency = self.sampling_frequency / WINDOW_SIZE
-        self._frequency_grid = np.fft.rfftfreq(WINDOW_SIZE, d=1.0 / self.sampling_frequency)
+        self._delta_frequency = self.sampling_frequency / self._window_size
+        self._frequency_grid = np.fft.rfftfreq(self._window_size, d=1.0 / self.sampling_frequency)
         self._high_frequency_cutoff = (
             self.high_frequency_cutoff if self.high_frequency_cutoff is not None else self.sampling_frequency / 2.0
         )
@@ -153,14 +172,23 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         if not np.any(self._frequency_mask):
             raise ValueError("The requested frequency range contains no simulation bins.")
 
+        self._psd_input_spacing = np.inf
         self._psd_anchors = self._load_psd_anchors()
         self._psd = self._interpolate_psd(0.0)
+        warn_if_underresolved(
+            delta_frequency=self._delta_frequency,
+            low_frequency_cutoff=self.low_frequency_cutoff,
+            reference_spacing=self._psd_input_spacing,
+            logger=logger,
+            context="colored noise simulator",
+        )
 
     def _load_psd_on_grid(self, psd_file: str | Path) -> np.ndarray:
         """Load one PSD file onto the simulator frequency grid."""
         psd = np.zeros_like(self._frequency_grid, dtype=float)
         masked_frequencies = self._frequency_grid[self._frequency_mask]
         psd_frequencies, psd_values = load_spectral_series(psd_file, kind="PSD")
+        self._psd_input_spacing = min(self._psd_input_spacing, median_frequency_spacing(psd_frequencies))
         interpolated_psd = np.interp(masked_frequencies, psd_frequencies, psd_values, left=0.0, right=0.0)
         psd[self._frequency_mask] = np.clip(interpolated_psd, a_min=0.0, a_max=None)
         psd[self._frequency_mask] *= _tukey_window(masked_frequencies.size)
@@ -200,12 +228,14 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
 
     def _simulate(self, *, n_samples: int) -> dict[str, np.ndarray]:
         """Generate a prefix-consistent realization while updating the PSD per frame."""
-        next_frame_midpoint = self._generated_samples if self.previous_strain else -FRAME_STEP
+        overlap_size = self._stitcher.overlap_size
+        frame_step = self._stitcher.window_size - overlap_size
+        next_frame_midpoint = self._generated_samples if self.previous_strain else -frame_step
 
         def chunk_generator() -> dict[str, np.ndarray]:
             nonlocal next_frame_midpoint
             self._psd = self._interpolate_psd(next_frame_midpoint / self.sampling_frequency)
-            next_frame_midpoint += FRAME_STEP
+            next_frame_midpoint += frame_step
             return self._generate_realization_chunk()
 
         history = self.previous_strain
@@ -226,13 +256,13 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
 
             for detector in self.detectors:
                 blended_overlap = (
-                    (current_raw[detector][-OVERLAP_SIZE:] * self._stitcher._window_out)
-                    + (next_raw[detector][:OVERLAP_SIZE] * self._stitcher._window_in)
+                    (current_raw[detector][-overlap_size:] * self._stitcher._window_out)
+                    + (next_raw[detector][:overlap_size] * self._stitcher._window_in)
                 ) / self._stitcher._blend_norm
                 emitted_segments[detector].append(blended_overlap)
                 current_raw[detector] = next_raw[detector].copy()
 
-            produced_samples += FRAME_STEP
+            produced_samples += frame_step
 
         realization = {
             detector: np.concatenate(segments)[:n_samples] for detector, segments in emitted_segments.items()
@@ -260,7 +290,7 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         frequency_series[self._frequency_mask] = white_noise * np.sqrt(
             self._psd[self._frequency_mask] * 0.5 / self._delta_frequency
         )
-        return np.fft.irfft(frequency_series, n=WINDOW_SIZE) * self._delta_frequency * WINDOW_SIZE
+        return np.fft.irfft(frequency_series, n=self._window_size) * self._delta_frequency * self._window_size
 
     def _generate_realization_chunk(self) -> dict[str, np.ndarray]:
         """Generate one colored-noise chunk for every configured detector."""
@@ -301,7 +331,12 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         self.detectors = runtime_detectors
 
         if runtime_changed:
-            self._stitcher.configure_detectors(self.detectors)
+            self._window_size, self._overlap_size = resolve_window_sizes(self.window_duration, self.sampling_frequency)
+            self._stitcher = OverlapAddStitcher(
+                self.detectors,
+                window_size=self._window_size,
+                overlap_size=self._overlap_size,
+            )
             self.reset()
             self._configure_frequency_grid()
 
@@ -346,8 +381,9 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
                 ],
                 "low_frequency_cutoff": self.low_frequency_cutoff,
                 "high_frequency_cutoff": self._high_frequency_cutoff,
-                "window_size": WINDOW_SIZE,
-                "overlap_size": OVERLAP_SIZE,
+                "window_duration": self.window_duration,
+                "window_size": self._window_size,
+                "overlap_size": self._overlap_size,
             },
         }
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 from itertools import combinations
@@ -12,12 +13,20 @@ import numpy as np
 from scipy.special import eval_legendre
 
 from gwmock_noise.simulators._spectral import load_spectral_series
-from gwmock_noise.simulators._stitching import OVERLAP_SIZE, WINDOW_SIZE, OverlapAddStitcher
+from gwmock_noise.simulators._stitching import (
+    DEFAULT_WINDOW_DURATION,
+    OverlapAddStitcher,
+    resolve_window_sizes,
+    warn_if_underresolved,
+)
 from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
 from gwmock_noise.simulators.colored import _tukey_window
+from gwmock_noise.utils.log import LOGGER_NAME
 
 if TYPE_CHECKING:
     from gwmock_noise.config.models import NoiseComponentConfig, NoiseConfig
+
+logger = logging.getLogger(LOGGER_NAME)
 
 EARTH_RADIUS_METERS = 6_371_000.0
 SPEED_OF_LIGHT_METERS_PER_SECOND = 299_792_458.0
@@ -72,6 +81,7 @@ class SchumannNoiseSimulator(ConfigurableNoiseSimulator):
         seed: int | None = None,
         low_frequency_cutoff: float = 2.0,
         high_frequency_cutoff: float | None = None,
+        window_duration: float = DEFAULT_WINDOW_DURATION,
     ) -> None:
         """Initialize the Schumann simulator."""
         self.positions = {detector: (float(lat), float(lon)) for detector, (lat, lon) in positions.items()}
@@ -83,8 +93,8 @@ class SchumannNoiseSimulator(ConfigurableNoiseSimulator):
         self.seed = seed
         self.low_frequency_cutoff = low_frequency_cutoff
         self.high_frequency_cutoff = high_frequency_cutoff
+        self.window_duration = window_duration
 
-        self._stitcher = OverlapAddStitcher(self.detectors)
         self._rng: np.random.Generator | None = None
         self._high_frequency_cutoff = 0.0
         self._coupling = {}
@@ -92,6 +102,12 @@ class SchumannNoiseSimulator(ConfigurableNoiseSimulator):
 
         self._validate_runtime(duration=duration, sampling_frequency=sampling_frequency, detectors=self.detectors)
         self._validate_detector_inputs()
+        self._window_size, self._overlap_size = resolve_window_sizes(window_duration, sampling_frequency)
+        self._stitcher = OverlapAddStitcher(
+            self.detectors,
+            window_size=self._window_size,
+            overlap_size=self._overlap_size,
+        )
         self._configure_frequency_grid()
         self._configure_spectral_factors()
 
@@ -158,8 +174,8 @@ class SchumannNoiseSimulator(ConfigurableNoiseSimulator):
 
     def _configure_frequency_grid(self) -> None:
         """Configure the FFT grid and band mask."""
-        self._delta_frequency = self.sampling_frequency / WINDOW_SIZE
-        self._frequency_grid = np.fft.rfftfreq(WINDOW_SIZE, d=1.0 / self.sampling_frequency)
+        self._delta_frequency = self.sampling_frequency / self._window_size
+        self._frequency_grid = np.fft.rfftfreq(self._window_size, d=1.0 / self.sampling_frequency)
         self._high_frequency_cutoff = (
             self.high_frequency_cutoff if self.high_frequency_cutoff is not None else self.sampling_frequency / 2.0
         )
@@ -168,6 +184,23 @@ class SchumannNoiseSimulator(ConfigurableNoiseSimulator):
         )
         if not np.any(self._frequency_mask):
             raise ValueError("The requested frequency range contains no simulation bins.")
+
+        # Narrowest resonance half-width sets the finest scale the grid must resolve.
+        resonance_half_widths = [
+            center / (2.0 * quality)
+            for center, quality in zip(
+                self.schumann_params.mode_frequencies_hz,
+                self.schumann_params.quality_factors,
+                strict=True,
+            )
+        ]
+        warn_if_underresolved(
+            delta_frequency=self._delta_frequency,
+            low_frequency_cutoff=self.low_frequency_cutoff,
+            reference_spacing=min(resonance_half_widths),
+            logger=logger,
+            context="schumann noise simulator",
+        )
 
     def _load_coupling_on_grid(self, coupling_file: Path) -> np.ndarray:
         """Load one detector coupling function onto the simulator grid."""
@@ -284,7 +317,9 @@ class SchumannNoiseSimulator(ConfigurableNoiseSimulator):
 
         frequency_series = np.zeros((len(self.detectors), self._frequency_grid.size), dtype=np.complex128)
         frequency_series[:, self._frequency_mask] = colored_noise.T
-        time_series = np.fft.irfft(frequency_series, n=WINDOW_SIZE, axis=1) * self._delta_frequency * WINDOW_SIZE
+        time_series = (
+            np.fft.irfft(frequency_series, n=self._window_size, axis=1) * self._delta_frequency * self._window_size
+        )
         return {detector: time_series[self._detector_index[detector]].copy() for detector in self.detectors}
 
     def reset(self) -> None:
@@ -320,7 +355,12 @@ class SchumannNoiseSimulator(ConfigurableNoiseSimulator):
 
         if runtime_changed:
             self._validate_detector_inputs()
-            self._stitcher.configure_detectors(self.detectors)
+            self._window_size, self._overlap_size = resolve_window_sizes(self.window_duration, self.sampling_frequency)
+            self._stitcher = OverlapAddStitcher(
+                self.detectors,
+                window_size=self._window_size,
+                overlap_size=self._overlap_size,
+            )
             self.reset()
             self._configure_frequency_grid()
             self._configure_spectral_factors()
@@ -364,7 +404,8 @@ class SchumannNoiseSimulator(ConfigurableNoiseSimulator):
                 "amplitudes": list(self.schumann_params.amplitudes),
                 "low_frequency_cutoff": self.low_frequency_cutoff,
                 "high_frequency_cutoff": self._high_frequency_cutoff,
-                "window_size": WINDOW_SIZE,
-                "overlap_size": OVERLAP_SIZE,
+                "window_duration": self.window_duration,
+                "window_size": self._window_size,
+                "overlap_size": self._overlap_size,
             },
         }

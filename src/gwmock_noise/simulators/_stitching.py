@@ -2,12 +2,89 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 import numpy as np
 
+# Default synthesis window expressed as a fixed duration (seconds). A
+# duration-based window keeps the frequency resolution ``df = 1 / window_duration``
+# invariant to the sampling frequency. The default of 4 s (df = 0.25 Hz) is fine
+# enough to resolve the narrow, fast-varying resonance modes in typical LIGO PSDs;
+# the historical 0.5 s implied by a 2048-sample window at 4096 Hz was too coarse.
+DEFAULT_WINDOW_DURATION = 4.0
+
+# Smallest window (samples) that still yields a positive overlap (>= 1).
+MIN_WINDOW_SIZE = 2
+
 WINDOW_SIZE = 2048
 OVERLAP_SIZE = WINDOW_SIZE // 2
+
+
+def resolve_window_sizes(window_duration: float, sampling_frequency: float) -> tuple[int, int]:
+    """Resolve a seconds-based window into ``(window_size, overlap_size)`` samples.
+
+    Args:
+        window_duration: Synthesis window length in seconds.
+        sampling_frequency: Sampling frequency in Hz.
+
+    Returns:
+        A tuple of ``(window_size, overlap_size)`` in samples, with a half-window
+        overlap.
+
+    Raises:
+        ValueError: If ``window_duration`` is not positive or is too short to span
+            at least ``MIN_WINDOW_SIZE`` samples at the given sampling frequency.
+    """
+    if window_duration <= 0:
+        raise ValueError("window_duration must be greater than zero.")
+    window_size = round(window_duration * sampling_frequency)
+    if window_size < MIN_WINDOW_SIZE:
+        raise ValueError(
+            "window_duration is too short for the sampling frequency: it must span "
+            f"at least {MIN_WINDOW_SIZE} samples (got {window_size})."
+        )
+    overlap_size = window_size // 2
+    return window_size, overlap_size
+
+
+def warn_if_underresolved(
+    *,
+    delta_frequency: float,
+    low_frequency_cutoff: float,
+    reference_spacing: float | None = None,
+    logger: logging.Logger,
+    context: str = "",
+) -> None:
+    """Warn when the synthesis grid is too coarse to capture the target spectrum.
+
+    Two conditions trigger a warning (see #139):
+
+    * ``delta_frequency`` is coarser than ``low_frequency_cutoff`` — the band of
+      interest is spanned by too few bins to shape it reliably.
+    * ``delta_frequency`` is coarser than ``reference_spacing`` — the input
+      spectrum is sampled (or varies) more finely than the synthesis grid, so its
+      structure is lost.
+
+    The warning is informational; generation proceeds regardless.
+    """
+    prefix = f"{context}: " if context else ""
+    if low_frequency_cutoff > 0 and delta_frequency > low_frequency_cutoff:
+        logger.warning(
+            "%sfrequency resolution df=%.4g Hz is coarser than the low-frequency "
+            "cutoff %.4g Hz; consider increasing window_duration.",
+            prefix,
+            delta_frequency,
+            low_frequency_cutoff,
+        )
+    if reference_spacing is not None and reference_spacing > 0 and delta_frequency > reference_spacing:
+        logger.warning(
+            "%sfrequency resolution df=%.4g Hz is coarser than the input spectrum "
+            "scale %.4g Hz; fine structure will be lost. Consider increasing window_duration.",
+            prefix,
+            delta_frequency,
+            reference_spacing,
+        )
 
 
 class OverlapAddStitcher:

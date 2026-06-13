@@ -7,6 +7,10 @@ from pathlib import Path
 
 from gwmock_noise.version import __version__
 
+# Single logger name shared across the whole package so module-level loggers,
+# setup_logger(), and the CLI all configure and emit through the same logger.
+LOGGER_NAME = "gwmock-noise"
+
 
 def get_version_information() -> str:
     """Get the version information.
@@ -38,7 +42,7 @@ def setup_logger(
     else:
         level = int(log_level)
 
-    logger = logging.getLogger("gwmock-noise")
+    logger = logging.getLogger(LOGGER_NAME)
     logger.propagate = False
     logger.setLevel(level)
 

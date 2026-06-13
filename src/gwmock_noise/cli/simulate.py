@@ -24,8 +24,9 @@ def simulate(
     """
     from gwmock_noise.config import load_config  # noqa: PLC0415
     from gwmock_noise.simulators import DefaultNoiseSimulator  # noqa: PLC0415
+    from gwmock_noise.utils.log import LOGGER_NAME  # noqa: PLC0415
 
-    logger = logging.getLogger("gwmock_noise")
+    logger = logging.getLogger(LOGGER_NAME)
     logger.info("Loading configuration from %s", config_path)
     config = load_config(config_path)
     logger.info("Running noise simulation for detectors: %s", config.detectors)

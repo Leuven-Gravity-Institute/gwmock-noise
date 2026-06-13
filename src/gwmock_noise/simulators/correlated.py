@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from gwmock_noise.simulators._stitching import OVERLAP_SIZE, WINDOW_SIZE, OverlapAddStitcher
+from gwmock_noise.simulators._spectral import load_spectral_series, median_frequency_spacing
+from gwmock_noise.simulators._stitching import (
+    DEFAULT_WINDOW_DURATION,
+    OverlapAddStitcher,
+    resolve_window_sizes,
+    warn_if_underresolved,
+)
 from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
 from gwmock_noise.simulators.colored import _tukey_window
 from gwmock_noise.spectral import (
@@ -16,9 +23,12 @@ from gwmock_noise.spectral import (
     regularized_cholesky,
     simulate_spectral_covariance_chunk,
 )
+from gwmock_noise.utils.log import LOGGER_NAME
 
 if TYPE_CHECKING:
     from gwmock_noise.config.models import NoiseComponentConfig, NoiseConfig
+
+logger = logging.getLogger(LOGGER_NAME)
 
 DETECTOR_PAIR_SIZE = 2
 
@@ -64,6 +74,7 @@ class CorrelatedNoiseSimulator(ConfigurableNoiseSimulator):
         low_frequency_cutoff: float = 2.0,
         high_frequency_cutoff: float | None = None,
         regularization_epsilon: float = 1.0e-12,
+        window_duration: float = DEFAULT_WINDOW_DURATION,
     ) -> None:
         """Initialize the simulator."""
         self.psd_files = {detector: Path(path) for detector, path in psd_files.items()}
@@ -74,11 +85,17 @@ class CorrelatedNoiseSimulator(ConfigurableNoiseSimulator):
         self.low_frequency_cutoff = low_frequency_cutoff
         self.high_frequency_cutoff = high_frequency_cutoff
         self.regularization_epsilon = regularization_epsilon
+        self.window_duration = window_duration
 
-        self._stitcher = OverlapAddStitcher(self.detectors)
         self._rng: np.random.Generator | None = None
 
         self._validate_runtime(duration=duration, sampling_frequency=sampling_frequency, detectors=self.detectors)
+        self._window_size, self._overlap_size = resolve_window_sizes(window_duration, sampling_frequency)
+        self._stitcher = OverlapAddStitcher(
+            self.detectors,
+            window_size=self._window_size,
+            overlap_size=self._overlap_size,
+        )
         self._normalized_csd_files = self._normalize_csd_files(csd_files or {})
         self._configure_frequency_grid()
         self._configure_spectral_factors()
@@ -164,8 +181,8 @@ class CorrelatedNoiseSimulator(ConfigurableNoiseSimulator):
 
     def _configure_frequency_grid(self) -> None:
         """Configure the FFT grid and band mask."""
-        self._delta_frequency = self.sampling_frequency / WINDOW_SIZE
-        self._frequency_grid = np.fft.rfftfreq(WINDOW_SIZE, d=1.0 / self.sampling_frequency)
+        self._delta_frequency = self.sampling_frequency / self._window_size
+        self._frequency_grid = np.fft.rfftfreq(self._window_size, d=1.0 / self.sampling_frequency)
         self._high_frequency_cutoff = (
             self.high_frequency_cutoff if self.high_frequency_cutoff is not None else self.sampling_frequency / 2.0
         )
@@ -194,6 +211,18 @@ class CorrelatedNoiseSimulator(ConfigurableNoiseSimulator):
         self._spectral_matrices = covariance.matrices
         self._cholesky_factors = covariance.cholesky_factors
 
+        input_spacing = np.inf
+        for path in self.psd_files.values():
+            psd_frequencies, _ = load_spectral_series(path, kind="PSD")
+            input_spacing = min(input_spacing, median_frequency_spacing(psd_frequencies))
+        warn_if_underresolved(
+            delta_frequency=self._delta_frequency,
+            low_frequency_cutoff=self.low_frequency_cutoff,
+            reference_spacing=input_spacing,
+            logger=logger,
+            context="correlated noise simulator",
+        )
+
     def _regularized_cholesky(self, spectral_matrix: np.ndarray) -> np.ndarray:
         """Return a numerically stable Cholesky-like factor."""
         return regularized_cholesky(spectral_matrix, regularization_epsilon=self.regularization_epsilon)
@@ -214,7 +243,7 @@ class CorrelatedNoiseSimulator(ConfigurableNoiseSimulator):
             frequency_grid_size=self._frequency_grid.size,
             frequency_mask=self._frequency_mask,
             delta_frequency=self._delta_frequency,
-            window_size=WINDOW_SIZE,
+            window_size=self._window_size,
         )
 
     def _simulate(self, *, n_samples: int) -> dict[str, np.ndarray]:
@@ -229,6 +258,8 @@ class CorrelatedNoiseSimulator(ConfigurableNoiseSimulator):
             current_raw = self._generate_realization_chunk()
             self._stitcher._validate_chunk_map(current_raw)
 
+        overlap_size = self._stitcher.overlap_size
+        frame_step = self._stitcher.window_size - overlap_size
         emitted_segments = {detector: [] for detector in self.detectors}
         produced_samples = 0
 
@@ -238,13 +269,13 @@ class CorrelatedNoiseSimulator(ConfigurableNoiseSimulator):
 
             for detector in self.detectors:
                 blended_overlap = (
-                    (current_raw[detector][-OVERLAP_SIZE:] * self._stitcher._window_out)
-                    + (next_raw[detector][:OVERLAP_SIZE] * self._stitcher._window_in)
+                    (current_raw[detector][-overlap_size:] * self._stitcher._window_out)
+                    + (next_raw[detector][:overlap_size] * self._stitcher._window_in)
                 ) / self._stitcher._blend_norm
                 emitted_segments[detector].append(blended_overlap)
                 current_raw[detector] = next_raw[detector].copy()
 
-            produced_samples += WINDOW_SIZE - OVERLAP_SIZE
+            produced_samples += frame_step
 
         realization = {
             detector: np.concatenate(segments)[:n_samples] for detector, segments in emitted_segments.items()
@@ -285,7 +316,12 @@ class CorrelatedNoiseSimulator(ConfigurableNoiseSimulator):
         self.detectors = runtime_detectors
 
         if runtime_changed:
-            self._stitcher.configure_detectors(self.detectors)
+            self._window_size, self._overlap_size = resolve_window_sizes(self.window_duration, self.sampling_frequency)
+            self._stitcher = OverlapAddStitcher(
+                self.detectors,
+                window_size=self._window_size,
+                overlap_size=self._overlap_size,
+            )
             self.reset()
             self._normalized_csd_files = self._normalize_csd_files(self._normalized_csd_files)
             self._configure_frequency_grid()
@@ -332,8 +368,9 @@ class CorrelatedNoiseSimulator(ConfigurableNoiseSimulator):
                 },
                 "low_frequency_cutoff": self.low_frequency_cutoff,
                 "high_frequency_cutoff": self._high_frequency_cutoff,
-                "window_size": WINDOW_SIZE,
-                "overlap_size": OVERLAP_SIZE,
+                "window_duration": self.window_duration,
+                "window_size": self._window_size,
+                "overlap_size": self._overlap_size,
                 "regularization_epsilon": self.regularization_epsilon,
             },
         }

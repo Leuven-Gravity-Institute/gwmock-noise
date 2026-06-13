@@ -16,7 +16,7 @@ from gwmock_noise.simulators import (
     DefaultNoiseSimulator,
     TimeVaryingColoredNoiseSimulator,
 )
-from gwmock_noise.simulators.colored import WINDOW_SIZE, _tukey_window
+from gwmock_noise.simulators.colored import _tukey_window
 
 
 def _write_psd_file(path: Path, *, value: float = 2.0e-3) -> Path:
@@ -140,9 +140,10 @@ def test_time_varying_generated_psd_matches_start_and_end_anchors(tmp_path: Path
             sampling_frequency=sampling_frequency,
             detectors=["H1"],
         )["H1"]
-        start_frequencies, start_psd = _estimate_one_sided_psd(realization[:WINDOW_SIZE], sampling_frequency)
+        window_size = simulator._stitcher.window_size
+        start_frequencies, start_psd = _estimate_one_sided_psd(realization[:window_size], sampling_frequency)
         # Measure the final fully blended window rather than the tapered tail of the last chunk.
-        end_window = realization[-(WINDOW_SIZE + (WINDOW_SIZE // 2)) : -(WINDOW_SIZE // 2)]
+        end_window = realization[-(window_size + (window_size // 2)) : -(window_size // 2)]
         end_frequencies, end_psd = _estimate_one_sided_psd(end_window, sampling_frequency)
         start_band = (start_frequencies >= 12.0) & (start_frequencies <= 80.0)
         end_band = (end_frequencies >= 12.0) & (end_frequencies <= 80.0)
@@ -340,7 +341,7 @@ def test_generate_rejects_invalid_previous_strain_shape(tmp_path: Path) -> None:
         sampling_frequency=256.0,
         seed=7,
     )
-    simulator.previous_strain["H1"] = np.zeros(WINDOW_SIZE - 1)
+    simulator.previous_strain["H1"] = np.zeros(simulator._stitcher.window_size - 1)
 
     with pytest.raises(ValueError, match="must have shape"):
         simulator.generate(duration=4.0, sampling_frequency=256.0, detectors=["H1"])

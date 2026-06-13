@@ -10,7 +10,9 @@ from urllib.request import urlopen
 
 import numpy as np
 
-logger = logging.getLogger(__name__)
+from gwmock_noise.utils.log import LOGGER_NAME
+
+logger = logging.getLogger(LOGGER_NAME)
 
 SPECTRAL_COLUMNS = 2
 REMOTE_SPECTRAL_SCHEMES = {"http", "https"}
@@ -30,6 +32,21 @@ def _resolve_bundled_psd(name: str) -> Path | None:
         except (TypeError, AttributeError):
             logger.debug(f"Candidate {candidate} is not a file in the bundled PSDs.")
     return None
+
+
+def median_frequency_spacing(frequencies: np.ndarray) -> float:
+    """Return the median spacing of a frequency array, or ``inf`` if undefined.
+
+    Used to gauge how finely an input spectrum is sampled relative to the
+    synthesis grid. Returns ``inf`` when fewer than two samples are present so it
+    never triggers an under-resolution warning on its own.
+    """
+    ordered = np.sort(np.asarray(frequencies, dtype=float))
+    if ordered.size < SPECTRAL_COLUMNS:
+        return float("inf")
+    diffs = np.diff(ordered)
+    positive = diffs[diffs > 0.0]
+    return float(np.median(positive)) if positive.size else float("inf")
 
 
 def _is_remote_spectral_reference(file_path: str | Path) -> bool:

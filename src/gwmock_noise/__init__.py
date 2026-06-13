@@ -53,7 +53,14 @@ from gwmock_noise.spectral import (
     simulate_spectral_covariance_chunk,
     time_series_from_frequency_coefficients,
 )
+from gwmock_noise.utils.log import setup_logger
 from gwmock_noise.version import __version__
+
+# Configure the shared package logger on import so warnings (e.g. coarse
+# frequency resolution) are emitted with a clear severity label instead of the
+# bare-message fallback of ``logging.lastResort``. Applications and the CLI may
+# call setup_logger() again to adjust the level or add a log file.
+setup_logger()
 
 _OPTIONAL_EXPORTS = {
     "DiagnosticResult": "gwmock_noise.diagnostics",

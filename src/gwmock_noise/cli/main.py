@@ -38,7 +38,9 @@ def setup_logging(level: LoggingLevel = LoggingLevel.INFO) -> None:
     from rich.console import Console  # noqa: PLC0415
     from rich.logging import RichHandler  # noqa: PLC0415
 
-    logger = logging.getLogger("gwmock_noise")
+    from gwmock_noise.utils.log import LOGGER_NAME  # noqa: PLC0415
+
+    logger = logging.getLogger(LOGGER_NAME)
 
     logger.setLevel(level.value)
 

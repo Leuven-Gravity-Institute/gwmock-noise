@@ -59,6 +59,8 @@ def _build_simulator(tmp_path: Path, detectors: list[str]) -> SchumannNoiseSimul
         low_frequency_cutoff=2.0,
         high_frequency_cutoff=40.0,
         seed=11,
+        # 8 s window (df = 0.125 Hz) to resolve the narrow Schumann resonances.
+        window_duration=8.0,
     )
 
 
