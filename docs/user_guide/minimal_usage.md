@@ -353,6 +353,17 @@ strain_dict = take(stream, total_duration=12.0, chunk_duration=4.0, sampling_fre
 print(strain_dict)     # strain_dict["H1"].shape == (round(12.0 * 4096.0),)  ← 12 s of seamless noise
 ```
 
+<!-- prettier-ignore-start -->
+
+!!! tip "Frequency resolution"
+    Colored, correlated, and Schumann simulators
+    resolve `Δf = 1 / window_duration` (default `4.0 s` → `0.25 Hz`), independent of
+    `sampling_frequency`. Pass a larger `window_duration` to capture narrow or
+    fast-varying PSD features — see
+    [Frequency resolution and the synthesis window](noise_simulation.md#frequency-resolution-and-the-synthesis-window).
+
+<!-- prettier-ignore-end -->
+
 ---
 
 ## I want to get real detector noise from GWOSC

@@ -181,6 +181,32 @@ The upstream `gwmock` package is expected to import and compose
 `gwmock_noise.NoiseConfig` into its own configuration model and to drive a noise
 simulator that implements the `gwmock_noise.BaseNoiseSimulator` interface.
 
+## Frequency resolution and the synthesis window
+
+The colored, correlated, and Schumann simulators synthesize noise in
+`window_duration`-second blocks and stitch them together. The frequency
+resolution of the generated noise is therefore `Δf = 1 / window_duration`
+(default `4.0 s` → `0.25 Hz`), **independent of `sampling_frequency`**. Input
+PSD structure finer than `Δf` cannot be reproduced, so increase
+`window_duration` to resolve narrow or fast-varying features:
+
+```python
+from gwmock_noise import CorrelatedNoiseSimulator
+
+simulator = CorrelatedNoiseSimulator(
+    psd_files={"D1": "d1_psd.txt"},
+    detectors=["D1"],
+    sampling_frequency=16384.0,
+    low_frequency_cutoff=2.0,
+    window_duration=16.0,  # Δf = 0.0625 Hz, resolves few-Hz PSD structure
+)
+```
+
+When the window is too coarse for the input spectrum (or for the requested
+`low_frequency_cutoff`), the simulator emits a `WARNING` through the
+`gwmock-noise` logger suggesting a larger `window_duration`. A larger window
+improves resolution at the cost of more samples per synthesis block.
+
 ## Spectral covariance utilities
 
 `gwmock_noise.spectral` exposes the lower-level PSD/CSD operations used by the
