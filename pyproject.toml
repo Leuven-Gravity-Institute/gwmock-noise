@@ -22,7 +22,7 @@ dependencies = [
   "numpy>=2.4.6",
   "h5py>=3.16.0",
   "pydantic>=2.13.4",
-  "scipy>=1.17.1",
+  "scipy>=1.18.0",
   "pyyaml>=6.0.3",
   "typer>=0.26.7",
 ]
@@ -39,8 +39,8 @@ dev = [
   "prek>=0.4.5",
   "pytest-cov>=7.1.0",
   "pytest-mock>=3.15.1",
-  "pytest>=9.1.0",
-  "pytest-github-actions-annotate-failures>=0.4.1",
+  "pytest>=9.1.1",
+  "pytest-github-actions-annotate-failures>=0.4.2",
 ]
 docs = ["zensical>=0.0.45", "mkdocstrings-python>=2.0.5"]
 build = ["hatch>=1.17.0"]

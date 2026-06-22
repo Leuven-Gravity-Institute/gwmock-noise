@@ -828,7 +828,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "scipy", specifier = ">=1.17.1" },
+    { name = "scipy", specifier = ">=1.18.0" },
     { name = "typer", specifier = ">=0.26.7" },
 ]
 provides-extras = ["frame", "gengli", "gwosc", "gwpy"]
@@ -837,9 +837,9 @@ provides-extras = ["frame", "gengli", "gwosc", "gwpy"]
 build = [{ name = "hatch", specifier = ">=1.17.0" }]
 dev = [
     { name = "prek", specifier = ">=0.4.5" },
-    { name = "pytest", specifier = ">=9.1.0" },
+    { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
-    { name = "pytest-github-actions-annotate-failures", specifier = ">=0.4.1" },
+    { name = "pytest-github-actions-annotate-failures", specifier = ">=0.4.2" },
     { name = "pytest-mock", specifier = ">=3.15.1" },
     { name = "ruff", specifier = ">=0.15.18" },
 ]
