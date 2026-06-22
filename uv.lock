@@ -844,7 +844,7 @@ dev = [
     { name = "ruff", specifier = ">=0.15.18" },
 ]
 docs = [
-    { name = "mkdocstrings-python", specifier = ">=2.0.4" },
+    { name = "mkdocstrings-python", specifier = ">=2.0.5" },
     { name = "zensical", specifier = ">=0.0.45" },
 ]
 release = [{ name = "git-cliff", specifier = ">=2.13.1" }]
