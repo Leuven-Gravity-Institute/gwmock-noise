@@ -825,7 +825,7 @@ requires-dist = [
     { name = "gwpy", marker = "extra == 'gwpy'" },
     { name = "h5py", specifier = ">=3.16.0" },
     { name = "lalsuite", marker = "extra == 'frame'" },
-    { name = "numpy", specifier = ">=2.4.6" },
+    { name = "numpy", specifier = ">=2.5.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "scipy", specifier = ">=1.18.0" },
