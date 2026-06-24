@@ -95,7 +95,7 @@ class GwoscNoiseSimulator:
             "host": self.config.host,
         }
 
-    def check_availability(self) -> dict[str, bool]:
+    def check_availability(self, detectors: list[str] | None = None) -> dict[str, bool]:
         """Probe GWOSC for per-detector strain-data availability.
 
         Convenience passthrough to :meth:`GwoscNoiseFetcher.check_availability`.
@@ -103,11 +103,15 @@ class GwoscNoiseSimulator:
         interval (no vetoes) yet have no published strain data, in which
         case :meth:`generate` would fail with a clear error.
 
+        Args:
+            detectors: Detectors to probe. Defaults to all configured
+                detectors when ``None``.
+
         Returns:
-            A dictionary mapping each configured detector to ``True`` if
+            A dictionary mapping each requested detector to ``True`` if
             GWOSC has data covering the interval, ``False`` otherwise.
         """
-        return self._fetcher.check_availability()
+        return self._fetcher.check_availability(detectors)
 
     def _validate_request(self, sampling_frequency: float, detectors: list[str]) -> None:
         """Validate a generation request against the configured values.
@@ -169,7 +173,7 @@ class GwoscNoiseSimulator:
         """
         self._validate_request(sampling_frequency, detectors)
 
-        clean_data = self._fetcher.fetch_clean()
+        clean_data = self._fetcher.fetch_clean(detectors)
 
         result: dict[str, list[np.ndarray]] = {}
         for detector in detectors:
