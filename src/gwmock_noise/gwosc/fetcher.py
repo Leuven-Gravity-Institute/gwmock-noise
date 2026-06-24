@@ -131,6 +131,58 @@ class GwoscNoiseFetcher:
         self.config = config
         self._segment_filter = GwoscSegmentFilter(config.filters)
 
+    def check_availability(self) -> dict[str, bool]:
+        """Probe GWOSC for per-detector strain-data availability.
+
+        Unlike :attr:`clean_segments`, which only reflects *vetoes* (GW
+        events and data-quality flags), this checks whether the strain
+        data itself has been published and is downloadable for the full
+        configured GPS interval. A detector can have a fully "clean"
+        interval yet have no published strain — e.g. the data has not
+        been released yet for the observing run — in which case a fetch
+        would fail. Use this for a pre-flight check before fetching.
+
+        Returns:
+            A dictionary mapping each configured detector to ``True`` if
+            GWOSC has data URLs covering the interval, ``False`` otherwise.
+        """
+        locate = _import_gwosc_locate()
+        sample_rate = int(self.config.sample_rate)
+
+        availability: dict[str, bool] = {}
+        for detector in self.config.detectors:
+            try:
+                urls = locate.get_urls(
+                    detector=detector,
+                    start=int(self.config.gps_start),
+                    end=int(self.config.gps_end),
+                    sample_rate=sample_rate,
+                    host=self.config.host,
+                )
+            except (ValueError, OSError):
+                urls = []
+            availability[detector] = bool(urls)
+        return availability
+
+    def _require_available_detectors(self) -> None:
+        """Raise a clear error if any configured detector lacks published data.
+
+        Raises:
+            ValueError: Listing every detector for which GWOSC has no
+                strain data covering the configured interval.
+        """
+        availability = self.check_availability()
+        unavailable = [detector for detector, ok in availability.items() if not ok]
+        if unavailable:
+            raise ValueError(
+                f"GWOSC has no published strain data covering "
+                f"[{self.config.gps_start}, {self.config.gps_end}) at "
+                f"{int(self.config.sample_rate)} Hz for detector(s): {', '.join(unavailable)}. "
+                f"The strain may not be released yet for this observing run. "
+                f"Note that clean-segment computation only reflects vetoes (GW events "
+                f"and data-quality flags), not whether the data is actually available."
+            )
+
     def _fetch_detector(self, detector: str) -> TimeSeries:
         """Fetch strain data for a single detector, using cache if configured.
 
@@ -172,6 +224,8 @@ class GwoscNoiseFetcher:
         Raises:
             ValueError: If no data is available for any detector.
         """
+        self._require_available_detectors()
+
         result: dict[str, TimeSeries] = {}
         for detector in self.config.detectors:
             try:
@@ -196,6 +250,8 @@ class GwoscNoiseFetcher:
             ValueError: If no data is available for any detector or
                 no clean segments are found.
         """
+        self._require_available_detectors()
+
         clean_segments = self._segment_filter.compute_clean_segments(
             self.config.gps_start,
             self.config.gps_end,

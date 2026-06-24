@@ -221,6 +221,104 @@ class TestGwoscNoiseFetcher:
         with pytest.raises(ValueError, match="No clean segments found"):
             fetcher.fetch_clean()
 
+    def test_check_availability_all_available(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """check_availability reports True when GWOSC has data URLs."""
+        _make_fake_modules(monkeypatch)
+
+        from gwmock_noise.gwosc.fetcher import GwoscNoiseFetcher
+
+        config = GwoscNoiseConfig(
+            gps_start=1261875618,
+            gps_end=1261877618,
+            detectors=["H1", "L1"],
+        )
+        fetcher = GwoscNoiseFetcher(config)
+
+        assert fetcher.check_availability() == {"H1": True, "L1": True}
+
+    def test_check_availability_detects_missing_detector(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """check_availability reports False for a detector with no published data."""
+        _make_fake_modules(monkeypatch)
+
+        from gwmock_noise.gwosc.fetcher import GwoscNoiseFetcher
+
+        class PartialLocate:
+            """get_urls that raises for H1 (no data) but succeeds for others."""
+
+            @staticmethod
+            def get_urls(detector: str, start: int, end: int, sample_rate: int = 4096, host: str = "") -> list[str]:
+                if detector == "H1":
+                    raise ValueError(f"Cannot find a GWOSC dataset for {detector} covering [{start}, {end})")
+                return [f"https://gwosc.org/{detector}-{start}-4096.hdf5"]
+
+        monkeypatch.setattr("gwmock_noise.gwosc.fetcher._import_gwosc_locate", lambda: PartialLocate)
+
+        config = GwoscNoiseConfig(
+            gps_start=1401562985,
+            gps_end=1401563241,
+            detectors=["H1", "L1", "V1"],
+        )
+        fetcher = GwoscNoiseFetcher(config)
+
+        assert fetcher.check_availability() == {"H1": False, "L1": True, "V1": True}
+
+    def test_fetch_clean_raises_clear_error_when_data_unavailable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """fetch_clean raises a clear, detector-naming error when strain is unavailable.
+
+        Regression test: clean-segment computation may report a detector as
+        fully clean (no vetoes) while GWOSC has no published strain for it.
+        fetch_clean must surface a clear error naming the detector rather
+        than a deep gwpy download traceback.
+        """
+        _make_fake_modules(monkeypatch)
+
+        from gwmock_noise.gwosc.fetcher import GwoscNoiseFetcher
+
+        class PartialLocate:
+            @staticmethod
+            def get_urls(detector: str, start: int, end: int, sample_rate: int = 4096, host: str = "") -> list[str]:
+                if detector == "H1":
+                    raise ValueError("Cannot find a GWOSC dataset")
+                return [f"https://gwosc.org/{detector}-{start}-4096.hdf5"]
+
+        monkeypatch.setattr("gwmock_noise.gwosc.fetcher._import_gwosc_locate", lambda: PartialLocate)
+
+        config = GwoscNoiseConfig(
+            gps_start=1401562985,
+            gps_end=1401563241,
+            detectors=["H1", "L1"],
+            filters=GwoscFilterConfig(filter_types=[]),
+        )
+        fetcher = GwoscNoiseFetcher(config)
+
+        with pytest.raises(ValueError, match=r"no published strain data.*H1"):
+            fetcher.fetch_clean()
+
+    def test_fetch_raw_raises_clear_error_when_data_unavailable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """fetch_raw raises a clear, detector-naming error when strain is unavailable."""
+        _make_fake_modules(monkeypatch)
+
+        from gwmock_noise.gwosc.fetcher import GwoscNoiseFetcher
+
+        class PartialLocate:
+            @staticmethod
+            def get_urls(detector: str, start: int, end: int, sample_rate: int = 4096, host: str = "") -> list[str]:
+                if detector == "H1":
+                    raise ValueError("Cannot find a GWOSC dataset")
+                return [f"https://gwosc.org/{detector}-{start}-4096.hdf5"]
+
+        monkeypatch.setattr("gwmock_noise.gwosc.fetcher._import_gwosc_locate", lambda: PartialLocate)
+
+        config = GwoscNoiseConfig(
+            gps_start=1401562985,
+            gps_end=1401563241,
+            detectors=["H1", "L1"],
+        )
+        fetcher = GwoscNoiseFetcher(config)
+
+        with pytest.raises(ValueError, match=r"no published strain data.*H1"):
+            fetcher.fetch_raw()
+
     def test_import_error_when_gwpy_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Clear ImportError when gwpy is not installed."""
         fetcher_mod = import_module("gwmock_noise.gwosc.fetcher")

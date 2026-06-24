@@ -95,6 +95,20 @@ class GwoscNoiseSimulator:
             "host": self.config.host,
         }
 
+    def check_availability(self) -> dict[str, bool]:
+        """Probe GWOSC for per-detector strain-data availability.
+
+        Convenience passthrough to :meth:`GwoscNoiseFetcher.check_availability`.
+        Use this as a pre-flight check: a detector may have a fully clean
+        interval (no vetoes) yet have no published strain data, in which
+        case :meth:`generate` would fail with a clear error.
+
+        Returns:
+            A dictionary mapping each configured detector to ``True`` if
+            GWOSC has data covering the interval, ``False`` otherwise.
+        """
+        return self._fetcher.check_availability()
+
     def _validate_request(self, sampling_frequency: float, detectors: list[str]) -> None:
         """Validate a generation request against the configured values.
 
