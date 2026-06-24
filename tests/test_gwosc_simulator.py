@@ -256,6 +256,70 @@ class TestGwoscNoiseSimulator:
         with pytest.raises(ValueError, match="not a subset"):
             sim.generate(duration=100.0, sampling_frequency=4096.0, detectors=["L1"])
 
+    def test_generate_returns_longest_segment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Generate returns the longest contiguous clean segment, not a concatenation."""
+        _patch_imports(monkeypatch)
+
+        from gwmock_noise.simulators.real_noise import GwoscNoiseSimulator
+
+        config = GwoscNoiseConfig(
+            gps_start=100.0,
+            gps_end=200.0,
+            detectors=["H1"],
+            sample_rate=4096.0,
+        )
+        sim = GwoscNoiseSimulator(config)
+
+        # Three clean fragments; the middle one is the longest.
+        short = FakeTimeSeries(np.arange(10.0), sample_rate=4096.0)
+        longest = FakeTimeSeries(np.arange(100.0), sample_rate=4096.0)
+        medium = FakeTimeSeries(np.arange(40.0), sample_rate=4096.0)
+        monkeypatch.setattr(sim._fetcher, "fetch_clean", lambda: {"H1": [short, longest, medium]})
+
+        result = sim.generate(duration=100.0, sampling_frequency=4096.0, detectors=["H1"])
+
+        assert isinstance(result["H1"], np.ndarray)
+        assert len(result["H1"]) == 100
+        # Returned values come from the longest fragment, not a splice of all three.
+        np.testing.assert_array_equal(result["H1"], np.arange(100.0))
+
+    def test_generate_segments_returns_all_fragments(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """generate_segments returns every clean fragment per detector, in order."""
+        _patch_imports(monkeypatch)
+
+        from gwmock_noise.simulators.real_noise import GwoscNoiseSimulator
+
+        config = GwoscNoiseConfig(
+            gps_start=100.0,
+            gps_end=200.0,
+            detectors=["H1"],
+            sample_rate=4096.0,
+        )
+        sim = GwoscNoiseSimulator(config)
+
+        first = FakeTimeSeries(np.arange(10.0), sample_rate=4096.0)
+        second = FakeTimeSeries(np.arange(100.0), sample_rate=4096.0)
+        monkeypatch.setattr(sim._fetcher, "fetch_clean", lambda: {"H1": [first, second]})
+
+        segments = sim.generate_segments(duration=100.0, sampling_frequency=4096.0, detectors=["H1"])
+
+        assert [len(seg) for seg in segments["H1"]] == [10, 100]
+        assert all(isinstance(seg, np.ndarray) for seg in segments["H1"])
+
+    def test_generate_segments_validates_request(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """generate_segments enforces the same sampling-frequency/detector checks as generate."""
+        _patch_imports(monkeypatch)
+
+        from gwmock_noise.simulators.real_noise import GwoscNoiseSimulator
+
+        config = GwoscNoiseConfig(gps_start=0.0, gps_end=100.0, detectors=["H1"], sample_rate=4096.0)
+        sim = GwoscNoiseSimulator(config)
+
+        with pytest.raises(ValueError, match="does not match"):
+            sim.generate_segments(duration=100.0, sampling_frequency=2048.0, detectors=["H1"])
+        with pytest.raises(ValueError, match="not a subset"):
+            sim.generate_segments(duration=100.0, sampling_frequency=4096.0, detectors=["L1"])
+
     def test_generate_stream(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """generate_stream yields chunks of the requested duration."""
         _patch_imports(monkeypatch)

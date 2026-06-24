@@ -95,35 +95,17 @@ class GwoscNoiseSimulator:
             "host": self.config.host,
         }
 
-    def generate(
-        self,
-        duration: float,
-        sampling_frequency: float,
-        detectors: list[str],
-        seed: int | None = None,
-    ) -> dict[str, np.ndarray]:
-        """Fetch clean noise and return per-detector strain arrays.
-
-        Fetches data covering the configured GPS interval, applies
-        the configured filters, and concatenates all clean segments
-        into a single contiguous array per detector.
+    def _validate_request(self, sampling_frequency: float, detectors: list[str]) -> None:
+        """Validate a generation request against the configured values.
 
         Args:
-            duration: Requested duration (ignored; the GPS interval
-                from the config determines the output length).
-            sampling_frequency: Requested sampling frequency (must
-                match the configured ``sample_rate``).
-            detectors: Requested detector list (must be a subset of
-                the configured detectors).
-            seed: Ignored for real noise.
-
-        Returns:
-            A dictionary mapping each detector to a 1-D numpy array
-            of strain values.
+            sampling_frequency: Requested sampling frequency.
+            detectors: Requested detector list.
 
         Raises:
             ValueError: If ``sampling_frequency`` does not match the
-                configured value or if ``detectors`` are not a subset.
+                configured value or if ``detectors`` are not a subset
+                of the configured detectors.
         """
         if sampling_frequency != self.config.sample_rate:
             raise ValueError(
@@ -135,17 +117,101 @@ class GwoscNoiseSimulator:
                 f"Requested detectors {detectors} are not a subset of configured detectors {self.config.detectors}."
             )
 
+    def generate_segments(
+        self,
+        duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> dict[str, list[np.ndarray]]:
+        """Fetch clean noise and return per-detector lists of contiguous segments.
+
+        Unlike :meth:`generate`, this preserves the gap structure of the
+        real data: each clean segment — the spans left after excluding GW
+        events and data-quality vetoes — is returned as its own array, in
+        GPS-time order. Adjacent segments are **not** contiguous in time,
+        so callers must treat each segment independently; concatenating
+        them would splice non-adjacent samples together and introduce
+        discontinuities at the joins (which manifest as sharp transients
+        after whitening).
+
+        Args:
+            duration: Requested duration (ignored; the GPS interval from
+                the config determines the available data).
+            sampling_frequency: Requested sampling frequency (must match
+                the configured ``sample_rate``).
+            detectors: Requested detector list (must be a subset of the
+                configured detectors).
+            seed: Ignored for real noise.
+
+        Returns:
+            A dictionary mapping each detector to a list of 1-D numpy
+            arrays, one per clean segment, ordered by GPS time.
+
+        Raises:
+            ValueError: If ``sampling_frequency`` does not match the
+                configured value, if ``detectors`` are not a subset, or
+                if a detector has no clean data.
+        """
+        self._validate_request(sampling_frequency, detectors)
+
         clean_data = self._fetcher.fetch_clean()
 
-        result: dict[str, np.ndarray] = {}
+        result: dict[str, list[np.ndarray]] = {}
         for detector in detectors:
             segments = clean_data.get(detector, [])
             if not segments:
                 raise ValueError(f"No clean data for detector {detector}.")
-            concatenated = np.concatenate([ts.value for ts in segments])
-            result[detector] = concatenated
+            result[detector] = [np.asarray(ts.value) for ts in segments]
 
         return result
+
+    def generate(
+        self,
+        duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> dict[str, np.ndarray]:
+        """Fetch clean noise and return the longest contiguous segment per detector.
+
+        Real GWOSC noise is fragmented by the excision of GW events and
+        data-quality vetoes, so the clean data generally consists of
+        several non-contiguous spans. To honour the ``NoiseSimulator``
+        contract — a single, gap-free array per detector — this returns
+        the **longest** contiguous clean segment for each detector.
+
+        Concatenating the fragments instead (the historical behaviour)
+        splices non-adjacent samples together, creating discontinuities
+        that show up as sharp transients after whitening. Use
+        :meth:`generate_segments` to obtain every clean segment
+        separately when the full clean data is required.
+
+        Args:
+            duration: Requested duration (ignored; the longest available
+                contiguous clean segment determines the output length).
+            sampling_frequency: Requested sampling frequency (must match
+                the configured ``sample_rate``).
+            detectors: Requested detector list (must be a subset of the
+                configured detectors).
+            seed: Ignored for real noise.
+
+        Returns:
+            A dictionary mapping each detector to a 1-D numpy array
+            holding its longest contiguous clean segment.
+
+        Raises:
+            ValueError: If ``sampling_frequency`` does not match the
+                configured value, if ``detectors`` are not a subset, or
+                if a detector has no clean data.
+        """
+        segments_by_detector = self.generate_segments(
+            duration=duration,
+            sampling_frequency=sampling_frequency,
+            detectors=detectors,
+            seed=seed,
+        )
+        return {detector: max(segments, key=len) for detector, segments in segments_by_detector.items()}
 
     def generate_stream(
         self,
@@ -156,8 +222,11 @@ class GwoscNoiseSimulator:
     ) -> Iterator[dict[str, np.ndarray]]:
         """Yield clean-noise chunks lazily.
 
-        Fetches the full clean data once and yields it in chunks
-        of ``chunk_duration`` seconds.
+        Fetches the longest contiguous clean segment once (see
+        :meth:`generate`) and yields it in chunks of ``chunk_duration``
+        seconds. Chunking the longest contiguous span keeps every chunk
+        free of the discontinuities that splicing fragments would
+        introduce.
 
         Args:
             chunk_duration: Duration of each yielded chunk in seconds.
