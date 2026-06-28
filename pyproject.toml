@@ -31,7 +31,7 @@ dependencies = [
 frame = ["gwpy", "lalsuite"]
 gengli = ["gengli>=0.2.0"]
 gwpy = ["gwpy"]
-gwosc = ["gwpy", "gwosc>=0.8.2"]
+gwosc = ["gwpy", "gwosc>=0.8.3"]
 
 [dependency-groups]
 dev = [

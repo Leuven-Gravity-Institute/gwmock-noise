@@ -819,7 +819,7 @@ release = [
 [package.metadata]
 requires-dist = [
     { name = "gengli", marker = "extra == 'gengli'", specifier = ">=0.2.0" },
-    { name = "gwosc", marker = "extra == 'gwosc'", specifier = ">=0.8.2" },
+    { name = "gwosc", marker = "extra == 'gwosc'", specifier = ">=0.8.3" },
     { name = "gwpy", marker = "extra == 'frame'" },
     { name = "gwpy", marker = "extra == 'gwosc'" },
     { name = "gwpy", marker = "extra == 'gwpy'" },
@@ -851,15 +851,15 @@ release = [{ name = "git-cliff", specifier = ">=2.13.1" }]
 
 [[package]]
 name = "gwosc"
-version = "0.8.2"
+version = "0.8.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "requests" },
     { name = "tenacity" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/db/28/3dfccc399aca4da49354fb612ade049950ec73b4b34ec1089bb7dbb5a7fb/gwosc-0.8.2.tar.gz", hash = "sha256:6a7a97f1fd86184841f2f9d83eeccf9b3fc889104d8018ecb08276a1a4f6336b", size = 35171, upload-time = "2026-04-02T19:00:17.198Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5d/0e/527cd0573f46edf749462eaae96b2b70680eff0344640253b74a76efadb4/gwosc-0.8.3.tar.gz", hash = "sha256:e0687316b7c62b996ead78a59b9d1a78fbe5790bc72094cf75ed0858482d9b58", size = 35747, upload-time = "2026-06-25T18:45:52.798Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9f/da/f3f9983547f257de9d359bcc358cdc8254b8cb00d78fe692a60b463f0ff0/gwosc-0.8.2-py3-none-any.whl", hash = "sha256:ec1ecc667e9b148e8229c0a71290921eec4e60c674096d3d639c9f44c198efeb", size = 35151, upload-time = "2026-04-02T19:00:16.09Z" },
+    { url = "https://files.pythonhosted.org/packages/8a/0f/e28c501107455a2d791b613dbc45eaa25eac694d1d75e78c829cd11928c7/gwosc-0.8.3-py3-none-any.whl", hash = "sha256:96874d12ee3d071675896414cbce3e05994d10e738020406900fc0655081913e", size = 36130, upload-time = "2026-06-25T18:45:51.565Z" },
 ]
 
 [[package]]
