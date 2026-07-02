@@ -16,7 +16,7 @@ from gwmock_noise.simulators import (
     DefaultNoiseSimulator,
     TimeVaryingColoredNoiseSimulator,
 )
-from gwmock_noise.simulators.colored import PSD_WINDOW_WIDTH_HZ, _tukey_window
+from gwmock_noise.simulators.colored import MIN_TAPER_BINS, PSD_WINDOW_WIDTH_HZ, _resolve_taper_alpha, _tukey_window
 
 
 def _write_psd_file(path: Path, *, value: float = 2.0e-3) -> Path:
@@ -309,7 +309,7 @@ def test_time_varying_alias_reuses_colored_simulator() -> None:
 def test_tukey_window_validates_positive_length() -> None:
     """Tukey helper rejects non-positive lengths."""
     with pytest.raises(ValueError, match="length must be positive"):
-        _tukey_window(0)
+        _tukey_window(0, alpha=0.5)
 
 
 def test_tukey_window_returns_ones_when_alpha_non_positive() -> None:
@@ -374,6 +374,29 @@ def test_psd_taper_absolute_width_independent_of_sampling_rate(tmp_path: Path) -
         assert np.all(psd_flat > 0), (
             f"fs={fs}: some bins in flat region [{taper_end:.1f}, {trailing_taper_start:.1f}] Hz have psd=0"
         )
+
+
+@pytest.mark.parametrize("n_bins", [1, MIN_TAPER_BINS])
+def test_resolve_taper_alpha_falls_back_to_untapered_for_narrow_bands(n_bins: int) -> None:
+    """Bands with at most MIN_TAPER_BINS frequencies get alpha=0 (no taper)."""
+    masked_frequencies = np.linspace(10.0, 10.0 + 0.01 * (n_bins - 1), n_bins)
+    assert _resolve_taper_alpha(masked_frequencies) == 0.0
+
+
+def test_resolve_taper_alpha_single_bin_does_not_divide_by_zero() -> None:
+    """A single-bin band has f_high == f_low; the guard must avoid a 0/0 alpha."""
+    alpha = _resolve_taper_alpha(np.array([42.0]))
+    assert np.isfinite(alpha)
+    assert alpha == 0.0
+
+
+def test_narrow_band_taper_does_not_zero_the_window() -> None:
+    """Before the guard, a 2-bin band's alpha collapsed _tukey_window to hanning(2) == 0."""
+    masked_frequencies = np.array([10.0, 10.01])
+    alpha = _resolve_taper_alpha(masked_frequencies)
+    window = _tukey_window(masked_frequencies.size, alpha=alpha)
+    assert np.all(window > 0.0)
+    np.testing.assert_allclose(window, np.ones(2))
 
 
 def test_generate_rejects_invalid_previous_strain_shape(tmp_path: Path) -> None:

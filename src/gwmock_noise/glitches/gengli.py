@@ -12,7 +12,7 @@ import numpy as np
 
 from gwmock_noise.glitches.models import GlitchModel
 from gwmock_noise.simulators._spectral import load_spectral_series
-from gwmock_noise.simulators.colored import _tukey_window
+from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
 
 POPULATION_SNR_DATASET = "snr"
 UINT32_EXCLUSIVE_MAX = 2**32
@@ -158,7 +158,7 @@ class GengliBlipGlitch(GlitchModel):
             right=0.0,
         )
         psd[frequency_mask] = np.clip(psd[frequency_mask], a_min=0.0, a_max=None)
-        psd[frequency_mask] *= _tukey_window(masked_frequencies.size)
+        psd[frequency_mask] *= _tukey_window(masked_frequencies.size, alpha=_resolve_taper_alpha(masked_frequencies))
 
         white_glitch_fd = np.fft.rfft(white_glitch) / sampling_frequency
         colored_glitch_fd = np.zeros_like(white_glitch_fd, dtype=np.complex128)

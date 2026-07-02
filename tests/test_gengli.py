@@ -12,6 +12,7 @@ import pytest
 from gwmock_noise import GengliBlipGlitch, LogNormalAmplitudeDistribution
 from gwmock_noise.glitches import gengli as gengli_module
 from gwmock_noise.glitches.gengli import read_blip_population_file, write_blip_population_file
+from gwmock_noise.simulators.colored import PSD_WINDOW_WIDTH_HZ
 
 
 def _write_flat_psd(path: Path) -> None:
@@ -131,3 +132,35 @@ def test_serialize_reports_population_and_psd_paths(tmp_path: Path) -> None:
         "high_frequency_cutoff": None,
         "population_size": 2,
     }
+
+
+def test_color_glitch_uses_absolute_width_taper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_color_glitch's PSD taper alpha scales with bandwidth to keep a fixed Hz-wide edge."""
+    population_file = tmp_path / "population.h5"
+    psd_file = tmp_path / "psd.txt"
+    write_blip_population_file(population_file, snr_samples=np.array([7.0]))
+    _write_flat_psd(psd_file)
+
+    captured_alphas: list[float] = []
+    original_tukey_window = gengli_module._tukey_window
+
+    def _spy_tukey_window(length: int, alpha: float) -> np.ndarray:
+        captured_alphas.append(alpha)
+        return original_tukey_window(length, alpha=alpha)
+
+    monkeypatch.setattr(gengli_module, "_tukey_window", _spy_tukey_window)
+
+    model = GengliBlipGlitch.from_population_file(
+        population_file,
+        rate=0.5,
+        psd_file=psd_file,
+        low_frequency_cutoff=8.0,
+        high_frequency_cutoff=96.0,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=2.0, std=0.0),
+    )
+    model._color_glitch(np.hanning(64), sampling_frequency=256.0)
+
+    assert captured_alphas == pytest.approx([2.0 * PSD_WINDOW_WIDTH_HZ / (96.0 - 8.0)])

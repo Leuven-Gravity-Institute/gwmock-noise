@@ -32,7 +32,7 @@ PSD_WINDOW_WIDTH_HZ = 1.0
 MIN_TAPER_BINS = 2
 
 
-def _tukey_window(length: int, alpha: float = 5e-3) -> np.ndarray:
+def _tukey_window(length: int, alpha: float) -> np.ndarray:
     """Return a Tukey window without depending on SciPy."""
     if length < 1:
         raise ValueError("length must be positive.")
@@ -53,7 +53,17 @@ def _tukey_window(length: int, alpha: float = 5e-3) -> np.ndarray:
 
 
 def _resolve_taper_alpha(masked_frequencies: np.ndarray) -> float:
-    """Return the Tukey alpha that yields a PSD_WINDOW_WIDTH_HZ-wide taper on each edge."""
+    """Return the Tukey alpha that yields a PSD_WINDOW_WIDTH_HZ-wide taper on each edge.
+
+    Bands with at most ``MIN_TAPER_BINS`` frequencies are too narrow to support a
+    meaningful taper: the two-point difference can be zero (single bin, causing a
+    division by zero) or small enough that the resulting alpha lands at or above 1,
+    which collapses ``_tukey_window`` to a Hann window that can be entirely zero at
+    these lengths (e.g. ``np.hanning(2) == [0, 0]``). Fall back to an untapered
+    (all-ones) window in that case instead of destroying the band's PSD/CSD.
+    """
+    if masked_frequencies.size <= MIN_TAPER_BINS:
+        return 0.0
     f_low_hz = masked_frequencies[0]
     f_high_hz = masked_frequencies[-1]
     return 2.0 * PSD_WINDOW_WIDTH_HZ / (f_high_hz - f_low_hz)
