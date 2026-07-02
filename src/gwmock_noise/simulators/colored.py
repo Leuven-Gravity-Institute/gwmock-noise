@@ -28,11 +28,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(LOGGER_NAME)
 
-PSD_WINDOW_ALPHA = 1e-3
+PSD_WINDOW_WIDTH_HZ = 1.0
 MIN_TAPER_BINS = 2
 
 
-def _tukey_window(length: int, alpha: float = PSD_WINDOW_ALPHA) -> np.ndarray:
+def _tukey_window(length: int, alpha: float = 5e-3) -> np.ndarray:
     """Return a Tukey window without depending on SciPy."""
     if length < 1:
         raise ValueError("length must be positive.")
@@ -50,6 +50,13 @@ def _tukey_window(length: int, alpha: float = PSD_WINDOW_ALPHA) -> np.ndarray:
     window[leading] = 0.5 * (1.0 + np.cos((2.0 * np.pi / alpha) * (x[leading] - alpha / 2.0)))
     window[trailing] = 0.5 * (1.0 + np.cos((2.0 * np.pi / alpha) * (x[trailing] - 1.0 + alpha / 2.0)))
     return window
+
+
+def _resolve_taper_alpha(masked_frequencies: np.ndarray) -> float:
+    """Return the Tukey alpha that yields a PSD_WINDOW_WIDTH_HZ-wide taper on each edge."""
+    f_low_hz = masked_frequencies[0]
+    f_high_hz = masked_frequencies[-1]
+    return 2.0 * PSD_WINDOW_WIDTH_HZ / (f_high_hz - f_low_hz)
 
 
 class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
@@ -191,7 +198,9 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         self._psd_input_spacing = min(self._psd_input_spacing, median_frequency_spacing(psd_frequencies))
         interpolated_psd = np.interp(masked_frequencies, psd_frequencies, psd_values, left=0.0, right=0.0)
         psd[self._frequency_mask] = np.clip(interpolated_psd, a_min=0.0, a_max=None)
-        psd[self._frequency_mask] *= _tukey_window(masked_frequencies.size)
+        psd[self._frequency_mask] *= _tukey_window(
+            masked_frequencies.size, alpha=_resolve_taper_alpha(masked_frequencies)
+        )
         return psd
 
     def _load_psd_anchors(self) -> list[tuple[float, np.ndarray]]:

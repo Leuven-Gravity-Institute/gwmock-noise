@@ -11,7 +11,8 @@ import pytest
 
 import gwmock_noise
 from gwmock_noise.config import NoiseConfig, OutputConfig
-from gwmock_noise.simulators import CorrelatedNoiseSimulator, DefaultNoiseSimulator
+from gwmock_noise.simulators import CorrelatedNoiseSimulator, DefaultNoiseSimulator, correlated
+from gwmock_noise.simulators.colored import PSD_WINDOW_WIDTH_HZ
 from gwmock_noise.simulators.correlated import parse_csd_file_map
 
 FLAT_PSD = 2.0e-3
@@ -414,3 +415,66 @@ def test_regularized_cholesky_falls_back_on_factorization_failure(
 
     assert factor.shape == (2, 2)
     assert np.allclose(factor, np.diag(np.diag(factor)))
+
+
+def test_configure_spectral_factors_uses_absolute_width_taper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The PSD/CSD taper alpha scales with bandwidth to keep a fixed Hz-wide edge (ISS-010)."""
+    detectors = ["H1", "L1"]
+    psd_files, csd_files = _build_spectral_inputs(tmp_path, detectors)
+    captured_alphas: list[float] = []
+    original_tukey_window = correlated._tukey_window
+
+    def _spy_tukey_window(length: int, alpha: float = 5e-3) -> np.ndarray:
+        captured_alphas.append(alpha)
+        return original_tukey_window(length, alpha=alpha)
+
+    monkeypatch.setattr(correlated, "_tukey_window", _spy_tukey_window)
+
+    for low, high in ((8.0, 96.0), (8.0, 48.0)):
+        CorrelatedNoiseSimulator(
+            psd_files=psd_files,
+            csd_files=csd_files,
+            detectors=detectors,
+            sampling_frequency=256.0,
+            low_frequency_cutoff=low,
+            high_frequency_cutoff=high,
+            window_duration=0.5,
+        )
+
+    assert captured_alphas == pytest.approx(
+        [2.0 * PSD_WINDOW_WIDTH_HZ / (96.0 - 8.0), 2.0 * PSD_WINDOW_WIDTH_HZ / (48.0 - 8.0)]
+    )
+
+
+def test_psd_taper_absolute_width_independent_of_sampling_rate(tmp_path: Path) -> None:
+    """Flat PSD region outside both edge tapers stays unattenuated across sampling rates."""
+    detectors = ["H1", "L1"]
+    low_cutoff = 3.0
+    taper_end = low_cutoff + PSD_WINDOW_WIDTH_HZ
+    wide_frequencies = np.linspace(1.0, 4096.0, 2000)
+
+    psd_files = {}
+    for detector in detectors:
+        psd_path = tmp_path / f"{detector}_wide_psd.txt"
+        np.savetxt(psd_path, np.column_stack((wide_frequencies, np.full_like(wide_frequencies, FLAT_PSD))))
+        psd_files[detector] = psd_path
+
+    for fs in (256.0, 512.0):
+        simulator = CorrelatedNoiseSimulator(
+            psd_files=psd_files,
+            detectors=detectors,
+            sampling_frequency=fs,
+            low_frequency_cutoff=low_cutoff,
+            window_duration=0.5,
+        )
+        masked_freqs = simulator._frequency_grid[simulator._frequency_mask]
+        trailing_taper_start = masked_freqs[-1] - PSD_WINDOW_WIDTH_HZ
+        flat_region = (masked_freqs > taper_end) & (masked_freqs < trailing_taper_start)
+        assert flat_region.any(), f"fs={fs}: no bins left in the flat region for this configuration"
+        for detector in detectors:
+            assert np.all(simulator._psd[detector][flat_region] > 0), (
+                f"fs={fs}, detector={detector}: some bins in the flat region have psd=0"
+            )

@@ -9,7 +9,8 @@ import pytest
 from scipy.signal import csd
 
 from gwmock_noise.diagnostics.psd import estimate_psd
-from gwmock_noise.simulators import NoiseSimulator, SchumannNoiseSimulator
+from gwmock_noise.simulators import NoiseSimulator, SchumannNoiseSimulator, schumann
+from gwmock_noise.simulators.colored import PSD_WINDOW_WIDTH_HZ
 
 HANFORD_POSITION = (46.455, -119.408)
 LIVINGSTON_POSITION = (30.563, -90.774)
@@ -132,4 +133,39 @@ def test_theoretical_coherence_matches_reference_value(tmp_path: Path) -> None:
     assert simulator.theoretical_coherence(FUNDAMENTAL_FREQUENCY_HZ, "H1", "L1") == pytest.approx(
         EXPECTED_HL_COHERENCE,
         rel=1.0e-6,
+    )
+
+
+def test_configure_spectral_factors_uses_absolute_width_taper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The coupling/PSD taper alpha scales with bandwidth to keep a fixed Hz-wide edge (ISS-010)."""
+    captured_alphas: list[float] = []
+    original_tukey_window = schumann._tukey_window
+
+    def _spy_tukey_window(length: int, alpha: float = 5e-3) -> np.ndarray:
+        captured_alphas.append(alpha)
+        return original_tukey_window(length, alpha=alpha)
+
+    monkeypatch.setattr(schumann, "_tukey_window", _spy_tukey_window)
+
+    positions = {"H1": HANFORD_POSITION, "L1": LIVINGSTON_POSITION}
+    coupling_files = {
+        detector: _write_coupling_file(tmp_path / f"{detector}_coupling.txt", value=1.0e-3) for detector in positions
+    }
+    for high_frequency_cutoff in (40.0, 60.0):
+        SchumannNoiseSimulator(
+            detectors=list(positions),
+            positions=positions,
+            coupling_files=coupling_files,
+            sampling_frequency=256.0,
+            low_frequency_cutoff=2.0,
+            high_frequency_cutoff=high_frequency_cutoff,
+            seed=11,
+            window_duration=8.0,
+        )
+
+    assert captured_alphas == pytest.approx(
+        [2.0 * PSD_WINDOW_WIDTH_HZ / (40.0 - 2.0), 2.0 * PSD_WINDOW_WIDTH_HZ / (60.0 - 2.0)]
     )

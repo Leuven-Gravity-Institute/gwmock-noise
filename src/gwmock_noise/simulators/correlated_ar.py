@@ -13,7 +13,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 from gwmock_noise.simulators._spectral import load_spectral_series
 from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
-from gwmock_noise.simulators.colored import _tukey_window
+from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
 from gwmock_noise.simulators.correlated import parse_csd_file_map
 
 if TYPE_CHECKING:
@@ -219,7 +219,7 @@ class CorrelatedARNoiseSimulator(ConfigurableNoiseSimulator):
             raise ValueError("The requested frequency range contains no simulation bins.")
 
         masked_frequencies = frequency_grid[frequency_mask]
-        taper = _tukey_window(masked_frequencies.size)
+        taper = _tukey_window(masked_frequencies.size, alpha=_resolve_taper_alpha(masked_frequencies))
         n_detectors = len(self.detectors)
         spectral_factors = np.zeros((frequency_grid.size, n_detectors, n_detectors), dtype=np.complex128)
 

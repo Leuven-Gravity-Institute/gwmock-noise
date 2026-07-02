@@ -9,7 +9,8 @@ import numpy as np
 import pytest
 
 import gwmock_noise
-from gwmock_noise.simulators import CorrelatedARNoiseSimulator
+from gwmock_noise.simulators import CorrelatedARNoiseSimulator, correlated_ar
+from gwmock_noise.simulators.colored import PSD_WINDOW_WIDTH_HZ
 from gwmock_noise.simulators.correlated import parse_csd_file_map
 
 FLAT_PSD = 2.0e-3
@@ -472,3 +473,35 @@ def test_regularized_cholesky_falls_back_on_factorization_failure(
 
     assert factor.shape == (2, 2)
     assert np.allclose(factor, np.diag(np.diag(factor)))
+
+
+def test_fit_model_uses_absolute_width_taper_alpha(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The VMA fit's PSD/CSD taper alpha scales with bandwidth to keep a fixed Hz-wide edge (ISS-010)."""
+    detectors = ["H1", "L1"]
+    psd_files, csd_files = _build_spectral_inputs(tmp_path, detectors)
+    captured_alphas: list[float] = []
+    original_tukey_window = correlated_ar._tukey_window
+
+    def _spy_tukey_window(length: int, alpha: float = 5e-3) -> np.ndarray:
+        captured_alphas.append(alpha)
+        return original_tukey_window(length, alpha=alpha)
+
+    monkeypatch.setattr(correlated_ar, "_tukey_window", _spy_tukey_window)
+
+    for low, high in ((8.0, 96.0), (8.0, 48.0)):
+        CorrelatedARNoiseSimulator(
+            psd_files=psd_files,
+            csd_files=csd_files,
+            detectors=detectors,
+            sampling_frequency=256.0,
+            order=8,
+            low_frequency_cutoff=low,
+            high_frequency_cutoff=high,
+        )
+
+    assert captured_alphas == pytest.approx(
+        [2.0 * PSD_WINDOW_WIDTH_HZ / (96.0 - 8.0), 2.0 * PSD_WINDOW_WIDTH_HZ / (48.0 - 8.0)]
+    )

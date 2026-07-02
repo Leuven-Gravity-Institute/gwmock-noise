@@ -12,7 +12,7 @@ import numpy as np
 # invariant to the sampling frequency. The default of 4 s (df = 0.25 Hz) is fine
 # enough to resolve the narrow, fast-varying resonance modes in typical LIGO PSDs;
 # the historical 0.5 s implied by a 2048-sample window at 4096 Hz was too coarse.
-DEFAULT_WINDOW_DURATION = 4.0
+DEFAULT_WINDOW_DURATION = 4
 
 # Smallest window (samples) that still yields a positive overlap (>= 1).
 MIN_WINDOW_SIZE = 2

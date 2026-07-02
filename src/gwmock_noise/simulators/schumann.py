@@ -20,7 +20,7 @@ from gwmock_noise.simulators._stitching import (
     warn_if_underresolved,
 )
 from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
-from gwmock_noise.simulators.colored import _tukey_window
+from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
 from gwmock_noise.utils.log import LOGGER_NAME
 
 if TYPE_CHECKING:
@@ -249,7 +249,7 @@ class SchumannNoiseSimulator(ConfigurableNoiseSimulator):
     def _configure_spectral_factors(self) -> None:
         """Construct regularized strain spectral factors on the FFT grid."""
         masked_frequencies = self._frequency_grid[self._frequency_mask]
-        taper = _tukey_window(masked_frequencies.size)
+        taper = _tukey_window(masked_frequencies.size, alpha=_resolve_taper_alpha(masked_frequencies))
 
         self._detector_index = {detector: index for index, detector in enumerate(self.detectors)}
         self._coupling = {

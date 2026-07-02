@@ -17,7 +17,7 @@ from gwmock_noise.simulators._stitching import (
     warn_if_underresolved,
 )
 from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
-from gwmock_noise.simulators.colored import _tukey_window
+from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
 from gwmock_noise.spectral import (
     build_spectral_covariance_from_files,
     regularized_cholesky,
@@ -195,7 +195,7 @@ class CorrelatedNoiseSimulator(ConfigurableNoiseSimulator):
     def _configure_spectral_factors(self) -> None:
         """Construct regularized spectral factors on the FFT grid."""
         masked_frequencies = self._frequency_grid[self._frequency_mask]
-        taper = _tukey_window(masked_frequencies.size)
+        taper = _tukey_window(masked_frequencies.size, alpha=_resolve_taper_alpha(masked_frequencies))
         covariance = build_spectral_covariance_from_files(
             detectors=self.detectors,
             psd_files=self.psd_files,

@@ -16,7 +16,7 @@ from gwmock_noise.simulators import (
     DefaultNoiseSimulator,
     TimeVaryingColoredNoiseSimulator,
 )
-from gwmock_noise.simulators.colored import _tukey_window
+from gwmock_noise.simulators.colored import PSD_WINDOW_WIDTH_HZ, _tukey_window
 
 
 def _write_psd_file(path: Path, *, value: float = 2.0e-3) -> Path:
@@ -330,6 +330,45 @@ def test_tukey_window_applies_taper_for_regular_windows() -> None:
     assert window.dtype == float
     assert window[0] == pytest.approx(0.0)
     assert window[32] == pytest.approx(1.0)
+
+
+def test_psd_taper_ends_before_5hz() -> None:
+    """Leading taper must end at f_low+1Hz; the 5 Hz bin must be unattenuated."""
+    f_low, f_high = 3.0, 2048.0
+    n_bins = 1000
+    freqs = np.linspace(f_low, f_high, n_bins)
+    alpha = 2.0 * PSD_WINDOW_WIDTH_HZ / (f_high - f_low)
+    window = _tukey_window(n_bins, alpha=alpha)
+
+    idx_5hz = np.argmin(np.abs(freqs - 5.0))
+    assert window[idx_5hz] == pytest.approx(1.0, abs=1e-10), (
+        f"Window at 5 Hz = {window[idx_5hz]:.6f}, expected 1.0 (taper should end at {f_low + PSD_WINDOW_WIDTH_HZ} Hz)"
+    )
+
+
+def test_psd_taper_absolute_width_independent_of_sampling_rate(tmp_path: Path) -> None:
+    """Flat region between both tapers is unattenuated regardless of sampling rate."""
+    psd_path = tmp_path / "flat.txt"
+    freqs = np.linspace(1.0, 4096.0, 500)
+    psd_path.write_text("\n".join(f"{f:.6f} 1e-46" for f in freqs))
+
+    taper_end = 3.0 + PSD_WINDOW_WIDTH_HZ  # 4.0 Hz
+
+    for fs in (256.0, 512.0):
+        sim = ColoredNoiseSimulator(
+            psd_file=str(psd_path),
+            detectors=["H1"],
+            sampling_frequency=fs,
+            low_frequency_cutoff=3.0,
+            window_duration=0.5,
+        )
+        masked_freqs = sim._frequency_grid[sim._frequency_mask]
+        trailing_taper_start = masked_freqs[-1] - PSD_WINDOW_WIDTH_HZ
+        flat_region = (masked_freqs > taper_end) & (masked_freqs < trailing_taper_start)
+        psd_flat = sim._psd[sim._frequency_mask][flat_region]
+        assert np.all(psd_flat > 0), (
+            f"fs={fs}: some bins in flat region [{taper_end:.1f}, {trailing_taper_start:.1f}] Hz have psd=0"
+        )
 
 
 def test_generate_rejects_invalid_previous_strain_shape(tmp_path: Path) -> None:

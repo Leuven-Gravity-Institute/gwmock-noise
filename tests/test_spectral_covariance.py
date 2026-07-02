@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from gwmock_noise.simulators import CorrelatedNoiseSimulator
-from gwmock_noise.simulators.colored import _tukey_window
+from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
 from gwmock_noise.spectral import (
     assemble_hermitian_spectral_matrices,
     build_spectral_covariance_from_files,
@@ -113,7 +113,7 @@ def test_public_covariance_api_reproduces_correlated_simulator_spectra(tmp_path:
         high_frequency_cutoff=96.0,
     )
     masked_frequencies = simulator._frequency_grid[simulator._frequency_mask]
-    taper = _tukey_window(masked_frequencies.size)
+    taper = _tukey_window(masked_frequencies.size, alpha=_resolve_taper_alpha(masked_frequencies))
 
     covariance = build_spectral_covariance_from_files(
         detectors=detectors,
