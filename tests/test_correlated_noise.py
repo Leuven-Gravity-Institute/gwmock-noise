@@ -343,6 +343,11 @@ def test_correlated_simulator_rejects_empty_frequency_band(tmp_path: Path) -> No
             sampling_frequency=256.0,
             low_frequency_cutoff=0.01,
             high_frequency_cutoff=0.02,
+            # Explicit: this test picks a deliberately tiny 0.01 Hz-wide band
+            # with no FFT bins at df=0.25 Hz. The default's much finer df
+            # happens to place a bin inside this specific band, so pin the
+            # grid resolution here.
+            window_duration=4.0,
         )
 
 
@@ -421,7 +426,7 @@ def test_configure_spectral_factors_uses_absolute_width_taper(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The PSD/CSD taper alpha scales with bandwidth to keep a fixed Hz-wide edge (ISS-010)."""
+    """The PSD/CSD taper alpha scales with bandwidth to keep a fixed Hz-wide edge."""
     detectors = ["H1", "L1"]
     psd_files, csd_files = _build_spectral_inputs(tmp_path, detectors)
     captured_alphas: list[float] = []

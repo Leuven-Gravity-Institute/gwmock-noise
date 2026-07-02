@@ -5,7 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from gwmock_noise.simulators._stitching import OverlapAddStitcher
+from gwmock_noise.simulators._stitching import DEFAULT_WINDOW_DURATION, OverlapAddStitcher
+
+
+def test_default_window_duration_is_64_seconds() -> None:
+    """The default synthesis window is 64 s, tuned for ET PSD accuracy."""
+    assert DEFAULT_WINDOW_DURATION == 64
 
 
 @pytest.mark.parametrize("window_size", [0, -1])

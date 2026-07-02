@@ -134,6 +134,11 @@ def test_time_varying_generated_psd_matches_start_and_end_anchors(tmp_path: Path
             seed=seed,
             low_frequency_cutoff=8.0,
             high_frequency_cutoff=96.0,
+            # Explicit: the 64 s default window is comparable to this test's
+            # 64 s schedule transition and 96 s total duration, which breaks
+            # the start/end window slicing below. Keep a smaller window here
+            # so it measures cleanly on either side.
+            window_duration=4.0,
         )
         realization = simulator.generate(
             duration=96.0,
@@ -495,6 +500,11 @@ def test_colored_simulator_rejects_empty_frequency_mask(tmp_path: Path) -> None:
             sampling_frequency=256.0,
             low_frequency_cutoff=0.01,
             high_frequency_cutoff=0.02,
+            # Explicit: this test picks a deliberately tiny 0.01 Hz-wide band
+            # with no FFT bins at df=0.25 Hz. The default's much finer df
+            # happens to place a bin inside this specific band, so pin the
+            # grid resolution here.
+            window_duration=4.0,
         )
 
 

@@ -479,7 +479,7 @@ def test_fit_model_uses_absolute_width_taper_alpha(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The VMA fit's PSD/CSD taper alpha scales with bandwidth to keep a fixed Hz-wide edge (ISS-010)."""
+    """The VMA fit's PSD/CSD taper alpha scales with bandwidth to keep a fixed Hz-wide edge."""
     detectors = ["H1", "L1"]
     psd_files, csd_files = _build_spectral_inputs(tmp_path, detectors)
     captured_alphas: list[float] = []

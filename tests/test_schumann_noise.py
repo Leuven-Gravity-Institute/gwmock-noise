@@ -140,7 +140,7 @@ def test_configure_spectral_factors_uses_absolute_width_taper(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The coupling/PSD taper alpha scales with bandwidth to keep a fixed Hz-wide edge (ISS-010)."""
+    """The coupling/PSD taper alpha scales with bandwidth to keep a fixed Hz-wide edge."""
     captured_alphas: list[float] = []
     original_tukey_window = schumann._tukey_window
 

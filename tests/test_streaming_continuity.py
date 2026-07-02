@@ -49,8 +49,17 @@ def test_open_stream_chunked_colored_output_matches_single_shot_generate(tmp_pat
     """Chunked colored output is byte-identical to a single seeded realization."""
     detectors = ["H1"]
     psd_path = _write_psd_file(tmp_path / "colored_psd.txt")
-    long_simulator = ColoredNoiseSimulator(psd_file=psd_path, detectors=detectors, sampling_frequency=256.0)
-    stream_simulator = ColoredNoiseSimulator(psd_file=psd_path, detectors=detectors, sampling_frequency=256.0)
+    # Explicit: this test compares a single 12 s generate() call against three
+    # 4 s streamed chunks byte-for-byte. The 64 s default window makes the
+    # window far larger than either request size, which changes how many
+    # internal chunks each path draws and breaks exact equality. Pin a
+    # smaller window here, where the two paths were validated to match.
+    long_simulator = ColoredNoiseSimulator(
+        psd_file=psd_path, detectors=detectors, sampling_frequency=256.0, window_duration=4.0
+    )
+    stream_simulator = ColoredNoiseSimulator(
+        psd_file=psd_path, detectors=detectors, sampling_frequency=256.0, window_duration=4.0
+    )
 
     expected = long_simulator.generate(12.0, 256.0, detectors, seed=123)
     actual = _collect_chunks(
@@ -78,17 +87,21 @@ def test_open_stream_chunked_correlated_output_matches_single_shot_generate(tmp_
     psd_files = {"H1": psd_h1, "L1": psd_l1}
     csd_files = {("H1", "L1"): csd_h1_l1}
 
+    # Explicit: see the colored-noise version of this test above for why the
+    # 64 s default window breaks exact single-shot/streamed equality.
     long_simulator = CorrelatedNoiseSimulator(
         psd_files=psd_files,
         csd_files=csd_files,
         detectors=detectors,
         sampling_frequency=256.0,
+        window_duration=4.0,
     )
     stream_simulator = CorrelatedNoiseSimulator(
         psd_files=psd_files,
         csd_files=csd_files,
         detectors=detectors,
         sampling_frequency=256.0,
+        window_duration=4.0,
     )
 
     expected = long_simulator.generate(12.0, 256.0, detectors, seed=123)

@@ -9,10 +9,10 @@ import numpy as np
 
 # Default synthesis window expressed as a fixed duration (seconds). A
 # duration-based window keeps the frequency resolution ``df = 1 / window_duration``
-# invariant to the sampling frequency. The default of 4 s (df = 0.25 Hz) is fine
-# enough to resolve the narrow, fast-varying resonance modes in typical LIGO PSDs;
-# the historical 0.5 s implied by a 2048-sample window at 4096 Hz was too coarse.
-DEFAULT_WINDOW_DURATION = 4
+# invariant to the sampling frequency. 64 s (df = 1/64 ~= 0.016 Hz) resolves ET
+# PSD features (narrowest known: 0.092 Hz wide, at 14.964 Hz) and avoids the
+# 16-32 s partial-resolution danger zone for sharp peaks.
+DEFAULT_WINDOW_DURATION = 64
 
 # Smallest window (samples) that still yields a positive overlap (>= 1).
 MIN_WINDOW_SIZE = 2
@@ -35,6 +35,15 @@ def resolve_window_sizes(window_duration: float, sampling_frequency: float) -> t
     Raises:
         ValueError: If ``window_duration`` is not positive or is too short to span
             at least ``MIN_WINDOW_SIZE`` samples at the given sampling frequency.
+
+    Note:
+        A ``window_duration`` that puts ``df = 1 / window_duration`` within a
+        factor of a few of a PSD feature's width can *partially* resolve that
+        feature: only 1-3 grid points fall across it, so the sampled amplitude
+        varies from chunk to chunk instead of converging. Prefer a
+        ``window_duration`` that puts ``df`` either much coarser than the
+        feature (fully smeared) or much finer (fully resolved) than one that
+        lands in between.
     """
     if window_duration <= 0:
         raise ValueError("window_duration must be greater than zero.")
