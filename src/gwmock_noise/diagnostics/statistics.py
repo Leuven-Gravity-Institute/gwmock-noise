@@ -12,7 +12,7 @@ from gwmock_noise.diagnostics.psd import estimate_psd
 KURTOSIS_THRESHOLD = 1.0
 DECORRELATION_DIVISOR = 16.0
 MIN_SEGMENTS = 2
-_WHITENING_SEGMENT_DURATION = 4.0  # matches estimate_psd's default segment_duration
+_WHITENING_SEGMENT_DURATION = 4.0  # Welch segment used for the whitening PSD and the edge trim
 # Bins whose estimated PSD sits this far below the median carry no real signal
 # power (they are spectral-leakage floor from band-limited synthesis); whitening
 # would amplify that junk to unit level, so they are zeroed instead. Physical
@@ -153,9 +153,13 @@ def run_diagnostics(
     noise. Pass ``whiten=False`` to test the raw samples instead — only
     meaningful for broadband data.
     """
+    if whiten:
+        samples = _validate_samples(data)
+        _validate_sampling_frequency(sampling_frequency)
+        data = _whiten_samples(samples, sampling_frequency)
     return {
-        "gaussianity": test_gaussianity(data, sampling_frequency=sampling_frequency, whiten=whiten),
-        "stationarity": test_stationarity(data, sampling_frequency=sampling_frequency, whiten=whiten),
+        "gaussianity": test_gaussianity(data, sampling_frequency=sampling_frequency, whiten=False),
+        "stationarity": test_stationarity(data, sampling_frequency=sampling_frequency, whiten=False),
     }
 
 
@@ -177,7 +181,11 @@ def _whiten_samples(samples: np.ndarray, sampling_frequency: float) -> np.ndarra
     wrap-around discontinuity contaminates roughly one whitening-filter length
     at each end; those edges are trimmed from the returned series.
     """
-    frequencies, psd = estimate_psd(samples, sampling_frequency=sampling_frequency)
+    frequencies, psd = estimate_psd(
+        samples,
+        sampling_frequency=sampling_frequency,
+        segment_duration=_WHITENING_SEGMENT_DURATION,
+    )
     spectrum = np.fft.rfft(samples)
     fft_frequencies = np.fft.rfftfreq(samples.size, d=1.0 / sampling_frequency)
     interpolated_psd = np.interp(fft_frequencies, frequencies, psd)

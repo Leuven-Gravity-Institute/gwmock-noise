@@ -102,7 +102,8 @@ def test_whiten_false_reproduces_raw_sample_behaviour() -> None:
 
     Documents both the escape hatch and why whitening is the default: on raw
     ET-coloured samples the Levene test's independence assumption is violated
-    and stationary noise is flagged as non-stationary.
+    and stationary noise is flagged as non-stationary; at this duration the
+    KS Gaussianity check misfires on the correlated raw samples too.
     """
     strain = ColoredNoiseSimulator(psd_file="ET_10_full_cryo_psd").generate(
         duration=128.0, sampling_frequency=1024.0, detectors=["E1"], seed=42
@@ -110,6 +111,7 @@ def test_whiten_false_reproduces_raw_sample_behaviour() -> None:
     results = run_diagnostics(strain, sampling_frequency=1024.0, whiten=False)
 
     assert not results["stationarity"].passed
+    assert not results["gaussianity"].passed
 
 
 def test_variance_step_in_colored_noise_still_detected() -> None:
