@@ -78,6 +78,73 @@ def test_gaussianity_failure_message_is_human_readable() -> None:
     assert "kurtosis" in result.message or "KS test" in result.message
 
 
+def test_steeply_colored_et_noise_passes_diagnostics() -> None:
+    """Regression: stationary Gaussian ET-coloured noise passes both diagnostics.
+
+    The ET sensitivity curves are steeply coloured (orders of magnitude of
+    dynamic range), giving correlation times of seconds. Without whitening,
+    the Levene segment-variance test rejected the package's own perfectly
+    stationary output for every seed (p ~ 1e-11), and the KS Gaussianity
+    check rejected it for durations of 128 s and above.
+    """
+    for seed in (1, 42):
+        strain = ColoredNoiseSimulator(psd_file="ET_10_full_cryo_psd").generate(
+            duration=128.0, sampling_frequency=1024.0, detectors=["E1"], seed=seed
+        )["E1"]
+        results = run_diagnostics(strain, sampling_frequency=1024.0)
+
+        assert results["gaussianity"].passed, (seed, results["gaussianity"].message)
+        assert results["stationarity"].passed, (seed, results["stationarity"].message)
+
+
+def test_whiten_false_reproduces_raw_sample_behaviour() -> None:
+    """whiten=False tests the raw samples, where coloured noise misfires.
+
+    Documents both the escape hatch and why whitening is the default: on raw
+    ET-coloured samples the Levene test's independence assumption is violated
+    and stationary noise is flagged as non-stationary.
+    """
+    strain = ColoredNoiseSimulator(psd_file="ET_10_full_cryo_psd").generate(
+        duration=128.0, sampling_frequency=1024.0, detectors=["E1"], seed=42
+    )["E1"]
+    results = run_diagnostics(strain, sampling_frequency=1024.0, whiten=False)
+
+    assert not results["stationarity"].passed
+
+
+def test_variance_step_in_colored_noise_still_detected() -> None:
+    """Whitening must not wash out a genuine non-stationarity."""
+    strain = np.array(
+        ColoredNoiseSimulator(psd_file="ET_10_full_cryo_psd").generate(
+            duration=128.0, sampling_frequency=1024.0, detectors=["E1"], seed=42
+        )["E1"],
+        dtype=float,
+    )
+    strain[strain.size // 2 :] *= 3.0
+
+    results = run_diagnostics(strain, sampling_frequency=1024.0)
+
+    assert not results["stationarity"].passed
+
+
+def test_glitches_in_colored_noise_still_detected() -> None:
+    """Whitening must not wash out genuine non-Gaussian transients."""
+    strain = np.array(
+        ColoredNoiseSimulator(psd_file="ET_10_full_cryo_psd").generate(
+            duration=128.0, sampling_frequency=1024.0, detectors=["E1"], seed=7
+        )["E1"],
+        dtype=float,
+    )
+    rng = np.random.default_rng(0)
+    for start_time in rng.uniform(10.0, 118.0, 20):
+        index = int(start_time * 1024.0)
+        strain[index : index + 8] += 50.0 * strain.std()
+
+    results = run_diagnostics(strain, sampling_frequency=1024.0)
+
+    assert not results["gaussianity"].passed
+
+
 def test_run_diagnostics_returns_diagnostic_results() -> None:
     """run_diagnostics labels both statistical checks."""
     rng = np.random.default_rng(0)

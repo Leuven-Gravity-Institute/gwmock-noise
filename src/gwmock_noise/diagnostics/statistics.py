@@ -7,9 +7,17 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.stats import kstest, kurtosis, levene
 
+from gwmock_noise.diagnostics.psd import estimate_psd
+
 KURTOSIS_THRESHOLD = 1.0
 DECORRELATION_DIVISOR = 16.0
 MIN_SEGMENTS = 2
+_WHITENING_SEGMENT_DURATION = 4.0  # matches estimate_psd's default segment_duration
+# Bins whose estimated PSD sits this far below the median carry no real signal
+# power (they are spectral-leakage floor from band-limited synthesis); whitening
+# would amplify that junk to unit level, so they are zeroed instead. Physical
+# sensitivity curves span ~1e2-1e3 around their median, comfortably above this.
+_WHITENING_RELATIVE_FLOOR = 1e-6
 
 
 @dataclass(slots=True)
@@ -26,11 +34,19 @@ def _test_gaussianity_impl(
     data: np.ndarray,
     sampling_frequency: float,
     alpha: float = 0.05,
+    whiten: bool = True,
 ) -> DiagnosticResult:
-    """Test whether a realization is consistent with Gaussian noise."""
+    """Test whether a realization is consistent with Gaussian noise.
+
+    Coloured noise is whitened first (see ``_whiten_samples``): the KS test
+    assumes independent samples, which steeply coloured spectra violate.
+    Pass ``whiten=False`` only for data that is already broadband.
+    """
     samples = _validate_samples(data)
     _validate_sampling_frequency(sampling_frequency)
     _validate_alpha(alpha)
+    if whiten:
+        samples = _whiten_samples(samples, sampling_frequency)
 
     mean = float(np.mean(samples))
     std = float(np.std(samples, ddof=0))
@@ -77,13 +93,23 @@ def _test_stationarity_impl(
     sampling_frequency: float,
     n_segments: int = 8,
     alpha: float = 0.05,
+    whiten: bool = True,
 ) -> DiagnosticResult:
-    """Test whether segment variances are consistent with stationarity."""
+    """Test whether segment variances are consistent with stationarity.
+
+    Coloured noise is whitened first (see ``_whiten_samples``): the Levene
+    variance-homogeneity test assumes (nearly) independent samples, and the
+    long correlation times of steeply coloured spectra make segment variances
+    genuinely differ even for perfectly stationary noise. Pass
+    ``whiten=False`` only for data that is already broadband.
+    """
     samples = _validate_samples(data)
     _validate_sampling_frequency(sampling_frequency)
     _validate_alpha(alpha)
     if n_segments < MIN_SEGMENTS:
         raise ValueError(f"n_segments must be at least {MIN_SEGMENTS}.")
+    if whiten:
+        samples = _whiten_samples(samples, sampling_frequency)
 
     decorrelation_step = max(1, int(sampling_frequency / DECORRELATION_DIVISOR))
     decorrelated = samples[::decorrelation_step]
@@ -115,12 +141,61 @@ def _test_stationarity_impl(
     )
 
 
-def run_diagnostics(data: np.ndarray, sampling_frequency: float) -> dict[str, DiagnosticResult]:
-    """Run the default Gaussianity and stationarity diagnostics."""
+def run_diagnostics(
+    data: np.ndarray,
+    sampling_frequency: float,
+    whiten: bool = True,
+) -> dict[str, DiagnosticResult]:
+    """Run the default Gaussianity and stationarity diagnostics.
+
+    Data is whitened against its own Welch PSD estimate before testing (see
+    ``_whiten_samples``), which makes both checks applicable to coloured
+    noise. Pass ``whiten=False`` to test the raw samples instead — only
+    meaningful for broadband data.
+    """
     return {
-        "gaussianity": test_gaussianity(data, sampling_frequency=sampling_frequency),
-        "stationarity": test_stationarity(data, sampling_frequency=sampling_frequency),
+        "gaussianity": test_gaussianity(data, sampling_frequency=sampling_frequency, whiten=whiten),
+        "stationarity": test_stationarity(data, sampling_frequency=sampling_frequency, whiten=whiten),
     }
+
+
+def _whiten_samples(samples: np.ndarray, sampling_frequency: float) -> np.ndarray:
+    """Whiten a realization against its own Welch PSD estimate.
+
+    Steeply coloured spectra (e.g. Einstein Telescope sensitivity curves)
+    have correlation times of seconds, which breaks the independence
+    assumptions of the KS and Levene tests: perfectly stationary Gaussian
+    coloured noise was systematically flagged as non-stationary. Dividing
+    the spectrum by the amplitude spectral density estimated from the same
+    data yields an approximately white, unit-level series on which the
+    tests are valid.
+
+    Bins with no meaningful estimated power (below ``_WHITENING_RELATIVE_FLOOR``
+    of the median positive PSD — the leakage floor of band-limited data) are
+    zeroed rather than divided, since whitening would amplify their numerical
+    junk to unit level. The circular FFT treats the series as periodic, so the
+    wrap-around discontinuity contaminates roughly one whitening-filter length
+    at each end; those edges are trimmed from the returned series.
+    """
+    frequencies, psd = estimate_psd(samples, sampling_frequency=sampling_frequency)
+    spectrum = np.fft.rfft(samples)
+    fft_frequencies = np.fft.rfftfreq(samples.size, d=1.0 / sampling_frequency)
+    interpolated_psd = np.interp(fft_frequencies, frequencies, psd)
+    positive_psd = psd[psd > 0.0]
+    floor = _WHITENING_RELATIVE_FLOOR * float(np.median(positive_psd)) if positive_psd.size else 0.0
+    amplitude = np.sqrt(interpolated_psd)
+    whitened_spectrum = np.zeros_like(spectrum)
+    keep = interpolated_psd > floor
+    whitened_spectrum[keep] = spectrum[keep] / amplitude[keep]
+    whitened = np.fft.irfft(whitened_spectrum, n=samples.size)
+
+    # The whitening filter's impulse response is bounded by the Welch segment
+    # length (the estimate's spectral resolution); trim that much from each
+    # end, falling back to an eighth of the data when the series is short.
+    edge = round(_WHITENING_SEGMENT_DURATION * sampling_frequency)
+    if samples.size <= 4 * edge:
+        edge = samples.size // 8
+    return whitened[edge : samples.size - edge] if edge > 0 else whitened
 
 
 def _validate_samples(data: np.ndarray) -> np.ndarray:
