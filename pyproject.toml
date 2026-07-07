@@ -19,7 +19,7 @@ classifiers = [
 requires-python = ">=3.12"
 dynamic = ["version"]
 dependencies = [
-  "numpy>=2.5.0",
+  "numpy>=2.5.1",
   "h5py>=3.16.0",
   "pydantic>=2.13.4",
   "scipy>=1.18.0",
