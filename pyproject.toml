@@ -28,10 +28,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-frame = ["gwpy", "lalsuite"]
+frame = ["gwpy>=4.0.1", "lalsuite>=7.26.15"]
 gengli = ["gengli>=0.2.0"]
-gwpy = ["gwpy"]
-gwosc = ["gwpy", "gwosc>=0.8.3"]
+gwpy = ["gwpy>=4.0.1"]
+gwosc = ["gwpy>=4.0.1", "gwosc>=0.8.3"]
 
 [dependency-groups]
 dev = [
