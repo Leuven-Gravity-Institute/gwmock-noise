@@ -56,6 +56,10 @@ Tracker = "https://github.com/Leuven-Gravity-Institute/gwmock_noise/issues"
 Home = "https://github.com/Leuven-Gravity-Institute/gwmock_noise"
 "Release Notes" = "https://github.com/Leuven-Gravity-Institute/gwmock_noise/releases"
 
+[tool.dependency-support-policy]
+policy = "spec0"
+lock = "minimal"
+
 [tool.uv-dynamic-versioning]
 vcs = "git"      # default
 style = "semver" # or pep440, semver, etc.
