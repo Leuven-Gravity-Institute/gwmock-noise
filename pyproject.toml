@@ -24,7 +24,7 @@ dependencies = [
   "pydantic>=2.9.0",
   "scipy>=1.15.0",
   "pyyaml>=6.0",
-  "typer>=0.13.0",
+  "typer>=0.16.0", # click 8.2 compatibility; the SPEC 0 floor (0.13) predates it
 ]
 
 [project.optional-dependencies]
