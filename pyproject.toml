@@ -19,19 +19,19 @@ classifiers = [
 requires-python = ">=3.12"
 dynamic = ["version"]
 dependencies = [
-  "numpy>=2.5.1",
-  "h5py>=3.16.0",
-  "pydantic>=2.13.4",
-  "scipy>=1.18.0",
-  "pyyaml>=6.0.3",
-  "typer>=0.26.8",
+  "numpy>=2.1.0",
+  "h5py>=3.12.1",
+  "pydantic>=2.9.0",
+  "scipy>=1.15.0",
+  "pyyaml>=6.0",
+  "typer>=0.13.0",
 ]
 
 [project.optional-dependencies]
-frame = ["gwpy>=4.0.1", "lalsuite>=7.26.15"]
+frame = ["gwpy>=4.0.0", "lalsuite>=7.23"]
 gengli = ["gengli>=0.2.0"]
-gwpy = ["gwpy>=4.0.1"]
-gwosc = ["gwpy>=4.0.1", "gwosc>=0.8.3"]
+gwpy = ["gwpy>=4.0.0"]
+gwosc = ["gwpy>=4.0.0", "gwosc>=0.8.0"]
 
 [dependency-groups]
 dev = [
@@ -58,6 +58,7 @@ Home = "https://github.com/Leuven-Gravity-Institute/gwmock_noise"
 
 [tool.dependency-support-policy]
 policy = "spec0"
+groups = ["project", "optional"]
 lock = "minimal"
 
 [tool.uv-dynamic-versioning]
