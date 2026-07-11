@@ -5,6 +5,10 @@ on:
         - cron: '0 6 1 * *' # monthly, 1st at 06:00 UTC
     workflow_dispatch:
 
+concurrency:
+    group: support-floor-update
+    cancel-in-progress: false
+
 permissions:
     contents: read
 
