@@ -38,8 +38,9 @@ factors, and sampling real multi-detector time series.
 
 ## Glitch models
 
-Runtime glitch model definitions, including phenomenological models and the
-optional gengli-backed blip implementation.
+Runtime glitch model definitions, including phenomenological models, the
+optional gengli-backed blip implementation, and the optional DeepExtractor model
+that injects real O3 glitch reconstructions.
 
 ::: gwmock_noise.glitches
 

@@ -45,6 +45,8 @@ Optional extras (declared in `pyproject.toml`):
 - `gwmock-noise[gwpy]` — GWpy-based helpers (for example `GWpyAdapter`)
 - `gwmock-noise[frame]` — GWF frame output (`FrameWriter` / GWpy GWF stack)
 - `gwmock-noise[gengli]` — gengli-backed blip glitches (`GengliBlipGlitch`)
+- `gwmock-noise[deepextractor]` — real O3 glitch reconstructions from
+  HuggingFace (`DeepExtractorGlitch`)
 
 ### CLI
 

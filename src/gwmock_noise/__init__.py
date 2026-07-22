@@ -9,6 +9,7 @@ from gwmock_noise.config import NoiseComponentConfig, NoiseConfig, OutputConfig,
 from gwmock_noise.gaussian import SpectralLine
 from gwmock_noise.glitches import (
     BlipGlitch,
+    DeepExtractorGlitch,
     GengliBlipGlitch,
     GlitchModel,
     LogNormalAmplitudeDistribution,
@@ -87,6 +88,7 @@ __all__ = [
     "ConfigurableNoiseSimulator",
     "CorrelatedARNoiseSimulator",
     "CorrelatedNoiseSimulator",
+    "DeepExtractorGlitch",
     "DefaultNoiseSimulator",
     "DiagnosticResult",
     "FilterType",

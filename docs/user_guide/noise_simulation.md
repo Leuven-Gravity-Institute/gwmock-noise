@@ -99,6 +99,12 @@ models = [
 ]
 ```
 
+Every glitch model runs an independent Poisson process per detector, so event
+times and waveforms are uncorrelated between detectors and `rate` is the event
+rate seen by each individual detector. The metadata sidecar reports, for each
+model, the total number of injected events (`count`) plus a per-detector
+breakdown (`count_by_detector`).
+
 ## Gengli blip glitches
 
 `gwmock-noise[gengli]` adds a file-backed `GengliBlipGlitch` model that plugs
@@ -146,6 +152,51 @@ config = NoiseConfig(
 The model samples an SNR from the population table for each injected event,
 generates one whitened gengli blip, and colors it against the configured PSD
 before additive injection through `InjectGlitches`.
+
+## DeepExtractor glitches
+
+`gwmock-noise[deepextractor]` adds a `DeepExtractorGlitch` model that injects
+real O3 glitch reconstructions from the
+[DeepExtractor dataset](https://huggingface.co/datasets/tomdooney/deepextractor-glitch-reconstructions)
+(CC BY 4.0). The dataset holds 35,000 whitened, amplitude-normalized 2-second
+waveforms at 4096 Hz covering seven Gravity Spy classes (`Blip`,
+`Fast_Scattering`, `Koi_Fish`, `Low_Frequency_Burst`, `Scattered_Light`,
+`Tomte`, `Whistle`); the ~2.3 GB samples file is downloaded lazily on first use
+and cached by `huggingface_hub`.
+
+Each injected event draws a reconstruction from the configured classes,
+resamples it to the simulation rate, colors it against `psd_file`, and rescales
+it so its optimal SNR `sqrt(4 df sum(|h(f)|^2 / S(f)))` against that PSD equals
+the configured target. `snr` accepts either a single number for all classes or a
+per-class mapping. `rate` likewise accepts either a single number — the total
+Poisson rate shared by all configured classes, drawn uniformly — or a per-class
+mapping, in which case each class occurs at its own rate (the total rate is
+their sum):
+
+```toml
+[[components]]
+simulator = "glitches"
+models = [
+  { kind = "deepextractor", rate = { Blip = 0.04, Koi_Fish = 0.01 }, psd_file = "noise_psd.txt", snr = { Blip = 12.0, Koi_Fish = 8.0 }, glitch_classes = ["Blip", "Koi_Fish"], amplitude_distribution = { distribution = "lognormal", mean = 1.0, std = 0.0 } }
+]
+```
+
+With the default `amplitude_distribution` mean of 1.0 and std of 0.0 the target
+SNR is met exactly; a non-zero std adds multiplicative SNR scatter. Events are
+placed by the same Poisson `rate` process as the other glitch models, run
+independently per detector: each detector receives its own event times and
+waveform draws, and `rate` is the event rate seen by each detector. Note that
+resampling below 4096 Hz uses linear interpolation without an anti-aliasing
+filter, which aliases high-frequency content (the SNR calibration itself is
+unaffected).
+
+The dataset is cached by `huggingface_hub` after the first download, so later
+runs reuse the cached files. Each run contacts the Hub first to validate the
+cached files' ETags and fetch anything missing; if the Hub is unreachable a
+warning notes that the ETag check was skipped and the cached files are used
+instead, and only a genuinely missing cache raises `LocalEntryNotFoundError`.
+Set `local_files_only = true` to skip the network unconditionally and read
+straight from the cache.
 
 ## Programmatic usage
 

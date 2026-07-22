@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from gwmock_noise import GengliBlipGlitch, LogNormalAmplitudeDistribution
+from gwmock_noise.glitches import _coloring as coloring_module
 from gwmock_noise.glitches import gengli as gengli_module
 from gwmock_noise.glitches.gengli import read_blip_population_file, write_blip_population_file
 from gwmock_noise.simulators.colored import PSD_WINDOW_WIDTH_HZ
@@ -145,13 +146,13 @@ def test_color_glitch_uses_absolute_width_taper(
     _write_flat_psd(psd_file)
 
     captured_alphas: list[float] = []
-    original_tukey_window = gengli_module._tukey_window
+    original_tukey_window = coloring_module._tukey_window
 
     def _spy_tukey_window(length: int, alpha: float) -> np.ndarray:
         captured_alphas.append(alpha)
         return original_tukey_window(length, alpha=alpha)
 
-    monkeypatch.setattr(gengli_module, "_tukey_window", _spy_tukey_window)
+    monkeypatch.setattr(coloring_module, "_tukey_window", _spy_tukey_window)
 
     model = GengliBlipGlitch.from_population_file(
         population_file,

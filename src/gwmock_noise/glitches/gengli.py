@@ -10,9 +10,9 @@ from typing import Any, Literal
 import h5py
 import numpy as np
 
+from gwmock_noise.glitches._coloring import color_whitened_waveform
 from gwmock_noise.glitches.models import GlitchModel
 from gwmock_noise.simulators._spectral import load_spectral_series
-from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
 
 POPULATION_SNR_DATASET = "snr"
 UINT32_EXCLUSIVE_MAX = 2**32
@@ -137,33 +137,14 @@ class GengliBlipGlitch(GlitchModel):
 
     def _color_glitch(self, white_glitch: np.ndarray, *, sampling_frequency: float) -> np.ndarray:
         """Color a whitened gengli waveform using the configured PSD."""
-        n_samples = int(white_glitch.size)
-        nyquist = sampling_frequency / 2.0
-        high_frequency_cutoff = nyquist if self.high_frequency_cutoff is None else self.high_frequency_cutoff
-        if high_frequency_cutoff > nyquist:
-            raise ValueError("high_frequency_cutoff must not exceed the Nyquist frequency.")
-
-        frequencies = np.fft.rfftfreq(n_samples, d=1.0 / sampling_frequency)
-        frequency_mask = (frequencies >= self.low_frequency_cutoff) & (frequencies <= high_frequency_cutoff)
-        if not np.any(frequency_mask):
-            raise ValueError("The requested frequency range contains no gengli simulation bins.")
-
-        psd = np.zeros_like(frequencies, dtype=float)
-        masked_frequencies = frequencies[frequency_mask]
-        psd[frequency_mask] = np.interp(
-            masked_frequencies,
-            self._psd_frequencies,
-            self._psd_values,
-            left=0.0,
-            right=0.0,
-        )
-        psd[frequency_mask] = np.clip(psd[frequency_mask], a_min=0.0, a_max=None)
-        psd[frequency_mask] *= _tukey_window(masked_frequencies.size, alpha=_resolve_taper_alpha(masked_frequencies))
-
-        white_glitch_fd = np.fft.rfft(white_glitch) / sampling_frequency
-        colored_glitch_fd = np.zeros_like(white_glitch_fd, dtype=np.complex128)
-        colored_glitch_fd[frequency_mask] = white_glitch_fd[frequency_mask] * np.sqrt(psd[frequency_mask])
-        return np.fft.irfft(colored_glitch_fd, n=n_samples) * sampling_frequency
+        return color_whitened_waveform(
+            white_glitch,
+            sampling_frequency=sampling_frequency,
+            psd_frequencies=self._psd_frequencies,
+            psd_values=self._psd_values,
+            low_frequency_cutoff=self.low_frequency_cutoff,
+            high_frequency_cutoff=self.high_frequency_cutoff,
+        ).time_series
 
     def generate_waveform(
         self,

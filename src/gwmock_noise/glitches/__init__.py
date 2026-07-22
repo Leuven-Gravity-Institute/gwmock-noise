@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from gwmock_noise.glitches.deepextractor import DeepExtractorGlitch
 from gwmock_noise.glitches.gengli import GengliBlipGlitch
 from gwmock_noise.glitches.models import (
     BlipGlitch,
@@ -14,6 +15,7 @@ from gwmock_noise.glitches.models import (
 
 __all__ = [
     "BlipGlitch",
+    "DeepExtractorGlitch",
     "GengliBlipGlitch",
     "GlitchModel",
     "LogNormalAmplitudeDistribution",

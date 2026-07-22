@@ -175,6 +175,7 @@ def supported_glitch_kinds() -> dict[str, type[GlitchModel]]:
         "blip": BlipGlitch,
         "scattered_light": ScatteredLightGlitch,
         "gengli_blip": importlib.import_module("gwmock_noise.glitches.gengli").GengliBlipGlitch,
+        "deepextractor": importlib.import_module("gwmock_noise.glitches.deepextractor").DeepExtractorGlitch,
     }
 
 
