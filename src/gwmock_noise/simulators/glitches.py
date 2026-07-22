@@ -85,6 +85,11 @@ class InjectGlitches:
     ``SeedSequence`` stream. A detector's realization is therefore reproducible
     and independent of which other detectors are present or the order in which
     they are requested.
+
+    A glitch whose waveform extends past the end of a chunk has its remainder
+    carried into the next chunk, so a streamed simulation matches a single
+    generate call of the same total duration. A tail is dropped only when it
+    overflows the last generated chunk, where the data window genuinely ends.
     """
 
     def __init__(self, base: NoiseSimulator, glitch_models: list[GlitchModel]) -> None:
@@ -104,6 +109,7 @@ class InjectGlitches:
         self._rngs: dict[tuple[int, str], np.random.Generator] = {}
         self._next_event_times: dict[tuple[int, str], float] = {}
         self._event_counts: dict[tuple[int, str], int] = {}
+        self._pending_tails: dict[tuple[int, str], np.ndarray] = {}
 
     def _initialize_process(self, seed: int | None) -> None:
         """Reset the per-model, per-detector Poisson-process state."""
@@ -113,6 +119,26 @@ class InjectGlitches:
         self._rngs = {}
         self._next_event_times = {}
         self._event_counts = {}
+        self._pending_tails = {}
+
+    def _add_pending_tail(self, key: tuple[int, str], tail: np.ndarray) -> None:
+        """Accumulate a waveform tail to inject at the start of the next chunk.
+
+        Tails are aligned to sample 0 of the next chunk. Multiple tails for the
+        same pair (a carried remainder plus a fresh overflow, or two overlapping
+        events near the boundary) are summed with zero-padding to the longest.
+        """
+        if tail.size == 0:
+            return
+        existing = self._pending_tails.get(key)
+        if existing is None:
+            self._pending_tails[key] = tail.astype(float, copy=True)
+            return
+        length = max(existing.size, tail.size)
+        merged = np.zeros(length, dtype=float)
+        merged[: existing.size] += existing
+        merged[: tail.size] += tail
+        self._pending_tails[key] = merged
 
     def _rng_for(self, model_index: int, detector: str) -> np.random.Generator:
         """Return the dedicated generator for one (model, detector) pair.
@@ -186,6 +212,17 @@ class InjectGlitches:
             for detector in runtime_detectors:
                 key = (index, detector)
                 rng = self._rng_for(index, detector)
+
+                # Lay down any waveform tail carried over from the previous chunk
+                # before processing this chunk's events, so a glitch straddling a
+                # chunk boundary is continuous rather than truncated.
+                tail = self._pending_tails.pop(key, None)
+                if tail is not None:
+                    stop = min(n_samples, tail.size)
+                    combined[detector][:stop] += tail[:stop]
+                    if tail.size > n_samples:
+                        self._add_pending_tail(key, tail[n_samples:])
+
                 if key not in self._next_event_times:
                     # A pair first seen mid-stream (e.g. a detector added between
                     # chunks) starts its Poisson clock at the current segment start.
@@ -198,6 +235,8 @@ class InjectGlitches:
                     if stop_index > sample_index:
                         combined[detector][sample_index:stop_index] += waveform[: stop_index - sample_index]
                         self._event_counts[key] = self._event_counts.get(key, 0) + 1
+                        # Carry the part that overflows this chunk into the next one.
+                        self._add_pending_tail(key, waveform[stop_index - sample_index :])
                     event_time += self._draw_interarrival(model.rate, rng)
                 self._next_event_times[key] = event_time
 

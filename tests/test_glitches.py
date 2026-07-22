@@ -233,6 +233,41 @@ def test_detector_realization_is_independent_of_other_detectors() -> None:
     np.testing.assert_array_equal(together["H1"], h1_alone["H1"])
 
 
+def test_glitch_tail_carries_across_stream_chunks() -> None:
+    """A boundary-crossing glitch is continuous: streamed == one long generate."""
+    fs = 256.0
+    chunk = 2.0
+    n_chunks = 4
+    detectors = ["H1", "L1"]
+    # 1 s waveforms at ~1/s land across the 2 s chunk boundaries; std=0 keeps
+    # the scattered-light waveform deterministic.
+    model = ScatteredLightGlitch(
+        rate=1.0,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        duration=1.0,
+        peak_frequency=20.0,
+    )
+
+    stream = InjectGlitches(ZeroNoiseSimulator(), [model]).generate_stream(chunk, fs, detectors, seed=5)
+    chunks = [next(stream) for _ in range(n_chunks)]
+    streamed = {d: np.concatenate([c[d] for c in chunks]) for d in detectors}
+
+    single = InjectGlitches(ZeroNoiseSimulator(), [model]).generate(
+        duration=chunk * n_chunks, sampling_frequency=fs, detectors=detectors, seed=5
+    )
+
+    n_chunk = int(chunk * fs)
+    crossed = any(
+        streamed[d][k * n_chunk - 1] != 0.0 and streamed[d][k * n_chunk] != 0.0
+        for d in detectors
+        for k in range(1, n_chunks)
+    )
+    assert crossed, "test is vacuous: no glitch actually straddled a chunk boundary"
+    for d in detectors:
+        assert np.max(np.abs(streamed[d])) > 0.0
+        np.testing.assert_array_equal(streamed[d], single[d])
+
+
 def test_default_simulator_reports_glitch_metadata(tmp_path: Path) -> None:
     """DefaultNoiseSimulator dispatches glitch injection from config models."""
     out_dir = tmp_path / "output"
