@@ -215,6 +215,232 @@ def test_local_files_only_is_forwarded_to_downloader(
     assert captured == [True, True, True]
 
 
+def test_revision_is_forwarded_to_downloader(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A configured revision reaches every hf_hub_download call."""
+    _write_dataset(tmp_path)
+    captured: list[str | None] = []
+
+    def fake_download(
+        *, repo_id: str, filename: str, repo_type: str, revision: str | None = None, local_files_only: bool = False
+    ) -> str:
+        captured.append(revision)
+        return str(tmp_path / filename)
+
+    monkeypatch.setattr(
+        deepextractor_module,
+        "_load_hf_hub",
+        lambda: SimpleNamespace(hf_hub_download=fake_download),
+    )
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    model = _make_model(psd_file, revision="v1.2.3")
+
+    model.generate_waveform(4096.0, rng=np.random.default_rng(0))
+
+    assert captured == ["v1.2.3", "v1.2.3", "v1.2.3"]
+
+
+def test_revision_omitted_when_unset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no revision configured, the revision kwarg is not passed at all."""
+    _write_dataset(tmp_path)
+    seen_kwargs: list[dict[str, Any]] = []
+
+    def fake_download(**kwargs: Any) -> str:
+        seen_kwargs.append(kwargs)
+        return str(tmp_path / kwargs["filename"])
+
+    monkeypatch.setattr(
+        deepextractor_module,
+        "_load_hf_hub",
+        lambda: SimpleNamespace(hf_hub_download=fake_download),
+    )
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    model = _make_model(psd_file)
+
+    model.generate_waveform(4096.0, rng=np.random.default_rng(0))
+
+    assert seen_kwargs
+    assert all("revision" not in kwargs for kwargs in seen_kwargs)
+
+
+def test_rejects_empty_revision(tmp_path: Path) -> None:
+    """An empty-string revision is rejected at construction time."""
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+
+    with pytest.raises(ValueError, match="revision must be a non-empty string"):
+        _make_model(psd_file, revision="")
+
+
+def test_serialize_records_resolved_revision_from_cache_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The commit SHA stamped into the Hub cache path is recorded on serialize."""
+    _write_dataset(tmp_path)
+    commit_sha = "0123456789abcdef0123456789abcdef01234567"
+    snapshot_dir = tmp_path / "datasets--tomdooney--x" / "snapshots" / commit_sha
+    snapshot_dir.mkdir(parents=True)
+    _write_dataset(snapshot_dir)
+
+    def fake_download(
+        *, repo_id: str, filename: str, repo_type: str, revision: str | None = None, local_files_only: bool = False
+    ) -> str:
+        return str(snapshot_dir / filename)
+
+    monkeypatch.setattr(
+        deepextractor_module,
+        "_load_hf_hub",
+        lambda: SimpleNamespace(hf_hub_download=fake_download),
+    )
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    # Request a moving branch; serialize must record the resolved commit SHA.
+    model = _make_model(psd_file, revision="main")
+
+    assert model.serialize()["revision"] == "main"
+
+    model.generate_waveform(4096.0, rng=np.random.default_rng(0))
+
+    assert model.serialize()["revision"] == commit_sha
+
+
+def test_serialized_revision_round_trips_to_a_pinned_download(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rebuilding from serialized metadata pins the download to the recorded SHA."""
+    _write_dataset(tmp_path)
+    commit_sha = "89abcdef0123456789abcdef0123456789abcdef"
+    captured: list[str | None] = []
+
+    def fake_download(
+        *, repo_id: str, filename: str, repo_type: str, revision: str | None = None, local_files_only: bool = False
+    ) -> str:
+        captured.append(revision)
+        return str(tmp_path / filename)
+
+    monkeypatch.setattr(
+        deepextractor_module,
+        "_load_hf_hub",
+        lambda: SimpleNamespace(hf_hub_download=fake_download),
+    )
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+
+    serialized = _make_model(psd_file, revision=commit_sha).serialize()
+    replayed = normalize_glitch_models([serialized])[0]
+    assert isinstance(replayed, DeepExtractorGlitch)
+
+    replayed.generate_waveform(4096.0, rng=np.random.default_rng(0))
+
+    assert captured == [commit_sha, commit_sha, commit_sha]
+
+
+def test_resolve_pins_revision_without_generating(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """resolve() records the commit SHA from a single samples fetch, no waveform draw."""
+    _write_dataset(tmp_path)
+    commit_sha = "0123456789abcdef0123456789abcdef01234567"
+    snapshot_dir = tmp_path / "datasets--tomdooney--x" / "snapshots" / commit_sha
+    snapshot_dir.mkdir(parents=True)
+    _write_dataset(snapshot_dir)
+    downloads: list[str] = []
+
+    def fake_download(
+        *, repo_id: str, filename: str, repo_type: str, revision: str | None = None, local_files_only: bool = False
+    ) -> str:
+        downloads.append(filename)
+        return str(snapshot_dir / filename)
+
+    monkeypatch.setattr(
+        deepextractor_module,
+        "_load_hf_hub",
+        lambda: SimpleNamespace(hf_hub_download=fake_download),
+    )
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    model = _make_model(psd_file)
+
+    assert model.resolve() == commit_sha
+    # Only the samples file was fetched to read the SHA — labels/label_order are not.
+    assert downloads == [SAMPLES_FILENAME]
+    assert model.serialize()["revision"] == commit_sha
+    # Idempotent: a second call fetches nothing more.
+    assert model.resolve() == commit_sha
+    assert downloads == [SAMPLES_FILENAME]
+
+
+def test_resolve_then_generate_downloads_each_file_once(tmp_path: Path, hf_stub: list[str]) -> None:
+    """resolve() before generation does not double-fetch the samples file."""
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    model = _make_model(psd_file)
+
+    model.resolve()
+    model.generate_waveform(4096.0, rng=np.random.default_rng(0))
+
+    assert sorted(hf_stub) == sorted([SAMPLES_FILENAME, LABELS_FILENAME, LABEL_ORDER_FILENAME])
+
+
+def test_all_files_pin_to_resolved_revision_after_first_fetch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After the SHA is resolved from the first file, later files pin to it, not the branch.
+
+    Guards against a moving upstream serving the dataset's files from different
+    commits: the samples file is fetched at the requested ref, but once its
+    commit SHA is known every remaining file must be pinned to that exact SHA.
+    """
+    commit_sha = "0123456789abcdef0123456789abcdef01234567"
+    snapshot_dir = tmp_path / "datasets--tomdooney--x" / "snapshots" / commit_sha
+    snapshot_dir.mkdir(parents=True)
+    _write_dataset(snapshot_dir)
+    captured: dict[str, str | None] = {}
+
+    def fake_download(
+        *, repo_id: str, filename: str, repo_type: str, revision: str | None = None, local_files_only: bool = False
+    ) -> str:
+        captured[filename] = revision
+        return str(snapshot_dir / filename)
+
+    monkeypatch.setattr(
+        deepextractor_module,
+        "_load_hf_hub",
+        lambda: SimpleNamespace(hf_hub_download=fake_download),
+    )
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    model = _make_model(psd_file, revision="main")
+
+    model.generate_waveform(4096.0, rng=np.random.default_rng(0))
+
+    assert captured[SAMPLES_FILENAME] == "main"
+    assert captured[LABELS_FILENAME] == commit_sha
+    assert captured[LABEL_ORDER_FILENAME] == commit_sha
+    assert model.serialize()["revision"] == commit_sha
+
+
+def test_resolve_returns_none_for_flat_cache_layout(tmp_path: Path, hf_stub: list[str]) -> None:
+    """A cache path without a snapshots/<sha> segment yields no resolved revision."""
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    model = _make_model(psd_file)
+
+    assert model.resolve() is None
+    assert model.serialize()["revision"] is None
+
+
 class _StubLocalEntryNotFoundError(FileNotFoundError):
     """Stand-in for huggingface_hub's LocalEntryNotFoundError."""
 
@@ -403,6 +629,7 @@ def test_serialize_reports_full_configuration(tmp_path: Path) -> None:
         "low_frequency_cutoff": 2.0,
         "high_frequency_cutoff": None,
         "repo_id": "tomdooney/deepextractor-glitch-reconstructions",
+        "revision": None,
         "local_files_only": False,
     }
 

@@ -96,6 +96,14 @@ class DeepExtractorGlitch(GlitchModel):
     subclass). Set ``local_files_only=True`` to skip the network unconditionally
     and read straight from the cache.
 
+    ``revision`` pins the download to a specific dataset version — a git branch,
+    tag, or commit SHA forwarded to ``hf_hub_download``. Leave it ``None`` to
+    track the repository default. Either way, the first download resolves to a
+    concrete commit SHA (read back from the Hub cache path), which is what
+    ``serialize`` records. Replaying a run through its metadata therefore fetches
+    the exact commit that produced it, keeping glitch generation bit-reproducible
+    for a fixed (version, config, seed) even as the upstream dataset moves.
+
     ``rate`` accepts either a single number — the total Poisson rate shared by
     all configured classes, drawn uniformly — or a mapping from class name to
     per-class Poisson rate, in which case the total rate is their sum and each
@@ -113,10 +121,13 @@ class DeepExtractorGlitch(GlitchModel):
     low_frequency_cutoff: float = 2.0
     high_frequency_cutoff: float | None = None
     repo_id: str = DEEPEXTRACTOR_REPO_ID
+    revision: str | None = None
     local_files_only: bool = False
     kind: Literal["deepextractor"] = field(init=False, default="deepextractor")
     _psd_frequencies: np.ndarray = field(init=False, repr=False)
     _psd_values: np.ndarray = field(init=False, repr=False)
+    _resolved_revision: str | None = field(init=False, default=None, repr=False)
+    _samples_path: str | None = field(init=False, default=None, repr=False)
     _samples: Any = field(init=False, default=None, repr=False)
     _class_indices: dict[str, np.ndarray] | None = field(init=False, default=None, repr=False)
     _class_rates: dict[str, float] | None = field(init=False, default=None, repr=False)
@@ -143,6 +154,8 @@ class DeepExtractorGlitch(GlitchModel):
 
         if not self.repo_id:
             raise ValueError("repo_id must be a non-empty string.")
+        if self.revision is not None and not self.revision:
+            raise ValueError("revision must be a non-empty string or None.")
         if self.low_frequency_cutoff < 0.0:
             raise ValueError("low_frequency_cutoff must be non-negative.")
         if self.high_frequency_cutoff is not None and self.high_frequency_cutoff <= self.low_frequency_cutoff:
@@ -221,7 +234,15 @@ class DeepExtractorGlitch(GlitchModel):
         the cached copy is used; a genuinely missing cache then raises
         huggingface_hub's ``LocalEntryNotFoundError``.
         """
-        kwargs = {"repo_id": self.repo_id, "filename": filename, "repo_type": "dataset"}
+        kwargs: dict[str, Any] = {"repo_id": self.repo_id, "filename": filename, "repo_type": "dataset"}
+        # Once the concrete commit SHA is resolved (from the first file fetched),
+        # pin every remaining file to it. Otherwise a request for a branch or the
+        # default would let the dataset's files come from different commits if
+        # upstream moves mid-download — and the recorded revision would describe
+        # only the first file, not the mix actually loaded.
+        revision = self._resolved_revision or self.revision
+        if revision is not None:
+            kwargs["revision"] = revision
         if self.local_files_only:
             return hf_hub.hf_hub_download(**kwargs, local_files_only=True)
         try:
@@ -235,11 +256,49 @@ class DeepExtractorGlitch(GlitchModel):
             )
             return hf_hub.hf_hub_download(**kwargs, local_files_only=True)
 
+    @staticmethod
+    def _revision_from_cache_path(path: str) -> str | None:
+        """Read the commit SHA huggingface_hub stamped into a cached file path.
+
+        The Hub caches downloads under ``.../snapshots/<commit_sha>/<filename>``,
+        so the directory following ``snapshots`` is the exact revision that was
+        resolved — even when the request asked for a branch name or nothing at
+        all. Returns ``None`` when the path does not follow that layout (e.g. a
+        test stub serving files from a flat directory).
+        """
+        parts = Path(path).parts
+        try:
+            index = parts.index("snapshots")
+        except ValueError:
+            return None
+        if index + 1 < len(parts):
+            return parts[index + 1]
+        return None
+
+    def resolve(self) -> str | None:
+        """Pin the dataset to a concrete commit SHA, fetching only the samples file.
+
+        Reads the commit SHA huggingface_hub stamps into the cache path so the
+        resolved revision is available for reproducibility metadata even when no
+        waveform has been drawn yet — e.g. a batch that fires zero glitch events,
+        where ``generate_waveform`` (and therefore ``_get_dataset``) never runs.
+        The samples file is downloaded once and reused by the later full load, so
+        this adds no extra download on the generation path. Returns the resolved
+        SHA, or ``None`` when the cache layout does not expose one (e.g. a test
+        stub serving files from a flat directory).
+        """
+        if self._samples_path is None:
+            hf_hub = _load_hf_hub()
+            self._samples_path = self._download_dataset_file(hf_hub, SAMPLES_FILENAME)
+            self._resolved_revision = self._revision_from_cache_path(self._samples_path)
+        return self._resolved_revision
+
     def _get_dataset(self) -> tuple[Any, dict[str, np.ndarray]]:
         """Download (if needed) and memory-map the reconstruction dataset."""
         if self._samples is None or self._class_indices is None:
             hf_hub = _load_hf_hub()
-            samples_path = self._download_dataset_file(hf_hub, SAMPLES_FILENAME)
+            self.resolve()
+            samples_path = self._samples_path
             labels_path = self._download_dataset_file(hf_hub, LABELS_FILENAME)
             label_order_path = self._download_dataset_file(hf_hub, LABEL_ORDER_FILENAME)
 
@@ -323,5 +382,6 @@ class DeepExtractorGlitch(GlitchModel):
             "low_frequency_cutoff": self.low_frequency_cutoff,
             "high_frequency_cutoff": self.high_frequency_cutoff,
             "repo_id": self.repo_id,
+            "revision": self._resolved_revision or self.revision,
             "local_files_only": self.local_files_only,
         }
