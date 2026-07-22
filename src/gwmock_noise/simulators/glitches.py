@@ -85,6 +85,13 @@ class InjectGlitches:
     ``SeedSequence`` stream. A detector's realization is therefore reproducible
     and independent of which other detectors are present or the order in which
     they are requested.
+
+    A glitch whose waveform extends past the end of a chunk has its remainder
+    carried into the next chunk and replayed in event order, so the injected
+    glitch series is identical, sample for sample, to a single generate call of
+    the same total duration (the per-sample addition order is preserved exactly,
+    not merely up to rounding). A tail is dropped only when it overflows the last
+    generated chunk, where the data window genuinely ends.
     """
 
     def __init__(self, base: NoiseSimulator, glitch_models: list[GlitchModel]) -> None:
@@ -104,6 +111,7 @@ class InjectGlitches:
         self._rngs: dict[tuple[int, str], np.random.Generator] = {}
         self._next_event_times: dict[tuple[int, str], float] = {}
         self._event_counts: dict[tuple[int, str], int] = {}
+        self._pending_tails: dict[tuple[int, str], list[np.ndarray]] = {}
 
     def _initialize_process(self, seed: int | None) -> None:
         """Reset the per-model, per-detector Poisson-process state."""
@@ -113,6 +121,20 @@ class InjectGlitches:
         self._rngs = {}
         self._next_event_times = {}
         self._event_counts = {}
+        self._pending_tails = {}
+
+    def _add_pending_tail(self, key: tuple[int, str], tail: np.ndarray) -> None:
+        """Queue a waveform tail to inject at the start of the next chunk.
+
+        Tails are aligned to sample 0 of the next chunk and kept as an ordered
+        list, appended in event order. They are injected sequentially rather
+        than pre-summed so the per-sample addition order matches a single
+        generate call exactly (floating-point addition is not associative, so
+        summing overlapping tails first would drift by ~1 ULP against the base).
+        """
+        if tail.size == 0:
+            return
+        self._pending_tails.setdefault(key, []).append(tail.astype(float, copy=True))
 
     def _rng_for(self, model_index: int, detector: str) -> np.random.Generator:
         """Return the dedicated generator for one (model, detector) pair.
@@ -186,6 +208,18 @@ class InjectGlitches:
             for detector in runtime_detectors:
                 key = (index, detector)
                 rng = self._rng_for(index, detector)
+
+                # Lay down any waveform tails carried over from the previous chunk
+                # before processing this chunk's events, so a glitch straddling a
+                # chunk boundary is continuous rather than truncated. Fragments are
+                # replayed in their original event order; anything still overflowing
+                # this chunk is re-queued (again in order) for the next one.
+                for tail in self._pending_tails.pop(key, []):
+                    stop = min(n_samples, tail.size)
+                    combined[detector][:stop] += tail[:stop]
+                    if tail.size > n_samples:
+                        self._add_pending_tail(key, tail[n_samples:])
+
                 if key not in self._next_event_times:
                     # A pair first seen mid-stream (e.g. a detector added between
                     # chunks) starts its Poisson clock at the current segment start.
@@ -198,6 +232,8 @@ class InjectGlitches:
                     if stop_index > sample_index:
                         combined[detector][sample_index:stop_index] += waveform[: stop_index - sample_index]
                         self._event_counts[key] = self._event_counts.get(key, 0) + 1
+                        # Carry the part that overflows this chunk into the next one.
+                        self._add_pending_tail(key, waveform[stop_index - sample_index :])
                     event_time += self._draw_interarrival(model.rate, rng)
                 self._next_event_times[key] = event_time
 
