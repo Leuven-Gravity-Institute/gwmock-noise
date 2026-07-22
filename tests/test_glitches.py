@@ -268,6 +268,63 @@ def test_glitch_tail_carries_across_stream_chunks() -> None:
         np.testing.assert_array_equal(streamed[d], single[d])
 
 
+class _RampNoiseBase:
+    """Deterministic nonzero base whose samples are a contiguous absolute ramp.
+
+    Streaming N chunks yields exactly the same samples as one call of the total
+    duration, so it exposes any floating-point addition-order drift between the
+    streamed and single-shot glitch injection paths.
+    """
+
+    def __init__(self) -> None:
+        self.duration = 2.0
+        self.sampling_frequency = 256.0
+        self.detectors = ["H1"]
+        self.seed: int | None = None
+        self._position = 0
+
+    def reset(self) -> None:
+        self._position = 0
+
+    def generate(
+        self,
+        duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None = None,
+    ) -> dict[str, np.ndarray]:
+        n = round(duration * sampling_frequency)
+        ramp = 1e-21 * np.arange(self._position, self._position + n, dtype=float)
+        self._position += n
+        return {d: ramp.copy() for d in detectors}
+
+
+def test_glitch_tails_match_single_shot_over_nonzero_base() -> None:
+    """Ordered tail replay is bitwise-exact against a nonzero base with overlaps."""
+    fs = 256.0
+    chunk = 2.0
+    n_chunks = 4
+    # High rate + 1 s waveforms => multiple overlapping tails straddle boundaries,
+    # the case where pre-summing tails would drift by ~1 ULP against the base.
+    model = ScatteredLightGlitch(
+        rate=3.0,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        duration=1.0,
+        peak_frequency=20.0,
+    )
+
+    stream = InjectGlitches(_RampNoiseBase(), [model]).generate_stream(chunk, fs, ["H1"], seed=9)
+    streamed = np.concatenate([next(stream)["H1"] for _ in range(n_chunks)])
+    single = InjectGlitches(_RampNoiseBase(), [model]).generate(
+        duration=chunk * n_chunks, sampling_frequency=fs, detectors=["H1"], seed=9
+    )["H1"]
+
+    n_chunk = int(chunk * fs)
+    crossed = any(streamed[k * n_chunk - 1] != 0.0 and streamed[k * n_chunk] != 0.0 for k in range(1, n_chunks))
+    assert crossed, "test is vacuous: no glitch straddled a chunk boundary"
+    np.testing.assert_array_equal(streamed, single)
+
+
 def test_default_simulator_reports_glitch_metadata(tmp_path: Path) -> None:
     """DefaultNoiseSimulator dispatches glitch injection from config models."""
     out_dir = tmp_path / "output"

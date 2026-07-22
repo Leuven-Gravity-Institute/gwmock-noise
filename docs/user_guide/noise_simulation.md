@@ -106,9 +106,10 @@ model, the total number of injected events (`count`) plus a per-detector
 breakdown (`count_by_detector`).
 
 A glitch whose waveform runs past the end of a streamed chunk has its remainder
-carried into the next chunk, so a streamed simulation is identical to a single
-generate call of the same total duration; a tail is dropped only when it
-overflows the final chunk, where the data window ends.
+carried into the next chunk and replayed in event order, so the injected glitch
+series is identical, sample for sample, to a single generate call of the same
+total duration; a tail is dropped only when it overflows the final chunk, where
+the data window ends.
 
 ## Gengli blip glitches
 
