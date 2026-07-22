@@ -60,6 +60,18 @@ class GlitchModel:
         """Generate a single glitch waveform."""
         raise NotImplementedError
 
+    def resolve(self) -> str | None:
+        """Pin any external, mutable dependency to an immutable version.
+
+        Parametric models are fully specified by their configuration and have
+        nothing external to resolve, so the base implementation is a no-op that
+        returns ``None``. Models backed by a downloaded dataset (e.g.
+        ``DeepExtractorGlitch``) override this to fetch and return the concrete
+        version their run is pinned to. Exposing it on the base lets a caller
+        pin every model in a heterogeneous glitch list uniformly.
+        """
+        return None
+
     def serialize(self) -> dict[str, Any]:
         """Return metadata-friendly model parameters."""
         return {
