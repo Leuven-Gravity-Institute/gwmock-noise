@@ -187,6 +187,11 @@ def test_rejects_invalid_frequency_cutoffs(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="high_frequency_cutoff"):
         _make_model(psd_file, low_frequency_cutoff=64.0, high_frequency_cutoff=32.0)
+    # Non-finite cutoffs are rejected before any dataset download.
+    with pytest.raises(ValueError, match="low_frequency_cutoff must be a finite"):
+        _make_model(psd_file, low_frequency_cutoff=float("nan"))
+    with pytest.raises(ValueError, match="high_frequency_cutoff must be finite"):
+        _make_model(psd_file, high_frequency_cutoff=float("inf"))
 
 
 def test_local_files_only_is_forwarded_to_downloader(

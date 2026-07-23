@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import NamedTuple
 
 import numpy as np
 
+from gwmock_noise.simulators._spectral import load_spectral_series
 from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
 
 
@@ -101,6 +103,85 @@ def color_whitened_waveform(  # noqa: PLR0913
         interpolated_psd=interpolated_psd,
         band_mask=frequency_mask,
     )
+
+
+def load_psd_table(psd_file: str | Path) -> tuple[np.ndarray, np.ndarray]:
+    """Load and validate a PSD table for glitch coloring.
+
+    Returns ``(frequencies, values)`` and raises ``ValueError`` when the PSD
+    contains non-finite or negative values, which would corrupt the coloring.
+    """
+    frequencies, values = load_spectral_series(psd_file, kind="PSD")
+    if not np.all(np.isfinite(values)):
+        raise ValueError("PSD file contains non-finite values.")
+    if np.any(values < 0.0):
+        raise ValueError("PSD file contains negative values.")
+    return frequencies, values
+
+
+def prepare_coloring(
+    psd_file: str | Path | None,
+    snr: float | None,
+    low_frequency_cutoff: float,
+    high_frequency_cutoff: float | None,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Validate an optional PSD-coloring configuration and load its PSD table.
+
+    Returns the loaded ``(frequencies, values)`` when ``psd_file`` is set, or
+    ``(None, None)`` when coloring is disabled. Raises ``ValueError`` for an
+    invalid configuration: a target ``snr`` without a ``psd_file`` (SNR
+    calibration needs a PSD), a non-positive ``snr``, or a frequency band that is
+    negative or inverted.
+    """
+    if snr is not None:
+        if psd_file is None:
+            raise ValueError("snr requires psd_file to calibrate the SNR against a PSD.")
+        if isinstance(snr, bool) or not isinstance(snr, (int, float)) or not np.isfinite(snr) or snr <= 0.0:
+            raise ValueError("snr must be finite and greater than zero.")
+    if psd_file is None:
+        return None, None
+    if not np.isfinite(low_frequency_cutoff) or low_frequency_cutoff < 0.0:
+        raise ValueError("low_frequency_cutoff must be a finite, non-negative number.")
+    if high_frequency_cutoff is not None and (
+        not np.isfinite(high_frequency_cutoff) or high_frequency_cutoff <= low_frequency_cutoff
+    ):
+        raise ValueError("high_frequency_cutoff must be finite and greater than low_frequency_cutoff.")
+    return load_psd_table(psd_file)
+
+
+def color_and_scale(  # noqa: PLR0913
+    base_waveform: np.ndarray,
+    *,
+    sampling_frequency: float,
+    psd_frequencies: np.ndarray,
+    psd_values: np.ndarray,
+    low_frequency_cutoff: float,
+    high_frequency_cutoff: float | None,
+    amplitude: float,
+    target_snr: float | None,
+) -> np.ndarray:
+    """Color ``base_waveform`` against a PSD and scale it to a target amplitude/SNR.
+
+    The waveform's spectrum is shaped by ``sqrt(PSD)`` inside the analysis band.
+    When ``target_snr`` is given the result is rescaled so its optimal SNR against
+    the PSD equals ``target_snr`` (times ``amplitude``); otherwise it is scaled by
+    ``amplitude`` alone. Shared by every PSD-colored glitch model so the coloring
+    and SNR-calibration physics live in one place.
+    """
+    colored = color_whitened_waveform(
+        base_waveform,
+        sampling_frequency=sampling_frequency,
+        psd_frequencies=psd_frequencies,
+        psd_values=psd_values,
+        low_frequency_cutoff=low_frequency_cutoff,
+        high_frequency_cutoff=high_frequency_cutoff,
+    )
+    if target_snr is None:
+        return amplitude * colored.time_series
+    achieved_snr = optimal_snr(colored, sampling_frequency=sampling_frequency)
+    if achieved_snr <= 0.0:
+        raise ValueError("The drawn glitch has no power in the requested frequency band.")
+    return amplitude * (target_snr / achieved_snr) * colored.time_series
 
 
 def optimal_snr(colored: ColoredWaveform, *, sampling_frequency: float) -> float:

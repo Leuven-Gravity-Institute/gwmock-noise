@@ -10,9 +10,8 @@ from typing import Any, Literal
 
 import numpy as np
 
-from gwmock_noise.glitches._coloring import color_whitened_waveform, optimal_snr
+from gwmock_noise.glitches._coloring import color_and_scale, load_psd_table
 from gwmock_noise.glitches.models import GlitchModel
-from gwmock_noise.simulators._spectral import load_spectral_series
 from gwmock_noise.utils.log import LOGGER_NAME
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -156,16 +155,14 @@ class DeepExtractorGlitch(GlitchModel):
             raise ValueError("repo_id must be a non-empty string.")
         if self.revision is not None and not self.revision:
             raise ValueError("revision must be a non-empty string or None.")
-        if self.low_frequency_cutoff < 0.0:
-            raise ValueError("low_frequency_cutoff must be non-negative.")
-        if self.high_frequency_cutoff is not None and self.high_frequency_cutoff <= self.low_frequency_cutoff:
-            raise ValueError("high_frequency_cutoff must be greater than low_frequency_cutoff.")
+        if not np.isfinite(self.low_frequency_cutoff) or self.low_frequency_cutoff < 0.0:
+            raise ValueError("low_frequency_cutoff must be a finite, non-negative number.")
+        if self.high_frequency_cutoff is not None and (
+            not np.isfinite(self.high_frequency_cutoff) or self.high_frequency_cutoff <= self.low_frequency_cutoff
+        ):
+            raise ValueError("high_frequency_cutoff must be finite and greater than low_frequency_cutoff.")
 
-        self._psd_frequencies, self._psd_values = load_spectral_series(self.psd_file, kind="PSD")
-        if not np.all(np.isfinite(self._psd_values)):
-            raise ValueError("PSD file contains non-finite values.")
-        if np.any(self._psd_values < 0.0):
-            raise ValueError("PSD file contains negative values.")
+        self._psd_frequencies, self._psd_values = load_psd_table(self.psd_file)
 
     def _check_mapping_covers_classes(self, mapping: dict[str, float], parameter: str) -> None:
         """Ensure a per-class mapping matches the configured glitch classes exactly."""
@@ -355,20 +352,17 @@ class DeepExtractorGlitch(GlitchModel):
         white_waveform = np.asarray(samples[sample_index], dtype=float)
 
         white_waveform = self._resample(white_waveform, sampling_frequency)
-        colored = color_whitened_waveform(
+        amplitude = self.amplitude_distribution.sample(generator)
+        return color_and_scale(
             white_waveform,
             sampling_frequency=sampling_frequency,
             psd_frequencies=self._psd_frequencies,
             psd_values=self._psd_values,
             low_frequency_cutoff=self.low_frequency_cutoff,
             high_frequency_cutoff=self.high_frequency_cutoff,
+            amplitude=amplitude,
+            target_snr=self._target_snr(glitch_class),
         )
-        achieved_snr = optimal_snr(colored, sampling_frequency=sampling_frequency)
-        if achieved_snr <= 0.0:
-            raise ValueError("The drawn glitch has no power in the requested frequency band.")
-
-        amplitude = self.amplitude_distribution.sample(generator)
-        return amplitude * (self._target_snr(glitch_class) / achieved_snr) * colored.time_series
 
     def serialize(self) -> dict[str, Any]:
         """Return metadata-friendly model parameters."""

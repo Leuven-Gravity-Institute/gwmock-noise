@@ -111,6 +111,25 @@ series is identical, sample for sample, to a single generate call of the same
 total duration; a tail is dropped only when it overflows the final chunk, where
 the data window ends.
 
+### Optional PSD coloring
+
+By default `blip` is a spectrally flat (white-noise) burst and `scattered_light`
+is a deterministic arch chirp. Both accept an optional `psd_file` that shapes
+the waveform's spectrum by `sqrt(PSD)` inside the analysis band
+(`low_frequency_cutoff`, `high_frequency_cutoff`), so the glitch sits in a
+realistic noise floor. When a target `snr` is also given, the waveform is
+rescaled so its optimal SNR against that PSD equals `snr` (the
+`amplitude_distribution` then scales on top); `snr` requires `psd_file`. Omit
+`psd_file` for the original uncolored behavior.
+
+```toml
+[[components]]
+simulator = "glitches"
+models = [
+  { kind = "blip", rate = 0.1, width = 0.01, psd_file = "ET_D_psd", snr = 12.0, amplitude_distribution = { distribution = "lognormal", mean = 1.0, std = 0.0 } },
+]
+```
+
 ## Gengli blip glitches
 
 `gwmock-noise[gengli]` adds a file-backed `GengliBlipGlitch` model that plugs
