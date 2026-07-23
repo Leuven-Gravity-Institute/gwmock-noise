@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
@@ -90,13 +91,24 @@ class BlipGlitch(GlitchModel):
     """Gaussian-windowed broadband burst."""
 
     width: float = 0.01
+    psd_file: str | Path | None = None
+    snr: float | None = None
+    low_frequency_cutoff: float = 2.0
+    high_frequency_cutoff: float | None = None
     kind: Literal["blip"] = field(init=False, default="blip")
+    _psd_frequencies: np.ndarray | None = field(init=False, default=None, repr=False)
+    _psd_values: np.ndarray | None = field(init=False, default=None, repr=False)
 
     def __post_init__(self) -> None:
         """Validate blip-specific parameters."""
         GlitchModel.__post_init__(self)
         if self.width <= 0.0:
             raise ValueError("blip width must be greater than zero.")
+        from gwmock_noise.glitches._coloring import prepare_coloring  # noqa: PLC0415
+
+        self._psd_frequencies, self._psd_values = prepare_coloring(
+            self.psd_file, self.snr, self.low_frequency_cutoff, self.high_frequency_cutoff
+        )
 
     def generate_waveform(
         self,
@@ -120,11 +132,31 @@ class BlipGlitch(GlitchModel):
             carrier /= carrier_std
 
         amplitude = self.amplitude_distribution.sample(generator)
-        return amplitude * carrier * envelope
+        base_waveform = carrier * envelope
+        if self._psd_values is not None:
+            from gwmock_noise.glitches._coloring import color_and_scale  # noqa: PLC0415
+
+            return color_and_scale(
+                base_waveform,
+                sampling_frequency=sampling_frequency,
+                psd_frequencies=self._psd_frequencies,
+                psd_values=self._psd_values,
+                low_frequency_cutoff=self.low_frequency_cutoff,
+                high_frequency_cutoff=self.high_frequency_cutoff,
+                amplitude=amplitude,
+                target_snr=self.snr,
+            )
+        return amplitude * base_waveform
 
     def serialize(self) -> dict[str, Any]:
         """Return metadata-friendly model parameters."""
-        return GlitchModel.serialize(self) | {"width": self.width}
+        return GlitchModel.serialize(self) | {
+            "width": self.width,
+            "psd_file": None if self.psd_file is None else str(self.psd_file),
+            "snr": self.snr,
+            "low_frequency_cutoff": self.low_frequency_cutoff,
+            "high_frequency_cutoff": self.high_frequency_cutoff,
+        }
 
 
 @dataclass(slots=True)
@@ -135,7 +167,13 @@ class ScatteredLightGlitch(GlitchModel):
     peak_frequency: float = 24.0
     arch_exponent: float = 1.0
     phase: float = 0.0
+    psd_file: str | Path | None = None
+    snr: float | None = None
+    low_frequency_cutoff: float = 2.0
+    high_frequency_cutoff: float | None = None
     kind: Literal["scattered_light"] = field(init=False, default="scattered_light")
+    _psd_frequencies: np.ndarray | None = field(init=False, default=None, repr=False)
+    _psd_values: np.ndarray | None = field(init=False, default=None, repr=False)
 
     def __post_init__(self) -> None:
         """Validate scattered-light parameters."""
@@ -146,6 +184,11 @@ class ScatteredLightGlitch(GlitchModel):
             raise ValueError("scattered-light peak_frequency must be greater than zero.")
         if self.arch_exponent <= 0.0:
             raise ValueError("scattered-light arch_exponent must be greater than zero.")
+        from gwmock_noise.glitches._coloring import prepare_coloring  # noqa: PLC0415
+
+        self._psd_frequencies, self._psd_values = prepare_coloring(
+            self.psd_file, self.snr, self.low_frequency_cutoff, self.high_frequency_cutoff
+        )
 
     def generate_waveform(
         self,
@@ -169,7 +212,21 @@ class ScatteredLightGlitch(GlitchModel):
         )
         phase = self.phase + (TWO_PI * np.cumsum(instantaneous_frequency) / sampling_frequency)
         amplitude = self.amplitude_distribution.sample(generator)
-        return amplitude * envelope * np.sin(phase)
+        base_waveform = envelope * np.sin(phase)
+        if self._psd_values is not None:
+            from gwmock_noise.glitches._coloring import color_and_scale  # noqa: PLC0415
+
+            return color_and_scale(
+                base_waveform,
+                sampling_frequency=sampling_frequency,
+                psd_frequencies=self._psd_frequencies,
+                psd_values=self._psd_values,
+                low_frequency_cutoff=self.low_frequency_cutoff,
+                high_frequency_cutoff=self.high_frequency_cutoff,
+                amplitude=amplitude,
+                target_snr=self.snr,
+            )
+        return amplitude * base_waveform
 
     def serialize(self) -> dict[str, Any]:
         """Return metadata-friendly model parameters."""
@@ -178,6 +235,10 @@ class ScatteredLightGlitch(GlitchModel):
             "peak_frequency": self.peak_frequency,
             "arch_exponent": self.arch_exponent,
             "phase": self.phase,
+            "psd_file": None if self.psd_file is None else str(self.psd_file),
+            "snr": self.snr,
+            "low_frequency_cutoff": self.low_frequency_cutoff,
+            "high_frequency_cutoff": self.high_frequency_cutoff,
         }
 
 

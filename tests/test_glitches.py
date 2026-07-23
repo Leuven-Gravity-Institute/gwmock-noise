@@ -111,6 +111,130 @@ def _fwhm_duration(strain: np.ndarray, *, sampling_frequency: float) -> float:
     return float((support[-1] - support[0] + 1) / sampling_frequency)
 
 
+def _write_flat_psd(path: Path, *, value: float = 1.0) -> Path:
+    frequencies = np.linspace(0.0, 4096.0, 129)
+    np.savetxt(path, np.column_stack((frequencies, np.full_like(frequencies, value))))
+    return path
+
+
+def _recompute_optimal_snr(
+    waveform: np.ndarray, psd_file: Path, sampling_frequency: float, f_low: float = 2.0
+) -> float:
+    """Recompute optimal SNR against the raw PSD table, matching _coloring's band."""
+    table = np.loadtxt(psd_file)
+    frequencies = np.fft.rfftfreq(waveform.size, d=1.0 / sampling_frequency)
+    psd = np.interp(frequencies, table[:, 0], table[:, 1], left=0.0, right=0.0)
+    valid = (frequencies >= f_low) & (frequencies < sampling_frequency / 2.0) & (psd > 0.0)
+    waveform_fd = np.fft.rfft(waveform) / sampling_frequency
+    delta_frequency = sampling_frequency / waveform.size
+    return float(np.sqrt(4.0 * delta_frequency * np.sum(np.abs(waveform_fd[valid]) ** 2 / psd[valid])))
+
+
+def test_blip_psd_coloring_matches_target_snr(tmp_path: Path) -> None:
+    """A PSD-colored blip is calibrated to its configured optimal SNR."""
+    psd_file = _write_flat_psd(tmp_path / "psd.txt")
+    model = BlipGlitch(
+        rate=0.25,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        width=0.02,
+        psd_file=psd_file,
+        snr=12.0,
+    )
+    waveform = model.generate_waveform(4096.0, rng=np.random.default_rng(3))
+    assert _recompute_optimal_snr(waveform, psd_file, 4096.0) == pytest.approx(12.0, rel=1e-6)
+
+
+def test_scattered_light_psd_coloring_matches_target_snr(tmp_path: Path) -> None:
+    """A PSD-colored scattered-light glitch is calibrated to its configured SNR."""
+    psd_file = _write_flat_psd(tmp_path / "psd.txt")
+    model = ScatteredLightGlitch(
+        rate=0.25,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        psd_file=psd_file,
+        snr=7.0,
+    )
+    waveform = model.generate_waveform(4096.0, rng=np.random.default_rng(4))
+    assert _recompute_optimal_snr(waveform, psd_file, 4096.0) == pytest.approx(7.0, rel=1e-6)
+
+
+def test_amplitude_scales_colored_snr(tmp_path: Path) -> None:
+    """A non-unit amplitude mean rescales the SNR-calibrated colored waveform."""
+    psd_file = _write_flat_psd(tmp_path / "psd.txt")
+    model = BlipGlitch(
+        rate=0.25,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=2.0, std=0.0),
+        psd_file=psd_file,
+        snr=5.0,
+    )
+    waveform = model.generate_waveform(4096.0, rng=np.random.default_rng(1))
+    assert _recompute_optimal_snr(waveform, psd_file, 4096.0) == pytest.approx(10.0, rel=1e-6)
+
+
+def test_snr_without_psd_file_raises() -> None:
+    """A target SNR is meaningless without a PSD to calibrate against."""
+    amp = LogNormalAmplitudeDistribution(mean=1.0, std=0.0)
+    with pytest.raises(ValueError, match="snr requires psd_file"):
+        BlipGlitch(rate=0.25, amplitude_distribution=amp, snr=8.0)
+    with pytest.raises(ValueError, match="snr requires psd_file"):
+        ScatteredLightGlitch(rate=0.25, amplitude_distribution=amp, snr=8.0)
+
+
+def test_non_finite_cutoff_rejected(tmp_path: Path) -> None:
+    """A non-finite frequency cutoff is rejected at construction, not deferred."""
+    amp = LogNormalAmplitudeDistribution(mean=1.0, std=0.0)
+    psd_file = _write_flat_psd(tmp_path / "psd.txt")
+    with pytest.raises(ValueError, match="low_frequency_cutoff must be a finite"):
+        BlipGlitch(rate=0.25, amplitude_distribution=amp, psd_file=psd_file, low_frequency_cutoff=float("nan"))
+    with pytest.raises(ValueError, match="high_frequency_cutoff must be finite"):
+        BlipGlitch(rate=0.25, amplitude_distribution=amp, psd_file=psd_file, high_frequency_cutoff=float("inf"))
+
+
+def test_coloring_is_off_by_default(tmp_path: Path) -> None:
+    """Without psd_file the waveform is the uncolored parametric one (backward compatible)."""
+    amp = LogNormalAmplitudeDistribution(mean=1.0, std=0.0)
+    plain = BlipGlitch(rate=0.25, amplitude_distribution=amp, width=0.02)
+    colored = BlipGlitch(
+        rate=0.25, amplitude_distribution=amp, width=0.02, psd_file=_write_flat_psd(tmp_path / "psd.txt"), snr=10.0
+    )
+    plain_waveform = plain.generate_waveform(4096.0, rng=np.random.default_rng(0))
+    colored_waveform = colored.generate_waveform(4096.0, rng=np.random.default_rng(0))
+    # Different processing => different waveforms; the plain path is unchanged from a raw burst.
+    assert not np.allclose(plain_waveform, colored_waveform)
+
+
+def test_serialize_includes_coloring_fields(tmp_path: Path) -> None:
+    """Coloring configuration round-trips through serialize()."""
+    psd_file = _write_flat_psd(tmp_path / "psd.txt")
+    amp = LogNormalAmplitudeDistribution(mean=1.0, std=0.0)
+    serialized = BlipGlitch(rate=0.25, amplitude_distribution=amp, psd_file=psd_file, snr=9.0).serialize()
+    assert serialized["psd_file"] == str(psd_file)
+    assert serialized["snr"] == 9.0
+    assert serialized["low_frequency_cutoff"] == 2.0
+    assert serialized["high_frequency_cutoff"] is None
+
+
+def test_colored_blip_config_round_trips(tmp_path: Path) -> None:
+    """Dict-form config with coloring normalizes into a working colored model."""
+    from gwmock_noise.glitches.models import normalize_glitch_models
+
+    psd_file = _write_flat_psd(tmp_path / "psd.txt")
+    models = normalize_glitch_models(
+        [
+            {
+                "kind": "blip",
+                "rate": 0.25,
+                "width": 0.02,
+                "psd_file": str(psd_file),
+                "snr": 6.0,
+                "amplitude_distribution": {"distribution": "lognormal", "mean": 1.0, "std": 0.0},
+            }
+        ]
+    )
+    assert isinstance(models[0], BlipGlitch)
+    waveform = models[0].generate_waveform(4096.0, rng=np.random.default_rng(2))
+    assert _recompute_optimal_snr(waveform, psd_file, 4096.0) == pytest.approx(6.0, rel=1e-6)
+
+
 def test_parametric_glitch_resolve_is_a_noop() -> None:
     """Parametric models have no external dependency to pin, so resolve() is None.
 
@@ -375,6 +499,10 @@ def test_default_simulator_reports_glitch_metadata(tmp_path: Path) -> None:
             "kind": "blip",
             "rate": 0.25,
             "width": 0.01,
+            "psd_file": None,
+            "snr": None,
+            "low_frequency_cutoff": 2.0,
+            "high_frequency_cutoff": None,
             "amplitude_distribution": {
                 "distribution": "lognormal",
                 "mean": 0.5,
