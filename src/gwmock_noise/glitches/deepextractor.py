@@ -155,10 +155,12 @@ class DeepExtractorGlitch(GlitchModel):
             raise ValueError("repo_id must be a non-empty string.")
         if self.revision is not None and not self.revision:
             raise ValueError("revision must be a non-empty string or None.")
-        if self.low_frequency_cutoff < 0.0:
-            raise ValueError("low_frequency_cutoff must be non-negative.")
-        if self.high_frequency_cutoff is not None and self.high_frequency_cutoff <= self.low_frequency_cutoff:
-            raise ValueError("high_frequency_cutoff must be greater than low_frequency_cutoff.")
+        if not np.isfinite(self.low_frequency_cutoff) or self.low_frequency_cutoff < 0.0:
+            raise ValueError("low_frequency_cutoff must be a finite, non-negative number.")
+        if self.high_frequency_cutoff is not None and (
+            not np.isfinite(self.high_frequency_cutoff) or self.high_frequency_cutoff <= self.low_frequency_cutoff
+        ):
+            raise ValueError("high_frequency_cutoff must be finite and greater than low_frequency_cutoff.")
 
         self._psd_frequencies, self._psd_values = load_psd_table(self.psd_file)
 
