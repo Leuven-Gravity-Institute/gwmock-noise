@@ -31,7 +31,7 @@ class _ZeroNoiseSimulator:
 
     def reset(self) -> None:
         """Reset the zero-noise base state."""
-        return None
+        return
 
     def generate(
         self,
