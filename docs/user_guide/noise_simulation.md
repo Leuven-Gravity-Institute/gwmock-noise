@@ -204,6 +204,14 @@ instead, and only a genuinely missing cache raises `LocalEntryNotFoundError`.
 Set `local_files_only = true` to skip the network unconditionally and read
 straight from the cache.
 
+Set `revision` to pin the download to a specific dataset version — a git branch,
+tag, or commit SHA passed straight to `hf_hub_download`. Leave it unset to track
+the repository default. Either way the first download resolves to a concrete
+commit SHA, and that SHA is what the run metadata records (not the branch name
+you asked for). Replaying a run from its metadata therefore fetches the exact
+commit that produced it, so glitch generation stays bit-reproducible for a fixed
+(version, config, seed) even as the upstream dataset moves.
+
 ## Programmatic usage
 
 You can also construct configurations and run the simulator directly from

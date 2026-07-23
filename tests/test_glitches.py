@@ -111,6 +111,17 @@ def _fwhm_duration(strain: np.ndarray, *, sampling_frequency: float) -> float:
     return float((support[-1] - support[0] + 1) / sampling_frequency)
 
 
+def test_parametric_glitch_resolve_is_a_noop() -> None:
+    """Parametric models have no external dependency to pin, so resolve() is None.
+
+    The base protocol lets a caller pin every model in a heterogeneous glitch
+    list uniformly; only dataset-backed models resolve to a concrete version.
+    """
+    amp = LogNormalAmplitudeDistribution(mean=1.0, std=0.0)
+    assert BlipGlitch(rate=0.25, amplitude_distribution=amp, width=0.02).resolve() is None
+    assert ScatteredLightGlitch(rate=0.25, amplitude_distribution=amp).resolve() is None
+
+
 def test_blip_glitch_duration_tracks_requested_width() -> None:
     """Blip glitches preserve the configured duration scale within tolerance."""
     model = BlipGlitch(
