@@ -111,6 +111,25 @@ series is identical, sample for sample, to a single generate call of the same
 total duration; a tail is dropped only when it overflows the final chunk, where
 the data window ends.
 
+### Parametric glitch models
+
+Two built-in models are described analytically rather than drawn from data:
+
+- **`blip`** — a short, broadband burst: white-noise carrier under a Gaussian
+  envelope whose full width at half maximum is `width` seconds. It approximates
+  the common "blip" transient (a brief, roughly symmetric broadband tick) and,
+  uncolored, has a flat spectrum. Parameter: `width`.
+- **`scattered_light`** — an arch-shaped chirp modelling light scattered off a
+  slowly moving surface: a Gaussian-enveloped sinusoid whose instantaneous
+  frequency arches up and back down over the event as
+  `peak_frequency * |sin(pi t / duration)| ** arch_exponent`. This reproduces
+  the stacked "arches" seen in scattered-light glitches. Parameters: `duration`,
+  `peak_frequency`, `arch_exponent`, `phase`.
+
+Both draw their overall amplitude from `amplitude_distribution` and are, by
+default, defined purely by these parameters (no detector noise floor enters).
+See the next section to shape either against a target PSD.
+
 ### Optional PSD coloring
 
 By default `blip` is a spectrally flat (white-noise) burst and `scattered_light`
@@ -230,6 +249,40 @@ commit SHA, and that SHA is what the run metadata records (not the branch name
 you asked for). Replaying a run from its metadata therefore fetches the exact
 commit that produced it, so glitch generation stays bit-reproducible for a fixed
 (version, config, seed) even as the upstream dataset moves.
+
+## Schumann-resonance correlated noise
+
+The `schumann` simulator generates strain noise from the global magnetic field
+of the Earth–ionosphere cavity. Its Schumann resonances (~7.8, 14, 20, … Hz) are
+represented as a sum of Lorentzian peaks (`SchumannParams`:
+`mode_frequencies_hz`, `quality_factors`, `amplitudes`), a per-detector
+magnetic-to-strain coupling (`coupling_files`) converts the field to strain, and
+the shared magnetic origin makes the noise **correlated between detectors**.
+That correlated magnetic noise from Schumann resonances is coherent across
+globally separated detectors — and can limit stochastic-background searches —
+was established observationally by Thrane, Christensen & Schofield, _Correlated
+magnetic noise in global networks of gravitational-wave detectors_, Phys. Rev. D
+**87**, 123009 (2013) ([arXiv:1303.2613](https://arxiv.org/abs/1303.2613)); see
+also Coughlin et al., Class. Quantum Grav. **33**, 224003 (2016) on measurement
+and subtraction.
+
+**Why detector positions matter.** Because the resonant field fills the whole
+cavity, two detectors see a correlated field whose coherence depends on their
+angular separation on the globe, not on their local orientation. The simulator
+uses an idealized **isotropic cavity-mode** approximation: the `n`-th resonance
+is dominated by spherical-harmonic degree `n` (the cavity modes satisfy
+`f_n ≈ (c / 2π R_earth) √(n(n+1))`), whose zonal correlation between two surface
+points separated by great-circle angle `θ` is the Legendre polynomial
+
+```text
+coherence(f) = P_n(cos θ),   n ≈ round(2π f R_earth / c).
+```
+
+The simulator therefore requires each detector's geographic `positions`
+(latitude, longitude): nearby sites stay strongly correlated, while widely
+separated sites decorrelate (and the coherence changes sign) as `n` grows with
+frequency. This `P_n(cos θ)` form is the simulator's own modelling
+approximation, not a result taken from the references above.
 
 ## Programmatic usage
 
