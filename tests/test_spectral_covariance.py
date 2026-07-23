@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from gwmock_noise import spectral as spectral_module
 from gwmock_noise.simulators import CorrelatedNoiseSimulator
 from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
 from gwmock_noise.spectral import (
@@ -86,6 +88,47 @@ def test_regularized_cholesky_handles_indefinite_matrix() -> None:
 
     assert np.all(np.isfinite(factor))
     assert np.min(np.linalg.eigvalsh(regularized)) > 0.0
+
+
+def test_regularized_cholesky_warns_when_regularizing(caplog: pytest.LogCaptureFixture) -> None:
+    """Regularizing a non-positive-definite matrix warns the user (issue #140)."""
+    matrix = np.array([[1.0, 1.1], [1.1, 1.0]], dtype=np.complex128)  # indefinite
+
+    with caplog.at_level(logging.WARNING, logger="gwmock-noise"):
+        regularized_cholesky(matrix)
+
+    assert "not positive definite" in caplog.text
+    assert "regularizing" in caplog.text
+
+
+def test_regularized_cholesky_does_not_warn_when_well_conditioned(caplog: pytest.LogCaptureFixture) -> None:
+    """A positive-definite matrix needs no regularization and stays silent."""
+    matrix = np.array([[2.0, 0.3], [0.3, 2.0]], dtype=np.complex128)
+
+    with caplog.at_level(logging.WARNING, logger="gwmock-noise"):
+        regularized_cholesky(matrix)
+
+    assert caplog.text == ""
+
+
+def test_regularized_cholesky_warns_on_diagonal_fallback(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When Cholesky fails even after regularization, the diagonal fallback warns."""
+
+    def _raise(_matrix: object) -> object:
+        raise np.linalg.LinAlgError("forced failure")
+
+    monkeypatch.setattr(spectral_module.np.linalg, "cholesky", _raise)
+    matrix = np.array([[2.0, 0.3], [0.3, 2.0]], dtype=np.complex128)
+
+    with caplog.at_level(logging.WARNING, logger="gwmock-noise"):
+        factor = regularized_cholesky(matrix)
+
+    assert np.all(np.isfinite(factor))
+    assert "falling back to an" in caplog.text
+    assert "correlations are" in caplog.text
 
 
 def test_regularized_cholesky_preserves_tiny_physical_scale() -> None:

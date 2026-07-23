@@ -8,6 +8,7 @@ consistent with the one-sided periodogram convention used by the simulators.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from gwmock_noise.simulators._spectral import load_spectral_series
+from gwmock_noise.utils.log import LOGGER_NAME
+
+logger = logging.getLogger(LOGGER_NAME)
 
 DETECTOR_PAIR_SIZE = 2
 StrPath = str | Path
@@ -192,11 +196,24 @@ def regularized_cholesky(
 
     regularized = hermitian_matrix
     if minimum_eigenvalue < epsilon:
+        logger.warning(
+            "Spectral matrix is not positive definite (minimum eigenvalue %.3e < threshold %.3e); "
+            "regularizing by adding %.3e to the diagonal. Cross-spectral structure near this "
+            "frequency may be slightly distorted.",
+            minimum_eigenvalue,
+            epsilon,
+            epsilon - minimum_eigenvalue,
+        )
         regularized = regularized + np.eye(hermitian_matrix.shape[0]) * (epsilon - minimum_eigenvalue)
 
     try:
         return np.linalg.cholesky(regularized)
     except np.linalg.LinAlgError:
+        logger.warning(
+            "Cholesky factorization failed even after regularization; falling back to an "
+            "uncorrelated diagonal factor. Off-diagonal (cross-spectral) correlations are "
+            "dropped for this matrix.",
+        )
         diagonal = np.clip(np.real(np.diag(hermitian_matrix)), a_min=0.0, a_max=None)
         return np.diag(np.sqrt(diagonal + epsilon))
 
