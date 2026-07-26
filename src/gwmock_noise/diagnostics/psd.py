@@ -53,7 +53,7 @@ def estimate_psd(
     return np.asarray(frequencies, dtype=float), np.asarray(psd, dtype=float)
 
 
-def compare_psd(  # noqa: PLR0913
+def compare_psd(  # noqa: PLR0913, PLR0917
     data: np.ndarray,
     target_psd_file: Path,
     sampling_frequency: float,

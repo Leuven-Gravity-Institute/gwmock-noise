@@ -26,7 +26,7 @@ class NoiseComponentConfig(BaseModel):
         if isinstance(value, str):
             return {"simulator": value, "options": {}}
         if not isinstance(value, dict):
-            raise ValueError("components entries must be strings, mappings, or NoiseComponentConfig instances.")
+            raise TypeError("components entries must be strings, mappings, or NoiseComponentConfig instances.")
 
         if "simulator" not in value:
             raise ValueError("components entries must define a simulator name.")

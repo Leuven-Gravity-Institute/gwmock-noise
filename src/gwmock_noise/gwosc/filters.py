@@ -7,12 +7,9 @@ data-quality flags, returning the clean (analysis-ready) time intervals.
 from __future__ import annotations
 
 from importlib import import_module
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from gwmock_noise.gwosc.models import GwoscFilterConfig
-
-if TYPE_CHECKING:
-    pass
 
 _GWOSC_IMPORT_ERROR = "gwosc is required to use GwoscSegmentFilter. Install it with `pip install gwmock-noise[gwosc]`."
 
@@ -221,7 +218,7 @@ class GwoscSegmentFilter:
 
         events = dataset.get("events", {})
         vetosegments: SegmentList = []
-        for _event_name, event_data in events.items():
+        for event_data in events.values():
             inj_bits = event_data.get("INJbits", 0)
             if not inj_bits:
                 continue

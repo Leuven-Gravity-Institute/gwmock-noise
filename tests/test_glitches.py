@@ -27,7 +27,7 @@ class ZeroNoiseSimulator:
 
     def reset(self) -> None:
         """Reset the placeholder base state."""
-        return None
+        return
 
     def generate(
         self,
