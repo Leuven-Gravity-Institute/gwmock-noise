@@ -218,7 +218,7 @@ class GwoscSegmentFilter:
 
         events = dataset.get("events", {})
         vetosegments: SegmentList = []
-        for _event_name, event_data in events.items():
+        for event_data in events.values():
             inj_bits = event_data.get("INJbits", 0)
             if not inj_bits:
                 continue

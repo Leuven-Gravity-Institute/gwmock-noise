@@ -211,7 +211,7 @@ class ParallelAdapter:
                 )
 
         combined: dict[str, np.ndarray] = {}
-        for _assignment, future in futures.items():
+        for future in futures.values():
             combined.update(future.result())
         return combined
 
@@ -248,7 +248,7 @@ class ParallelAdapter:
                 )
 
         combined: dict[str, np.ndarray] = {}
-        for _assignment, future in futures.items():
+        for future in futures.values():
             combined.update(future.result())
         return combined
 

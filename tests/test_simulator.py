@@ -129,7 +129,7 @@ def test_default_simulator_run_uses_frame_writer_for_gwf_output(
     captured: dict[str, object] = {}
 
     class StubFrameWriter:
-        def __init__(  # noqa: PLR0913
+        def __init__(  # noqa: PLR0913, PLR0917
             self,
             base: NoiseSimulator,
             gps_start: float,

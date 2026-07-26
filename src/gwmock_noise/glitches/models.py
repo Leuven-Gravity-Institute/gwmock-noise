@@ -257,14 +257,14 @@ def _parse_amplitude_distribution(value: Any) -> LogNormalAmplitudeDistribution:
     if isinstance(value, LogNormalAmplitudeDistribution):
         return value
     if not isinstance(value, dict):
-        raise ValueError("amplitude_distribution must be a mapping or LogNormalAmplitudeDistribution.")
+        raise TypeError("amplitude_distribution must be a mapping or LogNormalAmplitudeDistribution.")
     return LogNormalAmplitudeDistribution(**value)
 
 
 def normalize_glitch_models(value: Any) -> list[GlitchModel]:
     """Normalize heterogeneous glitch-config inputs."""
     if not isinstance(value, list):
-        raise ValueError("glitch component options must provide a list of models.")
+        raise TypeError("glitch component options must provide a list of models.")
 
     kinds = supported_glitch_kinds()
     normalized: list[GlitchModel] = []
@@ -273,7 +273,7 @@ def normalize_glitch_models(value: Any) -> list[GlitchModel]:
             normalized.append(entry)
             continue
         if not isinstance(entry, dict):
-            raise ValueError("glitch model entries must be mappings or GlitchModel instances.")
+            raise TypeError("glitch model entries must be mappings or GlitchModel instances.")
 
         kind = entry.get("kind")
         if kind not in kinds:

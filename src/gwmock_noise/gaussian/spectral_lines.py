@@ -26,7 +26,7 @@ class SpectralLine:
 def normalize_spectral_lines(value: Any) -> list[SpectralLine]:
     """Normalize heterogeneous spectral-line inputs to dataclass instances."""
     if not isinstance(value, list):
-        raise ValueError("spectral line component options must provide a list of lines.")
+        raise TypeError("spectral line component options must provide a list of lines.")
 
     normalized: list[SpectralLine] = []
     for entry in value:
@@ -35,5 +35,5 @@ def normalize_spectral_lines(value: Any) -> list[SpectralLine]:
         elif isinstance(entry, dict):
             normalized.append(SpectralLine(**entry))
         else:
-            raise ValueError("spectral line entries must be mappings or SpectralLine instances.")
+            raise TypeError("spectral line entries must be mappings or SpectralLine instances.")
     return normalized

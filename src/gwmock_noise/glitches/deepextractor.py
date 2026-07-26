@@ -182,7 +182,7 @@ class DeepExtractorGlitch(GlitchModel):
         self._check_mapping_covers_classes(self.rate, "rate")
         for value in self.rate.values():
             if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise ValueError("rate values must be numbers.")
+                raise TypeError("rate values must be numbers.")
             if not np.isfinite(value) or value < 0.0:
                 raise ValueError("rate values must be finite and non-negative.")
         self._class_rates = {name: float(value) for name, value in self.rate.items()}
@@ -197,7 +197,7 @@ class DeepExtractorGlitch(GlitchModel):
             values = [self.snr]
         for value in values:
             if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise ValueError("snr values must be numbers.")
+                raise TypeError("snr values must be numbers.")
             if not np.isfinite(value) or value <= 0.0:
                 raise ValueError("snr values must be finite and greater than zero.")
 

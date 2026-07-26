@@ -39,7 +39,7 @@ def _import_gwosc_locate():
         raise ImportError(_GWOSC_IMPORT_ERROR) from exc
 
 
-def _fetch_via_cache(  # noqa: PLR0913
+def _fetch_via_cache(  # noqa: PLR0913, PLR0917
     detector: str,
     gps_start: float,
     gps_end: float,

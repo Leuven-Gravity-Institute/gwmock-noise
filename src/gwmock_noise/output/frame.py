@@ -30,7 +30,7 @@ class FrameWriter:
     LALFrame path used here preserves float64 samples.
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: PLR0913, PLR0917
         self,
         base: NoiseSimulator,
         gps_start: float,

@@ -61,7 +61,7 @@ class FakeTimeSeries:
         )
 
     @staticmethod
-    def fetch_open_data(  # noqa: PLR0913
+    def fetch_open_data(  # noqa: PLR0913, PLR0917
         detector: str,
         start: float,
         end: float,
