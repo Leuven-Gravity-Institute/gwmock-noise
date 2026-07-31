@@ -24,7 +24,7 @@ dependencies = [
   "pydantic>=2.9.0",
   "scipy>=1.15.0",
   "pyyaml>=6.0",
-  "typer>=0.16.0", # click 8.2 compatibility; the SPEC 0 floor (0.13) predates it
+  "typer>=0.16.0",   # click 8.2 compatibility; the SPEC 0 floor (0.13) predates it
 ]
 
 [project.optional-dependencies]
@@ -52,10 +52,10 @@ gwmock-noise = "gwmock_noise.cli.main:app"
 
 [project.urls]
 Documentation = "https://leuven-gravity-institute.github.io/gwmock-noise/"
-Source = "https://github.com/Leuven-Gravity-Institute/gwmock_noise"
-Tracker = "https://github.com/Leuven-Gravity-Institute/gwmock_noise/issues"
-Home = "https://github.com/Leuven-Gravity-Institute/gwmock_noise"
-"Release Notes" = "https://github.com/Leuven-Gravity-Institute/gwmock_noise/releases"
+Source = "https://github.com/Leuven-Gravity-Institute/gwmock-noise"
+Tracker = "https://github.com/Leuven-Gravity-Institute/gwmock-noise/issues"
+Home = "https://github.com/Leuven-Gravity-Institute/gwmock-noise"
+"Release Notes" = "https://github.com/Leuven-Gravity-Institute/gwmock-noise/releases"
 
 [tool.dependency-support-policy]
 policy = "spec0"
