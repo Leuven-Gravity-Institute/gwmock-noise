@@ -37,13 +37,13 @@ gwosc = ["gwpy>=4.0.0", "gwosc>=0.8.0"]
 [dependency-groups]
 dev = [
   "ruff>=0.16.1",
-  "prek>=0.4.11",
+  "prek>=0.4.12",
   "pytest-cov>=7.1.0",
   "pytest-mock>=3.15.1",
   "pytest>=9.1.1",
   "pytest-github-actions-annotate-failures>=0.4.2",
 ]
-docs = ["zensical>=0.0.52", "mkdocstrings-python>=2.0.5"]
+docs = ["zensical>=0.0.53", "mkdocstrings-python>=2.0.5"]
 build = ["hatch>=1.17.1"]
 release = ["git-cliff>=2.13.1"]
 
