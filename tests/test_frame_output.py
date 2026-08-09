@@ -323,3 +323,81 @@ class TestTheWriterChecksItsOwnInputs:
 
         assert writer._channel_name("H1") == "H1:STRAIN_NOISE"
         assert writer._frame_path("H1", "H1:STRAIN_NOISE", 100.0, 2.0).name == "H-H1:STRAIN_NOISE_100-2.gwf"
+
+
+class TestRoundNineGaps:
+    """Three things round 9 found: an unchecked prefix, a masked check, and a partial write."""
+
+    @staticmethod
+    def _fake_backend(monkeypatch: pytest.MonkeyPatch) -> Any:
+        frame_output = import_module("gwmock_noise.output.frame")
+
+        class FakeSeries:
+            def __init__(self) -> None:
+                self.channel = ""
+
+            def write(self, path: Path, *, format: str, overwrite: bool) -> None:  # noqa: A002
+                path.write_bytes(b"")
+
+        class FakeAdapter:
+            def __init__(self, base: FixedNoiseSimulator, gps_start: float) -> None:
+                self.base = base
+                self.gps_start = gps_start
+
+            def generate(self, *, duration: float, sampling_frequency: float, detectors: list[str], seed: int | None):
+                self.gps_start += duration
+                return {detector: FakeSeries() for detector in detectors}
+
+        monkeypatch.setattr(frame_output, "_require_gwf_backend", lambda: None)
+        monkeypatch.setattr(frame_output, "GWpyAdapter", FakeAdapter)
+        return frame_output
+
+    def test_a_prefix_carrying_path_syntax_is_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The prefix is a file-name component, and for nine rounds it was the unchecked one."""
+        self._fake_backend(monkeypatch)
+
+        with pytest.raises(ValueError, match="path syntax"):
+            FrameWriter(FixedNoiseSimulator(), gps_start=100.0, output_dir=tmp_path, prefix="sub/run")
+
+    def test_the_name_check_precedes_the_backend_check(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Deliberately does NOT stub the backend out, which is what hid this.
+
+        With `_require_gwf_backend` first, a machine without a GWF backend got `ImportError` for a name
+        the docstring promised would raise `ValueError` -- the checks were unreachable there, and the
+        other tests could not tell because they all stub the backend check. This one forces the missing
+        backend and demands the name error anyway.
+        """
+        frame_output = import_module("gwmock_noise.output.frame")
+        original_import_module = frame_output.import_module
+
+        def fake_import_module(name: str):
+            if name == "gwpy.io.gwf":
+                raise ImportError("No module named 'gwpy.io.gwf'")
+            return original_import_module(name)
+
+        monkeypatch.setattr(frame_output, "import_module", fake_import_module)
+
+        with pytest.raises(ValueError, match="group separator"):
+            FrameWriter(FixedNoiseSimulator(), gps_start=100.0, output_dir=tmp_path, channel="MOCK/NOISE")
+
+    def test_an_invalid_later_segment_writes_nothing_at_all(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The partial write both reviewers reproduced.
+
+        The existing test at the top of this file passes a single invalid segment, which fails before
+        anything is written and so cannot see this. Here the first segment is valid: it used to be
+        written, and `gps_start` advanced, before the second was rejected.
+        """
+        self._fake_backend(monkeypatch)
+        writer = FrameWriter(FixedNoiseSimulator(), gps_start=100.0, output_dir=tmp_path)
+
+        with pytest.raises(ValueError, match="expected gps_end > gps_start"):
+            writer.write_segments(
+                segments=[(100.0, 102.0), (102.0, 102.0)],
+                sampling_frequency=4.0,
+                detectors=["H1"],
+            )
+
+        assert list(tmp_path.iterdir()) == []
+        assert writer.gps_start == pytest.approx(100.0)

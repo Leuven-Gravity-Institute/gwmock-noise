@@ -83,6 +83,25 @@ class OutputConfig(BaseModel):
         ),
     )
 
+    @field_validator("prefix")
+    @classmethod
+    def _validate_prefix(cls, value: str) -> str:
+        """Reject a prefix that would put path syntax into a file name.
+
+        Every format prepends the prefix and none writes it inside the artifact, so unlike the channel
+        this applies to `npy` as well, and a field validator suffices because the rule does not depend on
+        `format`. This was the one name component nobody checked, and not only on the bypass path: a
+        fully validated `OutputConfig(prefix="sub/run")` wrote `sub/run_H1.npy`, below the directory the
+        caller named. A reviewer found it in round 9, after eight rounds spent on the other two names.
+
+        Returns:
+            The validated prefix.
+
+        Raises:
+            ValueError: If the prefix contains path syntax.
+        """
+        return reject_unsafe(value, field="prefix")
+
     @model_validator(mode="after")
     def _validate_channel_names(self) -> Self:
         """Reject channel names that the selected format cannot represent.

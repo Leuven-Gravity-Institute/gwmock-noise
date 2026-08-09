@@ -296,6 +296,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
                 if config.output.format in {"gwf", "hdf5"}
                 else {}
             ),
+            prefix=config.output.prefix,
         )
 
         Path(config.output.directory).mkdir(parents=True, exist_ok=True)

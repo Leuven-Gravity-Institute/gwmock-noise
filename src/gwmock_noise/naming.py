@@ -43,21 +43,34 @@ UNSAFE_FOR_CHANNEL = ("/", "\\")
 #: -- on NTFS it opens an alternate data stream, and the artifact would not exist as a file at all.
 UNSAFE_FOR_DETECTOR = ("/", "\\", ":")
 
+#: Which rule each kind of name takes. A prefix is a file-name component like a detector, so it takes the
+#: detector rule; it is never written inside an artifact, which is what distinguishes it from a channel.
+_RULES = {
+    "channel": UNSAFE_FOR_CHANNEL,
+    "detector": UNSAFE_FOR_DETECTOR,
+    "prefix": UNSAFE_FOR_DETECTOR,
+}
+
 
 def reject_unsafe(value: str, *, field: str) -> str:
     """Return *value* unchanged, or raise if it cannot survive becoming part of an artifact.
 
     Args:
-        value: The detector or channel name.
-        field: ``"detector"`` or ``"channel"``; selects the rule and names the field in the message.
+        value: The detector, channel, or prefix.
+        field: ``"detector"``, ``"channel"``, or ``"prefix"``; selects the rule and names the field in
+            the message. A prefix takes the detector rule: it is a file-name component and nothing else.
 
     Returns:
         The value, unchanged.
 
     Raises:
         ValueError: If the value contains a character the artifact cannot carry.
+        KeyError: If *field* is not one of the three known kinds.
     """
-    forbidden = UNSAFE_FOR_CHANNEL if field == "channel" else UNSAFE_FOR_DETECTOR
+    # Looked up rather than defaulted. `UNSAFE_FOR_CHANNEL if field == "channel" else UNSAFE_FOR_DETECTOR`
+    # gives a misspelled field the detector rule in silence, which is how a caller ends up believing a
+    # name was checked under a rule that never ran.
+    forbidden = _RULES[field]
     found = [character for character in forbidden if character in value]
     if not found:
         return value
@@ -68,7 +81,7 @@ def reject_unsafe(value: str, *, field: str) -> str:
     )
 
 
-def check_artifact_names(*, detectors: Iterable[str], channels: Mapping[str, str]) -> None:
+def check_artifact_names(*, detectors: Iterable[str], channels: Mapping[str, str], prefix: str = "") -> None:
     """Check every name a run is about to use, before anything is generated or written.
 
     Checked up front rather than per detector as the writing proceeds. Writing detector by detector meant
@@ -80,10 +93,17 @@ def check_artifact_names(*, detectors: Iterable[str], channels: Mapping[str, str
     Args:
         detectors: The detectors this run will write.
         channels: The resolved channel for each detector, or empty for a format that carries no channel.
+        prefix: The artifact name prefix, if the caller uses one.
 
     Raises:
         ValueError: If any name cannot survive becoming part of an artifact.
     """
+    # The prefix is checked under the detector rule because it is a file-name component and nothing else:
+    # every format prepends it, and no format writes it inside the artifact. It went unchecked for nine
+    # review rounds while the detector and channel rules were built around it, and unlike those two it
+    # was not even a bypass -- a validated `OutputConfig(prefix="sub/run")` wrote `sub/run_H1.npy`,
+    # below the directory the caller named. Found by a reviewer.
+    reject_unsafe(prefix, field="prefix")
     for detector in detectors:
         reject_unsafe(detector, field="detector")
     for channel in channels.values():

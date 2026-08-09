@@ -637,3 +637,47 @@ class TestEveryFormatChecksItsDetectorNames:
             DefaultNoiseSimulator().run(config)
 
         assert not (tmp_path / "not-created-yet").exists()
+
+
+class TestThePrefixIsANameToo:
+    """`prefix` reached every artifact name and no layer checked it, on any path."""
+
+    def test_a_validated_config_refuses_a_prefix_with_path_syntax(self) -> None:
+        """Not a bypass: this is the ordinary constructor, and it wrote `sub/run_H1.npy`."""
+        with pytest.raises(ValueError, match="path syntax"):
+            OutputConfig(format="npy", prefix="sub/run")
+
+    def test_the_prefix_rule_applies_to_every_format(self) -> None:
+        """Unlike the channel: every format prepends the prefix, none writes it inside the artifact."""
+        for artifact_format in ("npy", "gwf", "hdf5"):
+            with pytest.raises(ValueError, match="path syntax"):
+                OutputConfig(format=artifact_format, prefix="sub/run")
+
+    def test_an_ordinary_prefix_still_works(self) -> None:
+        """The rule must not reject the prefixes the examples and tests already use."""
+        assert OutputConfig(format="npy", prefix="noise").prefix == "noise"
+        assert OutputConfig(format="hdf5", prefix="run_a").prefix == "run_a"
+
+    def test_a_bypassed_prefix_is_refused_by_the_simulator(self, tmp_path: Path) -> None:
+        """And the writer re-asserts it, as it does for the other two names."""
+        target = tmp_path / "not-created-yet"
+        config = NoiseConfig.model_construct(
+            detectors=["H1"],
+            duration=4.0,
+            sampling_frequency=128.0,
+            seed=1,
+            components=[],
+            output=OutputConfig.model_construct(
+                directory=target,
+                format="npy",
+                channel="MOCK_NOISE",
+                channels=None,
+                prefix="sub/run",
+                gps_start=1000000000.0,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="path syntax"):
+            DefaultNoiseSimulator().run(config)
+
+        assert not target.exists()

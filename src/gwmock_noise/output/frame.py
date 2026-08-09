@@ -45,14 +45,19 @@ class FrameWriter:
         Raises:
             ValueError: If a channel name cannot survive becoming part of a file name.
         """
-        _require_gwf_backend()
-        # Before the mkdir, so a writer that will never be allowed to write does not leave a directory
-        # behind -- the same ordering `DefaultNoiseSimulator.run` had to learn. Only the names known now
-        # are checked; detectors arrive at `write`, which checks them there.
+        # Before the backend check and before the mkdir. Behind `_require_gwf_backend` these checks were
+        # unreachable on a machine without a GWF backend -- the docstring promised a `ValueError` that
+        # only an `ImportError` could precede, and the test passed only because it stubs the backend
+        # check out. A reviewer caught the inversion: `write` had this order right and `__init__` did
+        # not. Before the mkdir for the separate reason that a writer which will never be allowed to
+        # write should leave no directory behind. Only the names known now are checked; detectors arrive
+        # at `write`.
+        reject_unsafe(prefix, field="prefix")
         reject_unsafe(channel, field="channel")
         for override_detector, override in (channels or {}).items():
             reject_unsafe(override_detector, field="detector")
             reject_unsafe(override, field="channel")
+        _require_gwf_backend()
         self.base = base
         self.gps_start = gps_start
         self.output_dir = Path(output_dir)
@@ -82,6 +87,7 @@ class FrameWriter:
         check_artifact_names(
             detectors=detectors,
             channels={detector: self._channel_name(detector) for detector in detectors},
+            prefix=self.prefix,
         )
         _require_gwf_backend()
         segment_start = self.gps_start
@@ -111,11 +117,24 @@ class FrameWriter:
         detectors: list[str],
         seed: int | None = None,
     ) -> list[dict[str, Path]]:
-        """Write a sequence of contiguous frame segments."""
-        written_segments: list[dict[str, Path]] = []
-        for index, (gps_start, gps_end) in enumerate(segments):
+        """Write a sequence of contiguous frame segments.
+
+        Raises:
+            ValueError: If any segment is empty or reversed, or if a name cannot survive becoming part of
+                a file name.
+        """
+        # Every segment validated before the first one is written. Checking inside the loop meant an
+        # invalid second segment raised with the first already on disk and `gps_start` advanced, leaving
+        # the caller a partial set they never chose to keep and a writer whose state had moved. Both
+        # reviewers found it; it is the round-5 partial-write failure again, in the one place the
+        # artifact-name pre-flight does not reach, because the fault is in the segment list rather than
+        # in a name.
+        for gps_start, gps_end in segments:
             if gps_end <= gps_start:
                 raise ValueError(f"Invalid segment ({gps_start}, {gps_end}); expected gps_end > gps_start.")
+
+        written_segments: list[dict[str, Path]] = []
+        for index, (gps_start, gps_end) in enumerate(segments):
             self.gps_start = gps_start
             written_segments.append(
                 self.write(
