@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import h5py
 import numpy as np
 
 from gwmock_noise.output.frame import FrameWriter
@@ -141,6 +142,78 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
             seed=config.seed,
         )
 
+    def _write_hdf5_outputs(
+        self,
+        *,
+        config: NoiseConfig,
+        strain_by_detector: dict[str, np.ndarray],
+    ) -> dict[str, Path]:
+        """Persist per-detector strain as HDF5, carrying the same grid a frame would.
+
+        Written with ``h5py``, which is a required dependency, rather than through GWpy, which is not:
+        GWpy is an extra here (``frame``, ``gwpy``, ``gwosc``), and a *primary* output format must not
+        need an optional package to produce. The first version of this did use GWpy and was wrong for
+        that reason.
+
+        The attributes are the ones GWpy's own HDF5 writer uses -- ``x0``, ``dx``, ``channel``, ``name``,
+        ``unit``, ``xunit`` -- so ``TimeSeries.read`` loads these files unchanged and a reader cannot tell
+        which library produced them. That compatibility is asserted in the tests rather than assumed.
+
+        A bare array would lose where the samples sit, leaving the epoch and rate to travel out of band;
+        the sibling project has already had a content hash go blind to exactly that.
+
+        Args:
+            config: The noise config, providing the grid, the channel and the naming.
+            strain_by_detector: The generated strain, one array per detector.
+
+        Returns:
+            The path written for each detector.
+        """
+        output_paths: dict[str, Path] = {}
+        for detector, strain in strain_by_detector.items():
+            channel = self._hdf5_channel(config=config, detector=detector)
+            output_path = Path(config.output.directory) / self._hdf5_name(config=config, channel=channel)
+            with h5py.File(output_path, "w") as handle:
+                dataset = handle.create_dataset(channel, data=np.asarray(strain, dtype=float))
+                dataset.attrs["x0"] = float(config.output.gps_start)
+                dataset.attrs["dx"] = 1.0 / float(config.sampling_frequency)
+                dataset.attrs["xunit"] = "s"
+                dataset.attrs["channel"] = channel
+                dataset.attrs["name"] = channel
+                dataset.attrs["unit"] = "strain"
+            output_paths[detector] = output_path
+        return output_paths
+
+    @staticmethod
+    def _hdf5_channel(*, config: NoiseConfig, detector: str) -> str:
+        """Return the channel name for a detector, honouring a per-detector override.
+
+        Same rule as the frame writer's: without it the two formats would name the same data
+        differently, and a reader would have to know which one it was handed.
+        """
+        channels = config.output.channels
+        if channels is not None:
+            override = channels.get(detector)
+            if override is not None:
+                return override
+        return f"{detector}:{config.output.channel}"
+
+    @staticmethod
+    def _hdf5_name(*, config: NoiseConfig, channel: str) -> str:
+        """Return the file name for one detector's HDF5 artifact.
+
+        Deliberately the frame writer's shape with a different extension, rather than the numpy writer's
+        ``prefix_detector`` shape: HDF5 carries the epoch and duration like a frame does, so a name that
+        hides them would tell a reader less than the file it names.
+        """
+        detector = channel.split(":", maxsplit=1)[0]
+        start_token = FrameWriter._format_time_token(config.output.gps_start)
+        duration_token = FrameWriter._format_time_token(config.duration)
+        name = f"{detector[0]}-{channel}_{start_token}-{duration_token}.hdf5"
+        if config.output.prefix:
+            name = f"{config.output.prefix}_{name}"
+        return name
+
     def _write_metadata_sidecars(
         self,
         *,
@@ -174,6 +247,15 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         if config.output.format == "gwf":
             output_paths = self._write_frame_outputs(config=config, simulator=simulator)
             self._sync_public_state(config=config, metadata=simulator.metadata)
+        elif config.output.format == "hdf5":
+            strain_by_detector = simulator.generate(
+                duration=config.duration,
+                sampling_frequency=config.sampling_frequency,
+                detectors=config.detectors,
+                seed=config.seed,
+            )
+            self._sync_public_state(config=config, metadata=simulator.metadata)
+            output_paths = self._write_hdf5_outputs(config=config, strain_by_detector=strain_by_detector)
         else:
             strain_by_detector = simulator.generate(
                 duration=config.duration,

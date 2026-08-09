@@ -62,8 +62,8 @@ class OutputConfig(BaseModel):
     prefix: str = Field(default="noise", description="Prefix for output filenames.")
     format: str = Field(
         default="npy",
-        description="Artifact format written by BaseNoiseSimulator.run().",
-        pattern="^(npy|gwf)$",
+        description="Artifact format written by BaseNoiseSimulator.run(): 'npy', 'gwf', or 'hdf5'.",
+        pattern="^(npy|gwf|hdf5)$",
     )
     gps_start: float = Field(
         default=0.0,
