@@ -279,18 +279,16 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
 
     def run(self, config: NoiseConfig) -> SimulationResult:
         """Run the noise simulation with the given configuration."""
-        Path(config.output.directory).mkdir(parents=True, exist_ok=True)
-
-        simulator = self._configure_simulator(config)
-
-        # Before generating, and for every format. The config boundary is bypassable -- `model_construct`
-        # skips validators, and this repo's own tests use it -- so the rule is re-asserted here. Two earlier
-        # placements were wrong. Inside the writing loop, a run with one bad name wrote the good detectors'
-        # files and then raised. Inside the hdf5 branch alone, a bypassed detector still reached the numpy
-        # and frame writers: `H1/A` wrote `noise_H1/A.npy` when that directory happened to exist, and raised
-        # `FileNotFoundError` after a full simulation when it did not. Both were reviewers'. Every format
-        # names its artifact *and* its sidecar after the detector, so that rule is universal; only the
-        # formats that carry a channel have a channel to check.
+        # First, before anything is created or loaded. The config boundary is bypassable --
+        # `model_construct` skips validators, and this repo's own tests use it -- so the rule is
+        # re-asserted here, and three earlier placements were each too late. Inside the writing loop, a run
+        # with one bad name wrote the good detectors' files and then raised. Inside the hdf5 branch alone,
+        # a bypassed detector still reached the numpy and frame writers. Below the `mkdir` and
+        # `_configure_simulator` calls, a refused run still created the output directory, and a component
+        # that failed to load raised first, so the caller was told about the component and never about the
+        # name. All three were reviewers'. It depends on nothing but the config, so nothing needs to happen
+        # before it. Every format names its artifact *and* its sidecar after the detector, so that rule is
+        # universal; only the formats that carry a channel have a channel to check.
         check_artifact_names(
             detectors=config.detectors,
             channels=(
@@ -299,6 +297,10 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
                 else {}
             ),
         )
+
+        Path(config.output.directory).mkdir(parents=True, exist_ok=True)
+
+        simulator = self._configure_simulator(config)
 
         if config.output.format == "gwf":
             output_paths = self._write_frame_outputs(config=config, simulator=simulator)

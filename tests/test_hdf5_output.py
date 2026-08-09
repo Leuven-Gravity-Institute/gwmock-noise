@@ -33,7 +33,7 @@ import numpy as np
 import pytest
 from _pytest.outcomes import Skipped
 
-from gwmock_noise import NoiseConfig, OutputConfig
+from gwmock_noise import NoiseComponentConfig, NoiseConfig, OutputConfig
 from gwmock_noise.simulators.default import DefaultNoiseSimulator
 
 pytestmark = pytest.mark.unit
@@ -606,3 +606,34 @@ class TestEveryFormatChecksItsDetectorNames:
             DefaultNoiseSimulator().run(self._bypassed(tmp_path, ["H1"], format="gwf", channel="MOCK/NOISE"))
 
         assert list(tmp_path.iterdir()) == []
+
+    def test_a_refused_run_does_not_create_the_output_directory(self, tmp_path: Path) -> None:
+        """The check has to precede `mkdir`, not merely precede writing.
+
+        The other tests in this class cannot see this: they point at `tmp_path`, which pytest has already
+        created, so the `mkdir` is a no-op and "nothing left behind" holds either way. A real caller
+        naming a directory that does not exist yet had it created and then kept, by a run that refused to
+        do anything. A reviewer pointed out both the behaviour and why the tests were blind to it.
+        """
+        target = tmp_path / "not-created-yet"
+
+        with pytest.raises(ValueError, match="path syntax"):
+            DefaultNoiseSimulator().run(self._bypassed(target, ["H1/A"]))
+
+        assert not target.exists()
+
+    def test_a_broken_component_does_not_mask_the_name_error(self, tmp_path: Path) -> None:
+        """Which error the caller sees, when the config is wrong in two ways at once.
+
+        `_configure_simulator` ran before the check, so an unloadable component raised first and the
+        caller was told about the component while the name went unmentioned -- and, a reviewer noted, a
+        colored component reads its PSD file in `__init__`, so the masking error can come from disk I/O
+        performed on behalf of a run that was never going to be allowed.
+        """
+        config = self._bypassed(tmp_path / "not-created-yet", ["H1/A"])
+        config.components = [NoiseComponentConfig.model_construct(simulator="does-not-exist", options={})]
+
+        with pytest.raises(ValueError, match="path syntax"):
+            DefaultNoiseSimulator().run(config)
+
+        assert not (tmp_path / "not-created-yet").exists()
