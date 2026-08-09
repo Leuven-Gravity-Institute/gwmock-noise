@@ -65,11 +65,13 @@ Supported top-level fields:
 
 ### Output formats
 
-`npy` writes one bare array per detector, with the grid described only by the
-JSON sidecar beside it. `gwf` writes frame files, for pipelines that read
-frames. `hdf5` writes one file per detector carrying the samples together with
-the epoch, the sample interval, the channel and the unit, so a reader does not
-need to be told the grid separately; GWpy reads these files directly.
+`npy` writes one bare array per detector, plus the JSON sidecar every format
+writes. Neither carries the epoch: the sidecar records the duration and the
+sampling frequency but not `gps_start`, so a reader can recover the sample
+spacing and not the absolute time. `gwf` writes frame files, for pipelines that
+read frames. `hdf5` writes one file per detector carrying the samples together
+with the epoch, the sample interval, the channel and the unit, so a reader does
+not need to be told the grid separately; GWpy reads these files directly.
 
 Detector and channel names may not contain `/` or `\`, and detector names may
 not contain `:`. Those are HDF5 and path syntax: `/` is a group separator inside
