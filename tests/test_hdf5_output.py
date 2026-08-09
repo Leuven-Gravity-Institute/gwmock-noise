@@ -404,49 +404,117 @@ class TestWhereTheRejectionApplies:
 
 
 class TestTheWriterAssertsItsOwnPrecondition:
-    """Because the config boundary is bypassable, and this repo bypasses it."""
+    """Because the config boundary is bypassable, and this repo bypasses it.
 
-    def test_a_bypassed_config_is_refused_rather_than_written(self, tmp_path: Path) -> None:
-        """`model_construct` skips validators; a reviewer used it to reproduce the nested group.
+    Checked before anything is generated, and over every name the run will use -- not per detector as the
+    writing proceeds. Both of those were wrong in the first version and both were demonstrated: a
+    per-detector check did the whole simulation before refusing, and wrote the good detectors' files
+    before reaching the bad one.
+    """
 
-        Without this the writer produced an unreadable file, returned its path, and reported success.
-        """
-        config = NoiseConfig.model_construct(
-            detectors=["H1"],
+    @staticmethod
+    def _bypassed(directory: Path, **output: object) -> NoiseConfig:
+        """A config built the way `model_construct` builds one: no validators, no rejection."""
+        settings: dict[str, object] = {
+            "directory": directory,
+            "format": "hdf5",
+            "channel": "MOCK_NOISE",
+            "channels": None,
+            "prefix": "",
+            "gps_start": 1000000000.0,
+        }
+        settings.update(output)
+        return NoiseConfig.model_construct(
+            detectors=list(output.pop("detectors", ["H1"])) if "detectors" in output else ["H1"],
             duration=4.0,
             sampling_frequency=128.0,
             seed=1,
-            output=OutputConfig.model_construct(
-                directory=tmp_path,
-                format="hdf5",
-                channel="MOCK/NOISE",
-                channels=None,
-                prefix="",
-                gps_start=1000000000.0,
-            ),
+            components=[],
+            output=OutputConfig.model_construct(**settings),
         )
 
+    def test_a_bypassed_channel_is_refused(self, tmp_path: Path) -> None:
+        """The round-3 nested group, reached through `model_construct`."""
         with pytest.raises(ValueError, match="group separator"):
-            DefaultNoiseSimulator().run(config)
-
-    def test_nothing_is_left_behind_when_it_refuses(self, tmp_path: Path) -> None:
-        """A refusal that leaves a half-written artifact is its own trap."""
-        config = NoiseConfig.model_construct(
-            detectors=["H1"],
-            duration=4.0,
-            sampling_frequency=128.0,
-            seed=1,
-            output=OutputConfig.model_construct(
-                directory=tmp_path,
-                format="hdf5",
-                channel="MOCK/NOISE",
-                channels=None,
-                prefix="",
-                gps_start=1000000000.0,
-            ),
-        )
-
-        with pytest.raises(ValueError, match="group separator"):
-            DefaultNoiseSimulator().run(config)
+            DefaultNoiseSimulator().run(self._bypassed(tmp_path, channel="MOCK/NOISE"))
 
         assert list(tmp_path.glob("*.hdf5")) == []
+
+    def test_a_bypassed_detector_is_refused(self, tmp_path: Path) -> None:
+        """A colon in a detector reaches the file name, and the writer checked only channels.
+
+        `detectors=["H1:A"]` wrote `H-H1:A_...hdf5` past the writer-level protection -- the drift between
+        the config's rule and the writer's, which both reviewers found. One shared rule now, so "the
+        writer re-asserts it" means the same rule rather than a subset of it.
+        """
+        config = NoiseConfig.model_construct(
+            detectors=["H1:A"],
+            duration=4.0,
+            sampling_frequency=128.0,
+            seed=1,
+            components=[],
+            output=OutputConfig.model_construct(
+                directory=tmp_path,
+                format="hdf5",
+                channel="MOCK_NOISE",
+                channels=None,
+                prefix="",
+                gps_start=1000000000.0,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="path syntax"):
+            DefaultNoiseSimulator().run(config)
+
+        assert list(tmp_path.glob("*")) == []
+
+    def test_one_bad_name_among_several_leaves_nothing_behind(self, tmp_path: Path) -> None:
+        """The partial write: good detectors' files must not survive a refusal.
+
+        With the check inside the writing loop, `detectors=["H1", "L1"]` and a bad override for L1 wrote
+        H1's artifact and then raised, leaving the caller a set they never chose to keep. The earlier
+        version of this test used a single detector, which fails before any write and so could not see
+        it -- a reviewer pointed that out.
+        """
+        config = NoiseConfig.model_construct(
+            detectors=["H1", "L1"],
+            duration=4.0,
+            sampling_frequency=128.0,
+            seed=1,
+            components=[],
+            output=OutputConfig.model_construct(
+                directory=tmp_path,
+                format="hdf5",
+                channel="MOCK_NOISE",
+                channels={"L1": "H1:A/B"},
+                prefix="",
+                gps_start=1000000000.0,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="group separator"):
+            DefaultNoiseSimulator().run(config)
+
+        assert list(tmp_path.glob("*")) == []
+
+    def test_an_ordinary_bypassed_config_still_writes(self, tmp_path: Path) -> None:
+        """The check must refuse bad names, not `model_construct` itself."""
+        config = NoiseConfig.model_construct(
+            detectors=["H1", "L1"],
+            duration=4.0,
+            sampling_frequency=128.0,
+            seed=1,
+            components=[],
+            output=OutputConfig.model_construct(
+                directory=tmp_path,
+                format="hdf5",
+                channel="MOCK_NOISE",
+                channels=None,
+                prefix="",
+                gps_start=1000000000.0,
+            ),
+        )
+
+        result = DefaultNoiseSimulator().run(config)
+
+        assert sorted(result.output_paths) == ["H1", "L1"]

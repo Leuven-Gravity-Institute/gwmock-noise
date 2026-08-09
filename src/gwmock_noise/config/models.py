@@ -7,6 +7,8 @@ from typing import Any, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from gwmock_noise.naming import reject_unsafe
+
 
 class NoiseComponentConfig(BaseModel):
     """One configurable noise component in a composed simulation."""
@@ -55,49 +57,6 @@ class NoiseComponentConfig(BaseModel):
         return self
 
 
-#: Characters that cannot appear in a detector or channel name without breaking an artifact.
-#:
-#: `/` is the worst of them and the reason this exists: HDF5 treats it as a group separator, so a channel
-#: like `MOCK/NOISE` silently produced a nested group instead of a dataset, and GWpy then failed to read
-#: the file the writer had just reported as written. The failure was invisible -- a path came back, the
-#: file existed, and only reading it showed the damage.
-#:
-#: `\\` and `:` follow because these names reach file names: a colon opens an alternate data stream on
-#: NTFS, and a backslash is a path separator there.
-#:
-#: Rejecting at the boundary rather than escaping deeper: an escape has to be maintained for whatever
-#: character bites next, and the last two attempts here each fixed one character and broke another.
-_UNSAFE_NAME_CHARACTERS = ("/", "\\", ":")
-
-
-def _reject_unsafe(value: str, *, field: str) -> str:
-    """Return *value* unchanged, or raise if it cannot survive being part of an artifact's identity.
-
-    Args:
-        value: The detector or channel name.
-        field: The field being validated, for the message.
-
-    Returns:
-        The value, unchanged.
-
-    Raises:
-        ValueError: If the value contains a character that would break the HDF5 layout or the file name.
-    """
-    # A channel may legitimately contain one colon, as `DETECTOR:CHANNEL`; it is the *file name* that
-    # cannot, and the writer no longer puts the channel there. Detectors get the stricter rule because
-    # they do become file names.
-    forbidden = ("/", "\\") if field == "channel" else _UNSAFE_NAME_CHARACTERS
-    found = [character for character in forbidden if character in value]
-    if found:
-        raise ValueError(
-            f"{field} {value!r} contains {', '.join(repr(character) for character in found)}, which "
-            f"cannot appear in an artifact name: '/' is an HDF5 group separator and '\\' and ':' are "
-            f"path syntax on Windows. Rename it, or the artifact would be written somewhere other than "
-            f"where it is reported."
-        )
-    return value
-
-
 class OutputConfig(BaseModel):
     """Configuration for simulation output."""
 
@@ -141,13 +100,13 @@ class OutputConfig(BaseModel):
         """
         if self.format not in {"gwf", "hdf5"}:
             return self
-        _reject_unsafe(self.channel, field="channel")
+        reject_unsafe(self.channel, field="channel")
         for detector, channel in (self.channels or {}).items():
-            _reject_unsafe(channel, field="channel")
+            reject_unsafe(channel, field="channel")
             # The key is a detector name and gets the detector rule. Such an entry can never match a
             # validated detector, so it is inert rather than dangerous -- but an inert override is
             # almost certainly a typo, and saying so beats silently ignoring it.
-            _reject_unsafe(detector, field="detector")
+            reject_unsafe(detector, field="detector")
         return self
 
 
@@ -164,7 +123,7 @@ class NoiseConfig(BaseModel):
     def _validate_detectors(cls, value: list[str]) -> list[str]:
         """Reject a detector name that would put path syntax into a file name."""
         for detector in value:
-            _reject_unsafe(detector, field="detector")
+            reject_unsafe(detector, field="detector")
         return value
 
     detectors: list[str] = Field(

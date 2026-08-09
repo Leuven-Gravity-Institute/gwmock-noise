@@ -74,10 +74,15 @@ directly.
 Detector and channel names may not contain `/` or `\`, and detector names may
 not contain `:`. Those are HDF5 and path syntax: `/` is a group separator inside
 an HDF5 file, and a name carrying one would write the data into a nested group
-instead of the dataset the reader looks for. Such names are rejected when the
-config is built, for the formats that use the channel -- `npy` writes a bare
-array and is unaffected. The HDF5 writer checks again before writing, because a
-config can be constructed in ways that skip validation.
+instead of the dataset the reader looks for. Channel names are checked for the
+formats that use the channel: `npy` writes a bare array and never reads it, so a
+channel is not restricted there. **Detector names are checked for every
+format**, because a detector becomes part of a file name whatever the format is.
+
+The HDF5 writer checks the same rule again, over every detector and channel, and
+before it generates anything -- a config can be constructed in ways that skip
+validation, and a check made while writing would leave the artifacts already
+written behind.
 
 HDF5 artifacts are named for the detector -- `H-H1_1000000000-4.hdf5` -- rather
 than for the channel as frames are. The channel is stored inside the file. Two

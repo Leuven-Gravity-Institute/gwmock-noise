@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import h5py
 import numpy as np
 
+from gwmock_noise.naming import check_artifact_names
 from gwmock_noise.output.frame import FrameWriter
 from gwmock_noise.simulators.base import BaseNoiseSimulator, SimulationResult
 from gwmock_noise.simulators.composite import CompositeNoiseSimulator
@@ -172,16 +173,6 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         output_paths: dict[str, Path] = {}
         for detector, strain in strain_by_detector.items():
             channel = self._channel_for(config=config, detector=detector)
-            # Asserted here as well as at the config boundary, because that boundary is bypassable:
-            # `model_construct` skips validators and this repo's own tests use it. Without this, such a
-            # config wrote a nested group instead of a dataset, returned a path and reported success,
-            # and only reading the file showed the damage. A reviewer reproduced exactly that.
-            if "/" in channel or "\\" in channel:
-                raise ValueError(
-                    f"channel {channel!r} cannot be an HDF5 dataset name: '/' is a group separator, so "
-                    f"the data would be written into a nested group rather than the dataset a reader "
-                    f"looks for. This is normally rejected when the config is built."
-                )
             output_path = Path(config.output.directory) / self._hdf5_name(
                 config=config, detector=detector, channel=channel
             )
@@ -296,6 +287,16 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
             output_paths = self._write_frame_outputs(config=config, simulator=simulator)
             self._sync_public_state(config=config, metadata=simulator.metadata)
         elif config.output.format == "hdf5":
+            # Before generating, not while writing. The config boundary is bypassable -- `model_construct`
+            # skips validators, and this repo's own tests use it -- so the rule is re-asserted here; doing
+            # it per detector inside the writing loop meant a run with one bad name wrote the good
+            # detectors' files and then raised, and did the whole simulation first. Both were a reviewer's.
+            check_artifact_names(
+                detectors=config.detectors,
+                channels={
+                    detector: self._channel_for(config=config, detector=detector) for detector in config.detectors
+                },
+            )
             strain_by_detector = simulator.generate(
                 duration=config.duration,
                 sampling_frequency=config.sampling_frequency,
