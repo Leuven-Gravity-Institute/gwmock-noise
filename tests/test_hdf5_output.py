@@ -93,6 +93,10 @@ class TestWhatGetsWritten:
             assert float(dataset.attrs["x0"]) == pytest.approx(1000000000.0)
             assert float(dataset.attrs["dx"]) == pytest.approx(1.0 / 128.0)
             assert dataset.shape == (512,)  # 4 s at 128 Hz
+            # Also the unit, so the file says what its samples *are*. Dropping it leaves a readable
+            # file of anonymous numbers, which GWpy loads as dimensionless without complaint -- a
+            # mutation removing it survived every other assertion here.
+            assert dataset.attrs["unit"] == "strain"
 
     def test_the_channel_is_named_as_a_frame_would_name_it(self, tmp_path: Path) -> None:
         """`DETECTOR:CHANNEL`, so a reader does not need to know which format it was handed."""
