@@ -42,6 +42,10 @@ dev = [
   "pytest-mock>=3.15.1",
   "pytest>=9.1.1",
   "pytest-github-actions-annotate-failures>=0.4.2",
+  # Not to test GWpy, but to run the one test that proves the HDF5 files this package writes are
+  # readable by it. Without GWpy installed that test skips, and a skipped compatibility guard is
+  # indistinguishable from a passing one -- which is how it stayed broken.
+  "gwpy>=4.0.0",
 ]
 docs = ["zensical>=0.0.53", "mkdocstrings-python>=2.0.5"]
 build = ["hatch>=1.17.1"]

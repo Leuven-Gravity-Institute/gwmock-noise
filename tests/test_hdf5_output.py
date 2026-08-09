@@ -97,6 +97,10 @@ class TestWhatGetsWritten:
             # file of anonymous numbers, which GWpy loads as dimensionless without complaint -- a
             # mutation removing it survived every other assertion here.
             assert dataset.attrs["unit"] == "strain"
+            # `xunit` and `name` complete the set GWpy writes. Nothing asserted them, so a mutation
+            # dropping either survived every h5py check while quietly narrowing what a reader gets.
+            assert dataset.attrs["xunit"] == "s"
+            assert dataset.attrs["name"] == "H1:MOCK_NOISE"
 
     def test_the_channel_is_named_as_a_frame_would_name_it(self, tmp_path: Path) -> None:
         """`DETECTOR:CHANNEL`, so a reader does not need to know which format it was handed."""
@@ -130,14 +134,17 @@ class TestNaming:
     """The file name, which is how a directory listing is read."""
 
     def test_it_follows_the_frame_convention_with_an_hdf5_extension(self, tmp_path: Path) -> None:
-        """`H-H1:MOCK_NOISE_<start>-<duration>.hdf5`, as a frame would be named.
+        """`H-H1_MOCK_NOISE_<start>-<duration>.hdf5`: a frame's shape, with the colon replaced.
 
         The numpy writer's `prefix_detector` shape was the other candidate and is worse here: HDF5
         carries the epoch and duration, so a name that hides them tells the reader less than the file.
+
+        The colon a frame keeps is an underscore here, because this writer -- unlike the frame writer --
+        runs on Windows, where a colon opens an alternate data stream instead of a file.
         """
         result = DefaultNoiseSimulator().run(_config(tmp_path))
 
-        assert result.output_paths["H1"].name == "H-H1:MOCK_NOISE_1000000000-4.hdf5"
+        assert result.output_paths["H1"].name == "H-H1_MOCK_NOISE_1000000000-4.hdf5"
 
     def test_a_prefix_is_applied(self, tmp_path: Path) -> None:
         """A configured prefix leads the name, matching the frame writer."""
@@ -176,7 +183,41 @@ def test_gwpy_reads_what_h5py_wrote(tmp_path: Path) -> None:
 
     result = DefaultNoiseSimulator().run(_config(tmp_path))
 
-    series = TimeSeries.read(str(result.output_paths["H1"]), channel="H1:MOCK_NOISE")
+    # No `channel=`: gwpy's HDF5 reader forwards **kwargs to `read_hdf5_array`, which does not accept
+    # it, so the call raised `TypeError` wherever gwpy was installed and skipped everywhere else -- a
+    # guard that had never once run green. A reviewer found it.
+    series = TimeSeries.read(str(result.output_paths["H1"]))
     assert float(series.t0.value) == pytest.approx(1000000000.0)
     assert float(series.sample_rate.value) == pytest.approx(128.0)
     assert series.size == 512
+
+
+class TestNamingAgreesWithTheFrameWriter:
+    """The two formats must name the same data the same way, and be writable everywhere."""
+
+    def test_an_override_does_not_move_the_site_letter(self, tmp_path: Path) -> None:
+        """`channels={"H1": "L1:CUSTOM"}` is still H1's data, so the name still starts with H.
+
+        Taking the site letter from the channel produced `L-...` here beside the frame writer's `H-...`
+        for one configuration -- a divergence the dataset-key assertion could not see.
+        """
+        result = DefaultNoiseSimulator().run(_config(tmp_path, channels={"H1": "L1:CUSTOM"}))
+
+        assert result.output_paths["H1"].name.startswith("H-")
+
+    def test_a_channel_without_a_colon_keeps_its_detector_letter(self, tmp_path: Path) -> None:
+        """A bare override name must not become the site letter either."""
+        result = DefaultNoiseSimulator().run(_config(tmp_path, channels={"H1": "BARE"}))
+
+        assert result.output_paths["H1"].name.startswith("H-")
+
+    def test_the_name_has_no_colon_so_it_is_a_file_on_windows(self, tmp_path: Path) -> None:
+        """On NTFS a colon opens an alternate data stream, so the artifact would not be a file.
+
+        The frame writer keeps the colon and gets away with it only because GWF cannot be written on
+        Windows at all; this writer runs on that leg of the matrix.
+        """
+        result = DefaultNoiseSimulator().run(_config(tmp_path))
+
+        for path in result.output_paths.values():
+            assert ":" not in path.name

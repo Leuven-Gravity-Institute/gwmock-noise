@@ -172,7 +172,9 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         output_paths: dict[str, Path] = {}
         for detector, strain in strain_by_detector.items():
             channel = self._hdf5_channel(config=config, detector=detector)
-            output_path = Path(config.output.directory) / self._hdf5_name(config=config, channel=channel)
+            output_path = Path(config.output.directory) / self._hdf5_name(
+                config=config, detector=detector, channel=channel
+            )
             with h5py.File(output_path, "w") as handle:
                 dataset = handle.create_dataset(channel, data=np.asarray(strain, dtype=float))
                 dataset.attrs["x0"] = float(config.output.gps_start)
@@ -199,17 +201,27 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         return f"{detector}:{config.output.channel}"
 
     @staticmethod
-    def _hdf5_name(*, config: NoiseConfig, channel: str) -> str:
+    def _hdf5_name(*, config: NoiseConfig, detector: str, channel: str) -> str:
         """Return the file name for one detector's HDF5 artifact.
 
-        Deliberately the frame writer's shape with a different extension, rather than the numpy writer's
+        The frame writer's shape with a different extension, rather than the numpy writer's
         ``prefix_detector`` shape: HDF5 carries the epoch and duration like a frame does, so a name that
         hides them would tell a reader less than the file it names.
+
+        Two differences from the frame writer, both found in review.
+
+        The site letter comes from the **detector**, as the frame writer takes it, not from the channel.
+        Deriving it from the channel let a per-detector override rename the file: ``channels={"H1":
+        "L1:CUSTOM"}`` produced ``L-...hdf5`` beside the frame writer's ``H-...gwf``, for the same data.
+
+        The colon in the channel is replaced with an underscore. A frame's name keeps it, but GWF cannot
+        be written on Windows at all -- lalsuite is unavailable there, so those tests skip -- while this
+        writer runs on the Windows leg of the matrix, and on NTFS a colon opens an alternate data stream
+        rather than a file. The artifact would not exist as a file at all.
         """
-        detector = channel.split(":", maxsplit=1)[0]
         start_token = FrameWriter._format_time_token(config.output.gps_start)
         duration_token = FrameWriter._format_time_token(config.duration)
-        name = f"{detector[0]}-{channel}_{start_token}-{duration_token}.hdf5"
+        name = f"{detector[0]}-{channel.replace(':', '_')}_{start_token}-{duration_token}.hdf5"
         if config.output.prefix:
             name = f"{config.output.prefix}_{name}"
         return name
