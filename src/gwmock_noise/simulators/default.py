@@ -171,7 +171,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         """
         output_paths: dict[str, Path] = {}
         for detector, strain in strain_by_detector.items():
-            channel = self._hdf5_channel(config=config, detector=detector)
+            channel = self._channel_for(config=config, detector=detector)
             output_path = Path(config.output.directory) / self._hdf5_name(
                 config=config, detector=detector, channel=channel
             )
@@ -187,11 +187,14 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         return output_paths
 
     @staticmethod
-    def _hdf5_channel(*, config: NoiseConfig, detector: str) -> str:
+    def _channel_for(*, config: NoiseConfig, detector: str) -> str:
         """Return the channel name for a detector, honouring a per-detector override.
 
         Same rule as the frame writer's: without it the two formats would name the same data
         differently, and a reader would have to know which one it was handed.
+
+        Used by the HDF5 writer and by the metadata sidecar, so the channel a sidecar advertises is by
+        construction the one the artifact holds rather than a second implementation of the same rule.
         """
         channels = config.output.channels
         if channels is not None:
@@ -256,6 +259,12 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
                 "artifact_format": config.output.format,
                 "artifact_path": str(artifact_path),
             }
+            if config.output.format in {"gwf", "hdf5"}:
+                # The channel, for the formats that carry one. HDF5 artifacts are named for the detector,
+                # so unlike a frame their name does not say which channel they hold -- without this a
+                # consumer would have to open every file to find out, which is a cost the rename
+                # introduced. `npy` has no channel to advertise: it is a bare array.
+                file_metadata["channel"] = self._channel_for(config=config, detector=detector)
             metadata_path.write_text(json.dumps(file_metadata, indent=2))
 
     def _sync_public_state(self, *, config: NoiseConfig, metadata: dict[str, Any] | None = None) -> None:

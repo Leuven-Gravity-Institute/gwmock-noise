@@ -25,6 +25,7 @@ one in the sibling project. So these tests assert the grid and the channel, not 
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 
@@ -330,3 +331,35 @@ class TestTheNameIsUniquePerDetector:
 
         for path in result.output_paths.values():
             assert ":" not in path.name
+
+
+class TestTheSidecar:
+    """What a consumer can learn without opening the artifact."""
+
+    def test_it_records_the_channel_the_file_holds(self, tmp_path: Path) -> None:
+        """HDF5 names carry the detector, not the channel, so the sidecar has to carry it.
+
+        A reviewer noted the rename left the channel discoverable only by opening every file. It is not
+        a break, but the sidecar exists precisely so a consumer does not have to.
+        """
+        result = DefaultNoiseSimulator().run(_config(tmp_path))
+
+        sidecar = json.loads((tmp_path / "_H1.json").read_text())
+        assert sidecar["channel"] == "H1:MOCK_NOISE"
+        assert sidecar["artifact_path"] == str(result.output_paths["H1"])
+
+    def test_it_records_an_overridden_channel(self, tmp_path: Path) -> None:
+        """The sidecar reuses the writer's own resolution, so an override cannot desynchronise them."""
+        h5py = pytest.importorskip("h5py")
+        result = DefaultNoiseSimulator().run(_config(tmp_path, channels={"H1": "H1:CUSTOM"}))
+
+        sidecar = json.loads((tmp_path / "_H1.json").read_text())
+        with h5py.File(result.output_paths["H1"], "r") as handle:
+            assert list(handle) == [sidecar["channel"]]
+
+    def test_a_numpy_artifact_advertises_no_channel(self, tmp_path: Path) -> None:
+        """A bare array has none, and claiming one would be inventing it."""
+        DefaultNoiseSimulator().run(_config(tmp_path, format="npy"))
+
+        sidecar = json.loads((tmp_path / "_H1.json").read_text())
+        assert "channel" not in sidecar
