@@ -304,8 +304,10 @@ class TestTheNameIsUniquePerDetector:
         path, and reported success. Round 2 at least failed loudly with `FileNotFoundError`; the naming
         rework turned that into a silent corrupt file. Both reviewers caught it.
 
-        Rejecting at the config boundary is what makes the property hold for every accepted config rather
-        than for the inputs the tests happen to use.
+        Rejected where the config is built *and* asserted again in the writer. The boundary alone was not
+        enough: `model_construct` skips validators, this repo's own tests use it, and a reviewer
+        reproduced the nested group that way. A guarantee that holds only for validator-built configs is
+        not the guarantee the docstring used to claim.
         """
         with pytest.raises(ValueError, match="artifact name"):
             _config(tmp_path, channel="MOCK/NOISE")
@@ -363,3 +365,88 @@ class TestTheSidecar:
 
         sidecar = json.loads((tmp_path / "_H1.json").read_text())
         assert "channel" not in sidecar
+
+
+class TestWhereTheRejectionApplies:
+    """Which configurations the name rule binds, and which it must leave alone."""
+
+    def test_a_numpy_config_may_carry_any_channel(self, tmp_path: Path) -> None:
+        """`npy` writes a bare array and never reads the channel.
+
+        Rejecting it there turned a configuration that had worked into a hard failure on upgrade, for no
+        benefit -- both reviewers flagged it. The rule binds only the formats that use the channel, which
+        is why it is a model validator rather than a field one: a field validator cannot see `format`.
+        """
+        assert OutputConfig(format="npy", channel="MOCK/NOISE").channel == "MOCK/NOISE"
+        assert OutputConfig(format="npy", channels={"H1": "H1:A/B"}).channels == {"H1": "H1:A/B"}
+
+    @pytest.mark.parametrize("fmt", ["gwf", "hdf5"])
+    def test_a_format_that_uses_the_channel_rejects_it(self, fmt: str) -> None:
+        """Both formats put the channel somewhere a slash would break."""
+        with pytest.raises(ValueError, match="artifact name"):
+            OutputConfig(format=fmt, channel="MOCK/NOISE")
+
+    @pytest.mark.parametrize("fmt", ["gwf", "hdf5"])
+    def test_an_override_is_rejected_for_those_formats_too(self, fmt: str) -> None:
+        """A per-detector override reaches the same places the default channel does."""
+        with pytest.raises(ValueError, match="artifact name"):
+            OutputConfig(format=fmt, channels={"H1": "H1:A/B"})
+
+    def test_an_override_key_carrying_path_syntax_is_rejected(self) -> None:
+        """An override key carrying path syntax is refused.
+
+        The key is a detector name, and could never match a validated detector, so the entry is inert
+        rather than dangerous -- but an inert override is almost certainly a typo, and saying so beats
+        ignoring it.
+        """
+        with pytest.raises(ValueError, match="artifact name"):
+            OutputConfig(format="hdf5", channels={"H1:A": "H1:STRAIN"})
+
+
+class TestTheWriterAssertsItsOwnPrecondition:
+    """Because the config boundary is bypassable, and this repo bypasses it."""
+
+    def test_a_bypassed_config_is_refused_rather_than_written(self, tmp_path: Path) -> None:
+        """`model_construct` skips validators; a reviewer used it to reproduce the nested group.
+
+        Without this the writer produced an unreadable file, returned its path, and reported success.
+        """
+        config = NoiseConfig.model_construct(
+            detectors=["H1"],
+            duration=4.0,
+            sampling_frequency=128.0,
+            seed=1,
+            output=OutputConfig.model_construct(
+                directory=tmp_path,
+                format="hdf5",
+                channel="MOCK/NOISE",
+                channels=None,
+                prefix="",
+                gps_start=1000000000.0,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="group separator"):
+            DefaultNoiseSimulator().run(config)
+
+    def test_nothing_is_left_behind_when_it_refuses(self, tmp_path: Path) -> None:
+        """A refusal that leaves a half-written artifact is its own trap."""
+        config = NoiseConfig.model_construct(
+            detectors=["H1"],
+            duration=4.0,
+            sampling_frequency=128.0,
+            seed=1,
+            output=OutputConfig.model_construct(
+                directory=tmp_path,
+                format="hdf5",
+                channel="MOCK/NOISE",
+                channels=None,
+                prefix="",
+                gps_start=1000000000.0,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="group separator"):
+            DefaultNoiseSimulator().run(config)
+
+        assert list(tmp_path.glob("*.hdf5")) == []

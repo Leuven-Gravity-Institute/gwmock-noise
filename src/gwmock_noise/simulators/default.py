@@ -172,6 +172,16 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         output_paths: dict[str, Path] = {}
         for detector, strain in strain_by_detector.items():
             channel = self._channel_for(config=config, detector=detector)
+            # Asserted here as well as at the config boundary, because that boundary is bypassable:
+            # `model_construct` skips validators and this repo's own tests use it. Without this, such a
+            # config wrote a nested group instead of a dataset, returned a path and reported success,
+            # and only reading the file showed the damage. A reviewer reproduced exactly that.
+            if "/" in channel or "\\" in channel:
+                raise ValueError(
+                    f"channel {channel!r} cannot be an HDF5 dataset name: '/' is a group separator, so "
+                    f"the data would be written into a nested group rather than the dataset a reader "
+                    f"looks for. This is normally rejected when the config is built."
+                )
             output_path = Path(config.output.directory) / self._hdf5_name(
                 config=config, detector=detector, channel=channel
             )
@@ -227,8 +237,9 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         than a frame's. It does not make the writer indifferent to what a channel contains: the channel
         is still the HDF5 dataset path, where `/` is a group separator, so a slash there produced a
         nested group and a file GWpy could not read -- silently, since the name was by then clean. That
-        is rejected at the config boundary instead, which is the only version of this that holds for
-        every accepted config rather than for the inputs the tests happen to use.
+        is rejected where the config is built, and asserted again in this writer: the boundary is
+        bypassable (`model_construct` skips validators, and this repo's tests use it), so a guarantee
+        resting on it alone would hold for validator-built configs only.
 
         Args:
             config: The noise config, providing the epoch, the duration and the prefix.

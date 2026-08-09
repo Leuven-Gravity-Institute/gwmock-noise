@@ -113,21 +113,6 @@ class OutputConfig(BaseModel):
         description="GPS start time used for timestamped output formats such as GWF.",
     )
 
-    @field_validator("channel")
-    @classmethod
-    def _validate_channel(cls, value: str) -> str:
-        """Reject a channel that would not survive becoming an HDF5 dataset path."""
-        return _reject_unsafe(value, field="channel")
-
-    @field_validator("channels")
-    @classmethod
-    def _validate_channels(cls, value: dict[str, str] | None) -> dict[str, str] | None:
-        """Reject a per-detector override that would not survive becoming an HDF5 dataset path."""
-        if value is not None:
-            for channel in value.values():
-                _reject_unsafe(channel, field="channel")
-        return value
-
     channel: str = Field(
         default="MOCK_NOISE",
         description="Channel name suffix for GWF frame output. Assembled as {detector}:{channel}.",
@@ -138,6 +123,32 @@ class OutputConfig(BaseModel):
             "Per-detector full channel names, e.g. {'H1': 'H1:STRAIN_NOISE'}. When set, takes precedence over channel."
         ),
     )
+
+    @model_validator(mode="after")
+    def _validate_channel_names(self) -> Self:
+        """Reject channel names that the selected format cannot represent.
+
+        Only for the formats that use the channel. `npy` writes a bare array and never reads it, so
+        rejecting `MOCK/NOISE` there would turn a configuration that worked into a hard failure on
+        upgrade for no benefit -- both reviewers caught that, and it is why this is not a field
+        validator: a field validator cannot see `format`.
+
+        Returns:
+            The validated model.
+
+        Raises:
+            ValueError: If a channel the format will use contains characters it cannot carry.
+        """
+        if self.format not in {"gwf", "hdf5"}:
+            return self
+        _reject_unsafe(self.channel, field="channel")
+        for detector, channel in (self.channels or {}).items():
+            _reject_unsafe(channel, field="channel")
+            # The key is a detector name and gets the detector rule. Such an entry can never match a
+            # validated detector, so it is inert rather than dangerous -- but an inert override is
+            # almost certainly a typo, and saying so beats silently ignoring it.
+            _reject_unsafe(detector, field="detector")
+        return self
 
 
 def _default_components() -> list[NoiseComponentConfig]:
