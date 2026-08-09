@@ -49,19 +49,33 @@ TOML, YAML, or JSON into the same model.
 
 Supported top-level fields:
 
-| Field                | Type                   | Description                                                                                       |
-| -------------------- | ---------------------- | ------------------------------------------------------------------------------------------------- |
-| `detectors`          | `list[str]`            | Names of detectors to simulate (for example `H1`, `L1`)                                           |
-| `duration`           | `float`                | Duration of the realization in seconds (`> 0`)                                                    |
-| `sampling_frequency` | `float`                | Sampling frequency in Hz (`> 0`)                                                                  |
-| `components`         | `list[str \| mapping]` | Ordered simulator components; each entry is a simulator name or mapping                           |
-| `output.directory`   | `path`                 | Output directory for generated files                                                              |
-| `output.prefix`      | `str`                  | Prefix for output file names                                                                      |
-| `output.format`      | `str`                  | Artifact format written by `run(config)`: `npy` (default) or `gwf`                                |
-| `output.gps_start`   | `float`                | GPS start time used for timestamped formats such as `gwf`                                         |
-| `output.channel`     | `str`                  | Channel name suffix for `gwf` output, assembled as `{detector}:{channel}` (default: `MOCK_NOISE`) |
-| `output.channels`    | `dict[str, str]`       | Per-detector full channel names (e.g. `{"H1": "H1:STRAIN_NOISE"}`); overrides `channel` when set  |
-| `seed`               | `int` or `null`        | Optional random seed for reproducibility                                                          |
+| Field                | Type                   | Description                                                                                           |
+| -------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------- |
+| `detectors`          | `list[str]`            | Names of detectors to simulate (for example `H1`, `L1`)                                               |
+| `duration`           | `float`                | Duration of the realization in seconds (`> 0`)                                                        |
+| `sampling_frequency` | `float`                | Sampling frequency in Hz (`> 0`)                                                                      |
+| `components`         | `list[str \| mapping]` | Ordered simulator components; each entry is a simulator name or mapping                               |
+| `output.directory`   | `path`                 | Output directory for generated files                                                                  |
+| `output.prefix`      | `str`                  | Prefix for output file names                                                                          |
+| `output.format`      | `str`                  | Artifact format written by `run(config)`: `npy` (default), `gwf`, or `hdf5`                           |
+| `output.gps_start`   | `float`                | GPS start time used for timestamped formats such as `gwf` and `hdf5`                                  |
+| `output.channel`     | `str`                  | Channel name for `gwf` and `hdf5` output, assembled as `{detector}:{channel}` (default: `MOCK_NOISE`) |
+| `output.channels`    | `dict[str, str]`       | Per-detector full channel names (e.g. `{"H1": "H1:STRAIN_NOISE"}`); overrides `channel` when set      |
+| `seed`               | `int` or `null`        | Optional random seed for reproducibility                                                              |
+
+### Output formats
+
+`npy` writes one array per detector and nothing else. `gwf` writes frame files,
+for pipelines that read frames. `hdf5` writes one file per detector carrying the
+samples together with the epoch, the sample interval, the channel and the unit,
+so a reader does not need to be told the grid separately; GWpy reads these files
+directly.
+
+HDF5 artifacts are named for the detector -- `H-H1_1000000000-4.hdf5` -- rather
+than for the channel as frames are. The channel is stored inside the file. Two
+reasons: a channel can contain characters that are not valid in a file name on
+every platform this runs on, and escaping them made two distinct channels
+collide onto one name, silently losing a detector's data.
 
 For integration with the upstream `gwmock` package, the same structure can be
 nested under a `noise` key inside a larger configuration file. In that case the

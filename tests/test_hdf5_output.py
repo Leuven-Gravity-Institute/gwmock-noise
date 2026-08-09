@@ -134,17 +134,17 @@ class TestNaming:
     """The file name, which is how a directory listing is read."""
 
     def test_it_follows_the_frame_convention_with_an_hdf5_extension(self, tmp_path: Path) -> None:
-        """`H-H1_MOCK_NOISE_<start>-<duration>.hdf5`: a frame's shape, with the colon replaced.
+        """`H-H1_<start>-<duration>.hdf5`: the detector, the epoch and the duration.
 
-        The numpy writer's `prefix_detector` shape was the other candidate and is worse here: HDF5
-        carries the epoch and duration, so a name that hides them tells the reader less than the file.
-
-        The colon a frame keeps is an underscore here, because this writer -- unlike the frame writer --
-        runs on Windows, where a colon opens an alternate data stream instead of a file.
+        The numpy writer's `prefix_detector` shape was one candidate and hides the epoch and duration,
+        which the file carries. The frame writer's channel-in-the-name shape was the other, and put a
+        colon in a name this writer must produce on Windows -- then escaping that colon made two
+        channels collide onto one file. Naming for the detector avoids both; the channel lives in the
+        dataset.
         """
         result = DefaultNoiseSimulator().run(_config(tmp_path))
 
-        assert result.output_paths["H1"].name == "H-H1_MOCK_NOISE_1000000000-4.hdf5"
+        assert result.output_paths["H1"].name == "H-H1_1000000000-4.hdf5"
 
     def test_a_prefix_is_applied(self, tmp_path: Path) -> None:
         """A configured prefix leads the name, matching the frame writer."""
@@ -192,31 +192,52 @@ def test_gwpy_reads_what_h5py_wrote(tmp_path: Path) -> None:
     assert series.size == 512
 
 
-class TestNamingAgreesWithTheFrameWriter:
-    """The two formats must name the same data the same way, and be writable everywhere."""
+class TestTheNameIsUniquePerDetector:
+    """Naming is the part of this writer that has been wrong twice, in opposite directions."""
+
+    def test_two_detectors_never_share_a_file(self, tmp_path: Path) -> None:
+        """The collision that lost data: two channels escaping onto one name.
+
+        With `channels={"H1": "H1:A:B", "L1": "H1:A_B"}` the colon-escaping name produced
+        `H-H1_A_B_...hdf5` for both, so one detector silently overwrote the other and both returned
+        paths pointed at the survivor. A reviewer demonstrated it on disk. Naming for the detector makes
+        a collision impossible, and this asserts the property rather than that one escape.
+        """
+        result = DefaultNoiseSimulator().run(_config(tmp_path, channels={"H1": "H1:A:B", "L1": "H1:A_B"}))
+
+        assert result.output_paths["H1"] != result.output_paths["L1"]
+        assert len(list(tmp_path.glob("*.hdf5"))) == 2
+
+    def test_each_file_holds_its_own_detector_s_channel(self, tmp_path: Path) -> None:
+        """The other half of the collision: the data, not just the paths, must be distinct."""
+        h5py = pytest.importorskip("h5py")
+        result = DefaultNoiseSimulator().run(_config(tmp_path, channels={"H1": "H1:A:B", "L1": "H1:A_B"}))
+
+        with h5py.File(result.output_paths["H1"], "r") as handle:
+            assert list(handle) == ["H1:A:B"]
+        with h5py.File(result.output_paths["L1"], "r") as handle:
+            assert list(handle) == ["H1:A_B"]
 
     def test_an_override_does_not_move_the_site_letter(self, tmp_path: Path) -> None:
-        """`channels={"H1": "L1:CUSTOM"}` is still H1's data, so the name still starts with H.
-
-        Taking the site letter from the channel produced `L-...` here beside the frame writer's `H-...`
-        for one configuration -- a divergence the dataset-key assertion could not see.
-        """
+        """`channels={"H1": "L1:CUSTOM"}` is still H1's data, so the name still starts with H."""
         result = DefaultNoiseSimulator().run(_config(tmp_path, channels={"H1": "L1:CUSTOM"}))
 
-        assert result.output_paths["H1"].name.startswith("H-")
+        assert result.output_paths["H1"].name.startswith("H-H1_")
 
-    def test_a_channel_without_a_colon_keeps_its_detector_letter(self, tmp_path: Path) -> None:
-        """A bare override name must not become the site letter either."""
-        result = DefaultNoiseSimulator().run(_config(tmp_path, channels={"H1": "BARE"}))
+    def test_a_channel_containing_a_path_separator_still_writes_one_file(self, tmp_path: Path) -> None:
+        """A channel is not a path component, and must not become one.
 
-        assert result.output_paths["H1"].name.startswith("H-")
+        `channel="MOCK/NOISE"` put a slash in the name, which opened a directory that did not exist and
+        raised `FileNotFoundError`. The channel is no longer in the name at all, so this is structural
+        rather than another escape to maintain.
+        """
+        result = DefaultNoiseSimulator().run(_config(tmp_path, channel="MOCK/NOISE"))
+
+        assert result.output_paths["H1"].exists()
+        assert result.output_paths["H1"].name == "H-H1_1000000000-4.hdf5"
 
     def test_the_name_has_no_colon_so_it_is_a_file_on_windows(self, tmp_path: Path) -> None:
-        """On NTFS a colon opens an alternate data stream, so the artifact would not be a file.
-
-        The frame writer keeps the colon and gets away with it only because GWF cannot be written on
-        Windows at all; this writer runs on that leg of the matrix.
-        """
+        """On NTFS a colon opens an alternate data stream, so the artifact would not be a file."""
         result = DefaultNoiseSimulator().run(_config(tmp_path))
 
         for path in result.output_paths.values():

@@ -204,24 +204,37 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
     def _hdf5_name(*, config: NoiseConfig, detector: str, channel: str) -> str:
         """Return the file name for one detector's HDF5 artifact.
 
-        The frame writer's shape with a different extension, rather than the numpy writer's
-        ``prefix_detector`` shape: HDF5 carries the epoch and duration like a frame does, so a name that
-        hides them would tell a reader less than the file it names.
+        Named for the **detector**, not the channel: ``H-H1_1000000000-4.hdf5``. The dataset inside
+        carries the channel, so the name does not have to, and one detector writes one file -- which
+        makes the name unique by construction.
 
-        Two differences from the frame writer, both found in review.
+        Three attempts got here, and the discarded two are worth stating because each looked right.
 
-        The site letter comes from the **detector**, as the frame writer takes it, not from the channel.
-        Deriving it from the channel let a per-detector override rename the file: ``channels={"H1":
-        "L1:CUSTOM"}`` produced ``L-...hdf5`` beside the frame writer's ``H-...gwf``, for the same data.
+        Keeping the frame writer's channel-in-the-name shape put a colon in the file name. That is fine
+        for GWF, which cannot be written on Windows at all, but this writer runs on that leg of the
+        matrix, and on NTFS a colon opens an alternate data stream rather than a file.
 
-        The colon in the channel is replaced with an underscore. A frame's name keeps it, but GWF cannot
-        be written on Windows at all -- lalsuite is unavailable there, so those tests skip -- while this
-        writer runs on the Windows leg of the matrix, and on NTFS a colon opens an alternate data stream
-        rather than a file. The artifact would not exist as a file at all.
+        Escaping the colon to an underscore then made the name **not injective**: with
+        ``channels={"H1": "H1:A:B", "H2": "H1:A_B"}`` both detectors produced
+        ``H-H1_A_B_1000000000-4.hdf5``, so one silently overwrote the other and both returned paths
+        pointed at the single surviving file. A reviewer demonstrated it on disk. The default channel
+        already contains an underscore, so the name could not be parsed back either.
+
+        Dropping the channel removes both problems rather than trading one for the other, at the cost of
+        a name that says less than a frame's. The channel is one `h5py` attribute away for anyone who
+        needs it, and `SimulationResult.output_paths` already maps detector to file.
+
+        Args:
+            config: The noise config, providing the epoch, the duration and the prefix.
+            detector: The detector this artifact belongs to.
+            channel: The channel stored inside the file; not part of the name.
+
+        Returns:
+            The file name.
         """
         start_token = FrameWriter._format_time_token(config.output.gps_start)
         duration_token = FrameWriter._format_time_token(config.duration)
-        name = f"{detector[0]}-{channel.replace(':', '_')}_{start_token}-{duration_token}.hdf5"
+        name = f"{detector[0]}-{detector}_{start_token}-{duration_token}.hdf5"
         if config.output.prefix:
             name = f"{config.output.prefix}_{name}"
         return name
