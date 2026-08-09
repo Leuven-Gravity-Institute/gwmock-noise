@@ -518,3 +518,79 @@ class TestTheWriterAssertsItsOwnPrecondition:
         result = DefaultNoiseSimulator().run(config)
 
         assert sorted(result.output_paths) == ["H1", "L1"]
+
+
+class TestEveryFormatChecksItsDetectorNames:
+    """The check ran in the HDF5 branch alone, so `npy` and `gwf` kept the bypass.
+
+    Both reviewers found it independently in round 6. It matters beyond HDF5 because every format names
+    its artifact *and* its JSON sidecar after the detector, so path syntax in a detector escapes the
+    output directory whatever the format -- and the failure is worst where it is quietest: with the
+    subdirectory already present, the run succeeds and reports a path inside it.
+    """
+
+    @staticmethod
+    def _bypassed(directory: Path, detectors: list[str], **output: object) -> NoiseConfig:
+        settings: dict[str, object] = {
+            "directory": directory,
+            "format": "npy",
+            "channel": "MOCK_NOISE",
+            "channels": None,
+            "prefix": "noise",
+            "gps_start": 1000000000.0,
+        }
+        settings.update(output)
+        return NoiseConfig.model_construct(
+            detectors=detectors,
+            duration=4.0,
+            sampling_frequency=128.0,
+            seed=1,
+            components=[],
+            output=OutputConfig.model_construct(**settings),
+        )
+
+    def test_numpy_refuses_a_detector_whose_directory_already_exists(self, tmp_path: Path) -> None:
+        """The silent case: `H1/A` wrote `noise_H1/A.npy` and the run reported success.
+
+        The pre-existing directory is the point. Without it the run still failed, but loudly and only
+        after generating everything; with it, `run()` returned a path one level below where the caller
+        asked for output, and wrote the sidecar there too.
+        """
+        (tmp_path / "noise_H1").mkdir()
+
+        with pytest.raises(ValueError, match="path syntax"):
+            DefaultNoiseSimulator().run(self._bypassed(tmp_path, ["H1/A"]))
+
+        assert list((tmp_path / "noise_H1").iterdir()) == []
+
+    def test_numpy_refuses_a_detector_carrying_a_colon(self, tmp_path: Path) -> None:
+        """`noise_H1:A.npy` is an ordinary name on this machine and an NTFS data stream elsewhere."""
+        with pytest.raises(ValueError, match="path syntax"):
+            DefaultNoiseSimulator().run(self._bypassed(tmp_path, ["H1:A"]))
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_numpy_still_accepts_a_channel_it_never_writes(self, tmp_path: Path) -> None:
+        """The channel rule must not follow the detector rule across formats.
+
+        An `npy` artifact is a bare array with no channel in it or in its name, so refusing a slashed
+        channel would reject a configuration whose channel is never used. This is the same
+        over-broadening that round 4 found at the config boundary, at the writer instead.
+        """
+        result = DefaultNoiseSimulator().run(self._bypassed(tmp_path, ["H1"], channel="MOCK/NOISE"))
+
+        assert sorted(path.name for path in tmp_path.iterdir()) == ["noise_H1.json", "noise_H1.npy"]
+        assert result.output_paths["H1"] == tmp_path / "noise_H1.npy"
+
+    def test_frames_refuse_a_bad_detector_before_reaching_the_writer(self, tmp_path: Path) -> None:
+        """`gwf` had the same gap. Asserted without a GWF backend, deliberately.
+
+        The frame writer raises `ImportError` when no backend is installed, so a run that gets that far
+        proves the pre-flight did not fire. Demanding `ValueError` here therefore discriminates on any
+        machine: with a backend it would otherwise have written `H-H1:A_...gwf`, without one it would
+        have raised the import error instead.
+        """
+        with pytest.raises(ValueError, match="path syntax"):
+            DefaultNoiseSimulator().run(self._bypassed(tmp_path, ["H1:A"], format="gwf"))
+
+        assert list(tmp_path.iterdir()) == []

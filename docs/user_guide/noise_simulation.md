@@ -79,10 +79,13 @@ formats that use the channel: `npy` writes a bare array and never reads it, so a
 channel is not restricted there. **Detector names are checked for every
 format**, because a detector becomes part of a file name whatever the format is.
 
-The HDF5 writer checks the same rule again, over every detector and channel, and
-before it generates anything -- a config can be constructed in ways that skip
-validation, and a check made while writing would leave the artifacts already
-written behind.
+The simulator checks the same rule again before it generates anything, for every
+output format -- a config can be constructed in ways that skip validation, and a
+check made while writing would leave the artifacts already written behind. That
+second check covered HDF5 alone at first, which left the bypass open for `npy`
+and `gwf`: a detector named `H1/A` wrote `noise_H1/A.npy` when that directory
+happened to exist, reporting success for a path below the output directory the
+run was given.
 
 HDF5 artifacts are named for the detector -- `H-H1_1000000000-4.hdf5` -- rather
 than for the channel as frames are. The channel is stored inside the file. Two

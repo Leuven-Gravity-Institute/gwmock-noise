@@ -17,11 +17,17 @@ The rule exists because these names become parts of artifacts: a channel is an H
 and `/` opens a directory anywhere.
 
 **It lives here rather than in the config models because two layers enforce it.** The config rejects a
-bad name when it is built; the writer rejects one that reached it anyway, since `model_construct` skips
-validators and this repo's own tests use it. Those two drifted almost immediately when the rule was
-written twice: the config checked detectors and channels for three characters, and the writer checked
-channels for two, so a bypassed detector still produced a colon in a file name. A reviewer demonstrated
-it. One module, imported by both, is what makes "the writer re-asserts the rule" mean the same rule.
+bad name when it is built; the simulator rejects one that reached it anyway, since `model_construct`
+skips validators and this repo's own tests use it. Those two drifted twice while the rule was still
+being written -- first when it was written out twice (the config checked three characters, the writer
+two, so a bypassed detector still produced a colon in a file name), then when the surviving copy sat in
+the HDF5 branch alone and the numpy and frame writers kept their bypass. One module, imported by both
+layers and applied once for every format, is what makes "the simulator re-asserts the rule" mean the
+same rule everywhere.
+
+The detector rule is universal because every format names its artifact and its JSON sidecar after the
+detector. The channel rule applies only to the formats that carry a channel: an `npy` artifact is a bare
+array, and rejecting its channel would refuse configurations that never use the name.
 """
 
 from __future__ import annotations
@@ -73,7 +79,7 @@ def check_artifact_names(*, detectors: Iterable[str], channels: Mapping[str, str
 
     Args:
         detectors: The detectors this run will write.
-        channels: The resolved channel for each detector.
+        channels: The resolved channel for each detector, or empty for a format that carries no channel.
 
     Raises:
         ValueError: If any name cannot survive becoming part of an artifact.
