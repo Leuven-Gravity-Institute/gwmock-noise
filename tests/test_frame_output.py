@@ -302,6 +302,21 @@ class TestTheWriterChecksItsOwnInputs:
         with pytest.raises(ValueError, match="path syntax"):
             self._writer(tmp_path, monkeypatch, channels={"H1/A": "H1:STRAIN"})
 
+    def test_a_bad_override_channel_is_refused_at_construction(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The override's value, checked before any detector list exists.
+
+        `write` re-derives channels through `_channel_name`, so an override for a detector that *is*
+        written is caught there regardless -- which is why a mutation deleting this line survived until
+        this test existed. What only `__init__` can catch is an override for a detector this writer is
+        never asked to write: its value reaches no file name, so `write` has nothing to check. Reported
+        for the same reason the config layer reports it, and the same reason the bad *key* above is
+        reported: a name that can only ever silently not apply is a mistake, not a permission.
+        """
+        with pytest.raises(ValueError, match="group separator"):
+            self._writer(tmp_path, monkeypatch, channels={"V1": "V1:STRAIN/NOISE"})
+
     def test_an_ordinary_writer_is_unaffected(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """The colon in a frame channel is normal and must survive: frame names embed the channel."""
         writer = self._writer(tmp_path, monkeypatch, channels={"H1": "H1:STRAIN_NOISE"})
