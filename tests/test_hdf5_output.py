@@ -594,3 +594,15 @@ class TestEveryFormatChecksItsDetectorNames:
             DefaultNoiseSimulator().run(self._bypassed(tmp_path, ["H1:A"], format="gwf"))
 
         assert list(tmp_path.iterdir()) == []
+
+    def test_frames_refuse_a_bad_channel_too(self, tmp_path: Path) -> None:
+        """A frame carries a channel, so the channel rule reaches `gwf` as well as HDF5.
+
+        Written because a mutation survived: narrowing the pre-flight's channel argument from
+        ``{"gwf", "hdf5"}`` to ``"hdf5"`` alone changed nothing any test could see, which is exactly the
+        shape of the round-6 defect -- a rule covering one format while the docstring claims two.
+        """
+        with pytest.raises(ValueError, match="group separator"):
+            DefaultNoiseSimulator().run(self._bypassed(tmp_path, ["H1"], format="gwf", channel="MOCK/NOISE"))
+
+        assert list(tmp_path.iterdir()) == []
