@@ -249,6 +249,11 @@ def test_gwpy_reads_what_h5py_wrote(tmp_path: Path) -> None:
     assert float(series.t0.value) == pytest.approx(1000000000.0)
     assert float(series.sample_rate.value) == pytest.approx(128.0)
     assert series.size == 512
+    # What GWpy *recovers*, not only that it loaded: the h5py tests pin what the writer stores, so a
+    # reader silently losing the unit or the channel -- the "anonymous numbers" failure from round 1 --
+    # would have passed this guard. A reviewer pointed that out.
+    assert str(series.unit) == "strain"
+    assert str(series.channel) == "H1:MOCK_NOISE"
 
 
 class TestTheNameIsUniquePerDetector:
@@ -289,17 +294,35 @@ class TestTheNameIsUniquePerDetector:
 
         assert result.output_paths["H1"].name.startswith("H-H1_")
 
-    def test_a_channel_containing_a_path_separator_still_writes_one_file(self, tmp_path: Path) -> None:
-        """A channel is not a path component, and must not become one.
+    def test_a_channel_containing_a_path_separator_is_refused(self, tmp_path: Path) -> None:
+        """A slash cannot be written at all, so it is rejected where it is configured.
 
-        `channel="MOCK/NOISE"` put a slash in the name, which opened a directory that did not exist and
-        raised `FileNotFoundError`. The channel is no longer in the name at all, so this is structural
-        rather than another escape to maintain.
+        This test previously asserted that such a channel "still writes one file", and passed -- on an
+        artifact GWpy could not read. The slash was out of the *name* but still in the HDF5 dataset path,
+        where h5py treats it as a group separator, so the writer produced a nested group, returned a
+        path, and reported success. Round 2 at least failed loudly with `FileNotFoundError`; the naming
+        rework turned that into a silent corrupt file. Both reviewers caught it.
+
+        Rejecting at the config boundary is what makes the property hold for every accepted config rather
+        than for the inputs the tests happen to use.
         """
-        result = DefaultNoiseSimulator().run(_config(tmp_path, channel="MOCK/NOISE"))
+        with pytest.raises(ValueError, match="artifact name"):
+            _config(tmp_path, channel="MOCK/NOISE")
 
-        assert result.output_paths["H1"].exists()
-        assert result.output_paths["H1"].name == "H-H1_1000000000-4.hdf5"
+    def test_a_detector_carrying_path_syntax_is_refused(self, tmp_path: Path) -> None:
+        """`detectors=["H1:A"]` put a colon back into the file name it is used to build.
+
+        The Windows-safety property held only for ordinary detector names until this was rejected -- a
+        reviewer pointed out that the guarantee was about the inputs I had tried, not about the inputs
+        the config accepts.
+        """
+        with pytest.raises(ValueError, match="artifact name"):
+            NoiseConfig(
+                detectors=["H1:A"],
+                duration=4.0,
+                sampling_frequency=128.0,
+                output=OutputConfig(directory=tmp_path, format="hdf5"),
+            )
 
     def test_the_name_has_no_colon_so_it_is_a_file_on_windows(self, tmp_path: Path) -> None:
         """On NTFS a colon opens an alternate data stream, so the artifact would not be a file."""

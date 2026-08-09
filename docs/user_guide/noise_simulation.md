@@ -71,6 +71,13 @@ samples together with the epoch, the sample interval, the channel and the unit,
 so a reader does not need to be told the grid separately; GWpy reads these files
 directly.
 
+Detector and channel names may not contain `/` or `\`, and detector names may
+not contain `:`. Those are HDF5 and path syntax: `/` is a group separator inside
+an HDF5 file, and a name carrying one would write the data into a nested group
+instead of the dataset the reader looks for. Such names are rejected when the
+config is built rather than escaped, so an artifact is never written somewhere
+other than where it is reported.
+
 HDF5 artifacts are named for the detector -- `H-H1_1000000000-4.hdf5` -- rather
 than for the channel as frames are. The channel is stored inside the file. Two
 reasons: a channel can contain characters that are not valid in a file name on

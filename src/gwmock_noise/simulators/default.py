@@ -220,9 +220,12 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         pointed at the single surviving file. A reviewer demonstrated it on disk. The default channel
         already contains an underscore, so the name could not be parsed back either.
 
-        Dropping the channel removes both problems rather than trading one for the other, at the cost of
-        a name that says less than a frame's. The channel is one `h5py` attribute away for anyone who
-        needs it, and `SimulationResult.output_paths` already maps detector to file.
+        Dropping the channel from the *name* removes both of those, at the cost of a name that says less
+        than a frame's. It does not make the writer indifferent to what a channel contains: the channel
+        is still the HDF5 dataset path, where `/` is a group separator, so a slash there produced a
+        nested group and a file GWpy could not read -- silently, since the name was by then clean. That
+        is rejected at the config boundary instead, which is the only version of this that holds for
+        every accepted config rather than for the inputs the tests happen to use.
 
         Args:
             config: The noise config, providing the epoch, the duration and the prefix.
