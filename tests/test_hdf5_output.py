@@ -595,6 +595,21 @@ class TestEveryFormatChecksItsDetectorNames:
 
         assert list(tmp_path.iterdir()) == []
 
+    def test_the_preflight_refuses_a_frame_channel_before_the_directory_exists(self, tmp_path: Path) -> None:
+        """What the simulator's pre-flight still adds for `gwf`, now that the writer checks too.
+
+        `FrameWriter` validates its own inputs, so narrowing the pre-flight's channel argument back to
+        `hdf5` alone stopped changing the *outcome* -- a mutation doing exactly that survived once N1
+        landed. The difference is *when*: the pre-flight runs before `mkdir`, the writer long after it.
+        Without the pre-flight this run still refuses, but leaves the output directory behind.
+        """
+        target = tmp_path / "not-created-yet"
+
+        with pytest.raises(ValueError, match="group separator"):
+            DefaultNoiseSimulator().run(self._bypassed(target, ["H1"], format="gwf", channel="MOCK/NOISE"))
+
+        assert not target.exists()
+
     def test_frames_refuse_a_bad_channel_too(self, tmp_path: Path) -> None:
         """A frame carries a channel, so the channel rule reaches `gwf` as well as HDF5.
 
@@ -652,6 +667,16 @@ class TestThePrefixIsANameToo:
         for artifact_format in ("npy", "gwf", "hdf5"):
             with pytest.raises(ValueError, match="path syntax"):
                 OutputConfig(format=artifact_format, prefix="sub/run")
+
+    def test_a_prefix_carrying_a_colon_is_refused(self) -> None:
+        """The prefix takes the detector rule, not the channel one.
+
+        A mutation swapping the two survived: the channel rule permits `:`, which is right for a channel
+        written inside a frame name and wrong for a prefix, where it opens an alternate data stream on
+        NTFS. Nothing distinguished the two rules for this field until this test.
+        """
+        with pytest.raises(ValueError, match="path syntax"):
+            OutputConfig(format="npy", prefix="run:a")
 
     def test_an_ordinary_prefix_still_works(self) -> None:
         """The rule must not reject the prefixes the examples and tests already use."""
