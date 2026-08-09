@@ -829,7 +829,6 @@ build = [
     { name = "hatch" },
 ]
 dev = [
-    { name = "gwpy" },
     { name = "prek" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -866,7 +865,6 @@ provides-extras = ["deepextractor", "frame", "gengli", "gwosc", "gwpy"]
 [package.metadata.requires-dev]
 build = [{ name = "hatch", specifier = ">=1.17.1" }]
 dev = [
-    { name = "gwpy", specifier = ">=4.0.0" },
     { name = "prek", specifier = ">=0.4.12" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },

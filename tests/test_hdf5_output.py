@@ -24,10 +24,13 @@ one in the sibling project. So these tests assert the grid and the channel, not 
 
 from __future__ import annotations
 
+import importlib.util
+import os
 from pathlib import Path
 
 import numpy as np
 import pytest
+from _pytest.outcomes import Skipped
 
 from gwmock_noise import NoiseConfig, OutputConfig
 from gwmock_noise.simulators.default import DefaultNoiseSimulator
@@ -51,6 +54,57 @@ def _config(directory: Path, **overrides: object) -> NoiseConfig:
         output=OutputConfig(**output),
         seed=7,
     )
+
+
+def _require_gwpy_or_skip() -> None:
+    """Skip without GWpy, unless this is the environment meant to exercise the guard.
+
+    Extracted so the *failure* path can be tested. A guard whose failure branch has never run is a guard
+    on paper: this one exists because the compatibility test previously skipped everywhere and read as
+    passing for a whole review round.
+
+    Raises:
+        AssertionError: If `GWMOCK_NOISE_REQUIRE_GWPY` is set and GWpy is nonetheless absent.
+    """
+    installed = importlib.util.find_spec("gwpy") is not None
+    if os.environ.get("GWMOCK_NOISE_REQUIRE_GWPY") == "1":
+        assert installed, (
+            "GWMOCK_NOISE_REQUIRE_GWPY is set, so this is the environment meant to exercise the GWpy "
+            "compatibility guard -- but GWpy is not installed, so the guard would have skipped instead."
+        )
+        return
+    if not installed:
+        # `find_spec` rather than `pytest.importorskip`, so both branches can be exercised: importorskip
+        # calls `find_spec` internally, so a test that fakes the module's absence breaks importorskip's
+        # own machinery instead of reaching this branch.
+        pytest.skip("gwpy is not installed")
+
+
+class TestTheGuardItself:
+    """The skip logic, because a compatibility guard that silently skips is the failure it prevents."""
+
+    def test_it_fails_when_the_environment_demanded_gwpy_and_lacks_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The CI leg that installs the extra must not go quiet if the extra disappears."""
+        monkeypatch.setenv("GWMOCK_NOISE_REQUIRE_GWPY", "1")
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+
+        with pytest.raises(AssertionError, match="would have skipped"):
+            _require_gwpy_or_skip()
+
+    def test_it_skips_where_gwpy_is_merely_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Everywhere else, a missing optional dependency is a skip rather than a failure."""
+        monkeypatch.delenv("GWMOCK_NOISE_REQUIRE_GWPY", raising=False)
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+
+        with pytest.raises(Skipped):
+            _require_gwpy_or_skip()
+
+    def test_it_proceeds_when_gwpy_is_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """And does nothing at all in the ordinary case."""
+        monkeypatch.setenv("GWMOCK_NOISE_REQUIRE_GWPY", "1")
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+
+        _require_gwpy_or_skip()
 
 
 class TestTheFormatIsRepresentable:
@@ -177,8 +231,13 @@ def test_gwpy_reads_what_h5py_wrote(tmp_path: Path) -> None:
     The writer uses `h5py` because GWpy is an optional extra here and a primary format must not need one.
     The attributes it records are GWpy's own, so a reader with GWpy installed must not be able to tell --
     if that ever stops being true, the format has quietly forked.
+
+    **This skips where GWpy is absent, and CI has one leg that installs it.** A guard that skips
+    everywhere is indistinguishable from one that passes, which is exactly how this test spent a review
+    round broken. `GWMOCK_NOISE_REQUIRE_GWPY` is set on that leg, and turns the skip into a failure, so
+    losing the leg is loud rather than silent.
     """
-    pytest.importorskip("gwpy")
+    _require_gwpy_or_skip()
     from gwpy.timeseries import TimeSeries
 
     result = DefaultNoiseSimulator().run(_config(tmp_path))
@@ -193,7 +252,13 @@ def test_gwpy_reads_what_h5py_wrote(tmp_path: Path) -> None:
 
 
 class TestTheNameIsUniquePerDetector:
-    """Naming is the part of this writer that has been wrong twice, in opposite directions."""
+    """Naming is the part of this writer that has been wrong twice, in opposite directions.
+
+    Note what is *not* claimed: that the two formats name a file identically. They deliberately do not --
+    a frame keeps the channel and a colon, this keeps the detector -- and an earlier version of this
+    docstring said otherwise while the tests below checked only the site letter and the absence of a
+    colon.
+    """
 
     def test_two_detectors_never_share_a_file(self, tmp_path: Path) -> None:
         """The collision that lost data: two channels escaping onto one name.
