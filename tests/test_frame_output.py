@@ -227,3 +227,84 @@ def test_frame_writer_channels_dict_falls_back_for_unmapped_detector(
     )
     assert writer._channel_name("H1") == "H1:CUSTOM"
     assert writer._channel_name("L1") == "L1:FALLBACK"
+
+
+class TestTheWriterChecksItsOwnInputs:
+    """`FrameWriter` is public API, so a caller can reach it without a `NoiseConfig`.
+
+    Both reviewers found this in round 8 of the HDF5 work: the simulator's pre-flight closed the path
+    through `run()`, and left the writer itself open. It is not a second copy of the config's rule -- a
+    direct caller never passes through the config at all -- but it is the same rule, from `naming`.
+    """
+
+    @staticmethod
+    def _writer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> FrameWriter:
+        frame_output = import_module("gwmock_noise.output.frame")
+        monkeypatch.setattr(frame_output, "_require_gwf_backend", lambda: None)
+        return FrameWriter(FixedNoiseSimulator(), gps_start=100.0, output_dir=tmp_path, **kwargs)
+
+    def test_a_detector_carrying_path_syntax_is_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A reviewer's exact reproduction: this returned `H-H1/A:MOCK_NOISE_100-2.gwf`."""
+        writer = self._writer(tmp_path, monkeypatch)
+        (tmp_path / "H-H1").mkdir()
+
+        with pytest.raises(ValueError, match="path syntax"):
+            writer.write(duration=2.0, sampling_frequency=4.0, detectors=["H1/A"])
+
+        assert list((tmp_path / "H-H1").iterdir()) == []
+
+    def test_a_channel_replaced_after_construction_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Why `write` re-checks the channel when `__init__` already did.
+
+        A reviewer's second reproduction was `FrameWriter(..., channel="MOCK/NOISE")`, which is refused at
+        construction now, so that input cannot reach `write` at all. `channel` is a plain public
+        attribute, though, so assigning to it afterwards gets there instead, and without the check in
+        `write` that produced `H-H1:MOCK/NOISE_100-2.gwf`. Written because the construction-time check
+        made the one in `write` look redundant, and it is not.
+        """
+        writer = self._writer(tmp_path, monkeypatch)
+        writer.channel = "MOCK/NOISE"
+        (tmp_path / "H-H1:MOCK").mkdir()
+
+        with pytest.raises(ValueError, match="group separator"):
+            writer.write(duration=2.0, sampling_frequency=4.0, detectors=["H1"])
+
+        assert list((tmp_path / "H-H1:MOCK").iterdir()) == []
+
+    def test_a_bad_channel_is_refused_at_construction_before_the_directory_is_made(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The channel is known before any detector is, so it is refused before the `mkdir`.
+
+        `__init__` creates `output_dir`. Refusing only at `write` would leave a directory made for a
+        writer that was never going to be allowed to write -- the mistake the simulator made and a
+        reviewer caught there.
+        """
+        target = tmp_path / "not-created-yet"
+
+        with pytest.raises(ValueError, match="group separator"):
+            self._writer(target, monkeypatch, channel="MOCK/NOISE")
+
+        assert not target.exists()
+
+    def test_a_bad_override_is_refused_even_for_a_detector_never_written(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Matching the config layer, which rejects override keys rather than ignoring them.
+
+        An override for a detector absent from `detectors` never reaches a file name, so this rejects
+        slightly more than the artifacts strictly require. That is deliberate and matches
+        `_validate_channel_names`: a key that will silently never apply is a configuration error worth
+        reporting, not a name worth permitting.
+        """
+        with pytest.raises(ValueError, match="path syntax"):
+            self._writer(tmp_path, monkeypatch, channels={"H1/A": "H1:STRAIN"})
+
+    def test_an_ordinary_writer_is_unaffected(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The colon in a frame channel is normal and must survive: frame names embed the channel."""
+        writer = self._writer(tmp_path, monkeypatch, channels={"H1": "H1:STRAIN_NOISE"})
+
+        assert writer._channel_name("H1") == "H1:STRAIN_NOISE"
+        assert writer._frame_path("H1", "H1:STRAIN_NOISE", 100.0, 2.0).name == "H-H1:STRAIN_NOISE_100-2.gwf"

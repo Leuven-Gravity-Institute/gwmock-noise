@@ -5,6 +5,7 @@ from __future__ import annotations
 from importlib import import_module
 from pathlib import Path
 
+from gwmock_noise.naming import check_artifact_names, reject_unsafe
 from gwmock_noise.output.gwpy import GWpyAdapter
 from gwmock_noise.simulators.protocol import NoiseSimulator
 
@@ -39,8 +40,19 @@ class FrameWriter:
         channels: dict[str, str] | None = None,
         prefix: str = "",
     ) -> None:
-        """Initialize the writer for contiguous GWF output."""
+        """Initialize the writer for contiguous GWF output.
+
+        Raises:
+            ValueError: If a channel name cannot survive becoming part of a file name.
+        """
         _require_gwf_backend()
+        # Before the mkdir, so a writer that will never be allowed to write does not leave a directory
+        # behind -- the same ordering `DefaultNoiseSimulator.run` had to learn. Only the names known now
+        # are checked; detectors arrive at `write`, which checks them there.
+        reject_unsafe(channel, field="channel")
+        for override_detector, override in (channels or {}).items():
+            reject_unsafe(override_detector, field="detector")
+            reject_unsafe(override, field="channel")
         self.base = base
         self.gps_start = gps_start
         self.output_dir = Path(output_dir)
@@ -56,7 +68,21 @@ class FrameWriter:
         detectors: list[str],
         seed: int | None = None,
     ) -> dict[str, Path]:
-        """Write one GWF file per detector for the requested segment."""
+        """Write one GWF file per detector for the requested segment.
+
+        Raises:
+            ValueError: If a detector or resolved channel cannot survive becoming part of a file name.
+        """
+        # First, before the backend check and before generating. `FrameWriter` is public API, so this is
+        # not a redundant re-assertion of what a config validator already did: a caller constructing the
+        # writer directly never passes through `NoiseConfig`. Reviewers found `write(detectors=["H1/A"])`
+        # returning `H-H1/A:MOCK_NOISE_100-2.gwf` -- a path below the output directory, reported as the
+        # artifact. The channel legitimately contains `:` here, since frame names embed it, which is why
+        # the two rules stay distinct rather than collapsing into one character set.
+        check_artifact_names(
+            detectors=detectors,
+            channels={detector: self._channel_name(detector) for detector in detectors},
+        )
         _require_gwf_backend()
         segment_start = self.gps_start
         adapter = GWpyAdapter(self.base, gps_start=segment_start)
