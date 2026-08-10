@@ -9,6 +9,7 @@ from gwmock_noise.naming import (
     check_artifact_names,
     reject_colliding_names,
     reject_overlong,
+    reject_repeated,
     reject_unsafe,
 )
 from gwmock_noise.output.gwpy import GWpyAdapter
@@ -174,6 +175,10 @@ class FrameWriter:
         Raises:
             ValueError: If any composed frame name exceeds the limit.
         """
+        # Before the names are collected: this map is keyed by detector too, so a repeat would collapse
+        # and one frame would stand in for two requested detectors.
+        reject_repeated(detectors)
+
         names = {
             detector: self._frame_path(detector, self._channel_name(detector), gps_start, duration).name
             for detector in detectors

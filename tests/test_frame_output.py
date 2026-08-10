@@ -543,3 +543,36 @@ class TestFrameNameCollisions:
         output = writer.write(duration=1.0, sampling_frequency=4.0, detectors=["H1", "L1"])
 
         assert len({str(path) for path in output.values()}) == 2
+
+
+class TestARepeatedDetectorReachesTheFrameWriter:
+    """`FrameWriter` is public API, so the repeat rule has to hold here without any config."""
+
+    def test_a_repeat_is_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """It returned one path for two detectors and wrote one frame."""
+        frame_output = import_module("gwmock_noise.output.frame")
+
+        class FakeSeries:
+            def __init__(self) -> None:
+                self.channel = ""
+
+            def write(self, path: Path, *, format: str, overwrite: bool) -> None:  # noqa: A002
+                path.write_bytes(b"")
+
+        class FakeAdapter:
+            def __init__(self, base: FixedNoiseSimulator, gps_start: float) -> None:
+                self.base = base
+                self.gps_start = gps_start
+
+            def generate(self, *, duration: float, sampling_frequency: float, detectors: list[str], seed: int | None):
+                self.gps_start += duration
+                return {detector: FakeSeries() for detector in detectors}
+
+        monkeypatch.setattr(frame_output, "_require_gwf_backend", lambda: None)
+        monkeypatch.setattr(frame_output, "GWpyAdapter", FakeAdapter)
+        writer = FrameWriter(FixedNoiseSimulator(), gps_start=0.0, output_dir=tmp_path)
+
+        with pytest.raises(ValueError, match="more than once"):
+            writer.write(duration=1.0, sampling_frequency=4.0, detectors=["H1", "H1"])
+
+        assert list(tmp_path.iterdir()) == []

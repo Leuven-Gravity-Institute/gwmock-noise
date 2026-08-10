@@ -79,6 +79,8 @@ An empty prefix is accepted, but note that it does not remove the separator: the
 artifacts are named `_H1.npy` and `_H1.json`, not `H1.npy`. Two detectors may
 also not compose the same artifact name -- `H1` and `h1` differ as strings and
 name one file on macOS and Windows -- and a detector may not be repeated. Those
+two are checked by the simulator and by the frame writer as well as by the
+config, since a configuration can be built in ways that skip validation. Those
 are HDF5 and path syntax: `/` is a group separator inside an HDF5 file, and a
 name carrying one would write the data into a nested group instead of the
 dataset the reader looks for. Channel names are checked for the formats that use

@@ -10,7 +10,12 @@ from typing import TYPE_CHECKING, Any
 import h5py
 import numpy as np
 
-from gwmock_noise.naming import check_artifact_names, reject_colliding_names, reject_overlong
+from gwmock_noise.naming import (
+    check_artifact_names,
+    reject_colliding_names,
+    reject_overlong,
+    reject_repeated,
+)
 from gwmock_noise.output.frame import FrameWriter
 from gwmock_noise.simulators.base import BaseNoiseSimulator, SimulationResult
 from gwmock_noise.simulators.composite import CompositeNoiseSimulator
@@ -315,6 +320,13 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         Raises:
             ValueError: If any composed name exceeds the filesystem's per-component limit.
         """
+        # Before the names are collected, not after. Each map below is keyed by detector, so an exact
+        # repeat collapses into one entry and the collision check then sees nothing wrong -- which is how
+        # `model_construct(detectors=["H1", "H1"])` reported one artifact for two detectors and wrote one
+        # file. Both reviewers found it: the config validator alone was never going to be enough, on the
+        # very path this pre-flight exists to cover.
+        reject_repeated(config.detectors)
+
         sidecars = {detector: self._sidecar_name(config=config, detector=detector) for detector in config.detectors}
         artifacts: dict[str, str] = {}
         if config.output.format == "hdf5":

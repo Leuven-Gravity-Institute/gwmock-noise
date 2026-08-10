@@ -7,7 +7,7 @@ from typing import Any, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from gwmock_noise.naming import reject_unsafe
+from gwmock_noise.naming import reject_repeated, reject_unsafe
 
 
 class NoiseComponentConfig(BaseModel):
@@ -154,13 +154,7 @@ class NoiseConfig(BaseModel):
         """
         for detector in value:
             reject_unsafe(detector, field="detector")
-        duplicates = {detector for detector in value if value.count(detector) > 1}
-        if duplicates:
-            raise ValueError(
-                f"detectors contains {sorted(duplicates)!r} more than once; each detector writes one "
-                f"artifact, so a repeat would silently produce fewer files than detectors requested."
-            )
-        return value
+        return reject_repeated(value)
 
     detectors: list[str] = Field(
         default=["H1", "L1"],

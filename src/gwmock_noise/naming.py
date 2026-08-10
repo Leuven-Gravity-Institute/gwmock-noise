@@ -164,6 +164,37 @@ def reject_overlong(name: str, *, described_as: str) -> str:
     )
 
 
+def reject_repeated(detectors: Iterable[str]) -> list[str]:
+    """Return the detectors unchanged, or raise if one appears more than once.
+
+    Separate from :func:`reject_colliding_names` because it must run *before* the composed names are
+    collected. Every layer that collects names does so into a dict keyed by detector, so an exact repeat
+    collapses to one entry and the collision check then sees nothing wrong -- the run reports one artifact
+    for two requested detectors, writes one file, and raises nothing. Both reviewers found that on the
+    bypass path after the config validator alone had been thought sufficient.
+
+    Only exact repeats. `["H1", "h1"]` survives this and is caught by the collision check, which is where
+    the filesystem's opinion about case belongs.
+
+    Args:
+        detectors: The detectors a run or a writer was asked for.
+
+    Returns:
+        The detectors, unchanged.
+
+    Raises:
+        ValueError: If any detector appears more than once.
+    """
+    collected = list(detectors)
+    repeated = sorted({detector for detector in collected if collected.count(detector) > 1})
+    if repeated:
+        raise ValueError(
+            f"detectors contains {repeated!r} more than once; each detector writes one artifact, so a "
+            f"repeat would silently produce fewer files than detectors requested."
+        )
+    return collected
+
+
 def reject_colliding_names(names: Mapping[str, str], *, described_as: str) -> None:
     """Raise if two owners would write to what the filesystem may treat as one file.
 

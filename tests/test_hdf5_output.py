@@ -1095,3 +1095,66 @@ class TestTwoDetectorsOneFile:
         result = DefaultNoiseSimulator().run(_config(tmp_path))
 
         assert sorted(result.output_paths) == ["H1", "L1"]
+
+
+class TestARepeatedDetectorOnTheBypassPath:
+    """The repeat rule needed the same two layers every other name rule here has.
+
+    Round 15: I put it in the config validator only. Both reviewers found that `run` collects its names
+    into dicts keyed by detector, so an exact repeat collapses to one entry *before* the collision check
+    looks at them -- on the very path the pre-flight exists to cover.
+    """
+
+    @pytest.mark.parametrize("artifact_format", ["npy", "hdf5"])
+    def test_the_simulator_refuses_a_repeat_a_bypassed_config_carries(
+        self, tmp_path: Path, artifact_format: str
+    ) -> None:
+        """It reported one path for two detectors and wrote one file, raising nothing."""
+        config = NoiseConfig.model_construct(
+            detectors=["H1", "H1"],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=[],
+            output=OutputConfig.model_construct(
+                directory=tmp_path,
+                format=artifact_format,
+                channel="MOCK_NOISE",
+                channels=None,
+                prefix="noise",
+                gps_start=0.0,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="more than once"):
+            DefaultNoiseSimulator().run(config)
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_case_differing_detectors_are_still_the_collision_rule_s_business(self, tmp_path: Path) -> None:
+        """`["H1", "h1"]` are not repeats, and must be caught by the other rule rather than this one.
+
+        The two are deliberately separate: an exact repeat collapses a dict key, while a case collision
+        collapses a filename. Folding them together would put the filesystem's opinion about case into a
+        check that runs before any name exists.
+        """
+        config = NoiseConfig.model_construct(
+            detectors=["H1", "h1"],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=[],
+            output=OutputConfig.model_construct(
+                directory=tmp_path,
+                format="npy",
+                channel="MOCK_NOISE",
+                channels=None,
+                prefix="noise",
+                gps_start=0.0,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="collide"):
+            DefaultNoiseSimulator().run(config)
+
+        assert list(tmp_path.iterdir()) == []
