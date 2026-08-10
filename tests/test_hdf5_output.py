@@ -706,3 +706,52 @@ class TestThePrefixIsANameToo:
             DefaultNoiseSimulator().run(config)
 
         assert not target.exists()
+
+
+class TestAnEmptyNameIsNotAName:
+    """A rule written as a character test passes the empty string, which names nothing.
+
+    Found by a reviewer in the confirming round. The other reviewer read these as pre-existing and
+    non-blocking; on `main` every HDF5 case raises `ValidationError` instead, because the format could
+    not be represented at all -- so the HDF5 failures are surfaces this branch opened, not old ones.
+    """
+
+    def test_an_empty_detector_is_refused(self) -> None:
+        """`npy` wrote `noise_.npy`; HDF5 and GWF raised `IndexError` from `detector[0]`."""
+        with pytest.raises(ValueError, match="empty"):
+            NoiseConfig(detectors=[""], duration=1.0, sampling_frequency=4.0, seed=1)
+
+    def test_an_empty_channel_is_refused_for_the_formats_that_carry_one(self) -> None:
+        """Empty channels reached h5py as a dataset name."""
+        for artifact_format in ("gwf", "hdf5"):
+            with pytest.raises(ValueError, match="empty"):
+                OutputConfig(format=artifact_format, channel="")
+
+    def test_an_empty_channel_override_is_refused(self) -> None:
+        """The worst of the three: it raised `TypeError` *after* creating the file.
+
+        `noise_H-H1_0-1.hdf5` was left behind by a run that then failed -- the partial write this branch
+        spent several rounds eliminating, reintroduced through a name nobody thought to reject.
+        """
+        with pytest.raises(ValueError, match="empty"):
+            OutputConfig(format="hdf5", channels={"H1": ""})
+
+    def test_an_empty_prefix_is_still_the_default(self) -> None:
+        """The prefix is exempt, because empty is what "no prefix" means.
+
+        The rule must not become "no name may be empty": that would reject the default configuration and
+        every example that omits the field.
+        """
+        # The field's default is "noise", not the empty string -- what matters is that empty is
+        # *accepted*, which is what the exemption is for and what the tests here pass explicitly.
+        assert OutputConfig(format="hdf5").prefix == "noise"
+        assert OutputConfig(format="npy", prefix="").prefix == ""
+        assert OutputConfig(format="hdf5", prefix="").prefix == ""
+
+    def test_an_empty_channel_is_still_fine_for_npy(self) -> None:
+        """Unused names stay unchecked, as with the character rule.
+
+        `npy` writes a bare array with no channel in it or in its name, so an empty channel there is
+        inert. Rejecting it would refuse configurations that work.
+        """
+        assert OutputConfig(format="npy", channel="").channel == ""

@@ -10,24 +10,29 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 
-"""What a detector or channel name may contain, in one place.
+"""What a detector, channel, or prefix may contain, in one place.
 
 The rule exists because these names become parts of artifacts: a channel is an HDF5 dataset path, where
 `/` opens a group, and a detector becomes a file name, where `:` opens an alternate data stream on NTFS
 and `/` opens a directory anywhere.
 
-**It lives here rather than in the config models because two layers enforce it.** The config rejects a
-bad name when it is built; the simulator rejects one that reached it anyway, since `model_construct`
-skips validators and this repo's own tests use it. Those two drifted twice while the rule was still
-being written -- first when it was written out twice (the config checked three characters, the writer
-two, so a bypassed detector still produced a colon in a file name), then when the surviving copy sat in
-the HDF5 branch alone and the numpy and frame writers kept their bypass. One module, imported by both
-layers and applied once for every format, is what makes "the simulator re-asserts the rule" mean the
-same rule everywhere.
+**It lives here rather than in the config models because three modules enforce it.** The config rejects
+a bad name when it is built; the simulator rejects one that reached it anyway, since `model_construct`
+skips validators and this repo's own tests use it; and `FrameWriter`, which is public API, rejects the
+names a caller hands it directly, having gone through no config at all.
 
-The detector rule is universal because every format names its artifact and its JSON sidecar after the
-detector. The channel rule applies only to the formats that carry a channel: an `npy` artifact is a bare
+They drifted twice while the rule was still being written -- first when it was written out twice (the
+config checked three characters, the writer two, so a bypassed detector still produced a colon in a file
+name), then when the surviving copy sat in the HDF5 branch alone and the numpy and frame writers kept
+their bypass. One module, imported by all three and applied once for every format, is what makes "the
+rule is re-asserted" mean the same rule everywhere.
+
+The detector and prefix rules are universal because every format names its artifact and its JSON sidecar
+from both. The channel rule applies only to the formats that carry a channel: an `npy` artifact is a bare
 array, and rejecting its channel would refuse configurations that never use the name.
+
+Emptiness is part of the rule, not a separate concern: a rule written only as a character test passes the
+empty string, which is not a name.
 """
 
 from __future__ import annotations
@@ -58,19 +63,32 @@ def reject_unsafe(value: str, *, field: str) -> str:
     Args:
         value: The detector, channel, or prefix.
         field: ``"detector"``, ``"channel"``, or ``"prefix"``; selects the rule and names the field in
-            the message. A prefix takes the detector rule: it is a file-name component and nothing else.
+            the message. A prefix takes the detector rule: it is a file-name component and nothing else,
+            and unlike the other two it may be empty, which means "no prefix".
 
     Returns:
         The value, unchanged.
 
     Raises:
-        ValueError: If the value contains a character the artifact cannot carry.
+        ValueError: If the value is empty when it must name something, or contains a character the
+            artifact cannot carry.
         KeyError: If *field* is not one of the three known kinds.
     """
     # Looked up rather than defaulted. `UNSAFE_FOR_CHANNEL if field == "channel" else UNSAFE_FOR_DETECTOR`
     # gives a misspelled field the detector rule in silence, which is how a caller ends up believing a
     # name was checked under a rule that never ran.
     forbidden = _RULES[field]
+    # An empty name contains no forbidden character, so a rule written only as a character test passes it
+    # -- the same vacuous-truth trap as checking values across an empty array. A detector or channel that
+    # is the empty string is not a name: `npy` wrote `noise_.npy`, HDF5 raised `IndexError` from
+    # `detector[0]`, and an empty channel override raised `TypeError` from h5py *after* creating the
+    # file, leaving a partial artifact behind. A reviewer found all three. The prefix is exempt because
+    # empty is its default and its documented meaning: no prefix.
+    if field != "prefix" and not value:
+        raise ValueError(
+            f"{field} is empty, which cannot name an artifact. Give it a name, or omit the field if the "
+            f"caller meant to leave it unset."
+        )
     found = [character for character in forbidden if character in value]
     if not found:
         return value

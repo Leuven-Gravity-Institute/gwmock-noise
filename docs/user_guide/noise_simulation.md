@@ -56,7 +56,7 @@ Supported top-level fields:
 | `sampling_frequency` | `float`                | Sampling frequency in Hz (`> 0`)                                                                      |
 | `components`         | `list[str \| mapping]` | Ordered simulator components; each entry is a simulator name or mapping                               |
 | `output.directory`   | `path`                 | Output directory for generated files                                                                  |
-| `output.prefix`      | `str`                  | Prefix for output file names                                                                          |
+| `output.prefix`      | `str`                  | Prefix for output file names; may not contain `/`, `\`, or `:` (default: `noise`)                     |
 | `output.format`      | `str`                  | Artifact format written by `run(config)`: `npy` (default), `gwf`, or `hdf5`                           |
 | `output.gps_start`   | `float`                | GPS start time used for timestamped formats such as `gwf` and `hdf5`                                  |
 | `output.channel`     | `str`                  | Channel name for `gwf` and `hdf5` output, assembled as `{detector}:{channel}` (default: `MOCK_NOISE`) |
@@ -73,13 +73,15 @@ read frames. `hdf5` writes one file per detector carrying the samples together
 with the epoch, the sample interval, the channel and the unit, so a reader does
 not need to be told the grid separately; GWpy reads these files directly.
 
-Detector and channel names may not contain `/` or `\`, and detector names may
-not contain `:`. Those are HDF5 and path syntax: `/` is a group separator inside
-an HDF5 file, and a name carrying one would write the data into a nested group
-instead of the dataset the reader looks for. Channel names are checked for the
-formats that use the channel: `npy` writes a bare array and never reads it, so a
-channel is not restricted there. **Detector names are checked for every
-format**, because a detector becomes part of a file name whatever the format is.
+Detector, channel and prefix names may not contain `/` or `\`, and detector and
+prefix names may not contain `:`. A detector or channel may not be empty either;
+an empty prefix is fine and means no prefix. Those are HDF5 and path syntax: `/`
+is a group separator inside an HDF5 file, and a name carrying one would write
+the data into a nested group instead of the dataset the reader looks for.
+Channel names are checked for the formats that use the channel: `npy` writes a
+bare array and never reads it, so a channel is not restricted there. **Detector
+and prefix names are checked for every format**, because both become part of a
+file name whatever the format is -- and of the JSON sidecar's name too.
 
 The simulator checks the same rule again before it generates anything, for every
 output format -- a config can be constructed in ways that skip validation, and a
