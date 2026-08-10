@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 import gwmock_noise
+import gwmock_noise.simulators.default
 from gwmock_noise.output import FrameWriter
 
 
@@ -576,3 +577,46 @@ class TestARepeatedDetectorReachesTheFrameWriter:
             writer.write(duration=1.0, sampling_frequency=4.0, detectors=["H1", "H1"])
 
         assert list(tmp_path.iterdir()) == []
+
+
+class TestGwfNamesAreCheckedBeforeAnythingExists:
+    """The GWF path had no pre-flight at all, and `FrameWriter` cannot supply one.
+
+    Round 16. `run()` composed names for `npy` and `hdf5` and left GWF to the writer -- my comment said so
+    -- but `FrameWriter.__init__` requires a backend and creates the output directory, so an over-long
+    frame name got as far as creating the directory, and on a machine with no GWF backend the `ImportError`
+    masked the name error entirely. A reviewer found it.
+    """
+
+    def test_an_overlong_gwf_name_is_refused_before_the_directory_is_created(self, tmp_path: Path) -> None:
+        """No backend is stubbed here, deliberately: that is the environment where it was masked."""
+        target = tmp_path / "not-created-yet"
+        config = gwmock_noise.NoiseConfig(
+            detectors=["D" * 235],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=[],
+            output=gwmock_noise.OutputConfig(format="gwf", prefix="", directory=target, gps_start=0.0),
+        )
+
+        with pytest.raises(ValueError, match="GWF frame name"):
+            gwmock_noise.simulators.default.DefaultNoiseSimulator().run(config)
+
+        assert not target.exists()
+
+    def test_the_composer_is_the_one_the_writer_uses(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """One expression for the frame name, checked by comparing the two callers' output.
+
+        Re-deriving it in the pre-flight is round 13's defect; this asserts the pre-flight's name is the
+        writer's name rather than trusting that they were written to agree.
+        """
+        frame_output = import_module("gwmock_noise.output.frame")
+        monkeypatch.setattr(frame_output, "_require_gwf_backend", lambda: None)
+        writer = FrameWriter(FixedNoiseSimulator(), gps_start=1234.5, output_dir=tmp_path, prefix="run")
+
+        composed = frame_output.compose_frame_name(
+            detector="H1", channel="H1:MOCK_NOISE", gps_start=1234.5, duration=2.0, prefix="run"
+        )
+
+        assert writer._frame_path("H1", "H1:MOCK_NOISE", 1234.5, 2.0).name == composed

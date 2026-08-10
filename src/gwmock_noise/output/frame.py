@@ -29,6 +29,42 @@ def _require_gwf_backend() -> None:
         raise ImportError(_FRAME_IMPORT_ERROR) from exc
 
 
+def format_time_token(value: float) -> str:
+    """Return a filename-safe token for a GPS time or a duration, preserving sub-second precision."""
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{value:.6f}".rstrip("0").rstrip(".").replace(".", "p")
+
+
+def compose_frame_name(*, detector: str, channel: str, gps_start: float, duration: float, prefix: str) -> str:
+    """Return the file name a frame segment will be written to.
+
+    Module level, and taking no writer, because the simulator must know this name *before* a `FrameWriter`
+    exists. `FrameWriter.__init__` requires a GWF backend and creates the output directory, so a run whose
+    frame name is too long previously got as far as creating the directory -- and on a machine without a
+    backend the `ImportError` masked the name error entirely. A reviewer found that; the comment claiming
+    it was safe to leave GWF names to the writer was mine.
+
+    The alternative was to re-derive the name in the pre-flight, which is the mistake round 13 caught: two
+    expressions for one name drifted on the empty-prefix case. One function, called by the writer and by
+    the pre-flight.
+
+    Args:
+        detector: The detector, whose first character is the site letter.
+        channel: The resolved channel, which a frame name embeds.
+        gps_start: The epoch of the segment.
+        duration: The duration of the segment.
+        prefix: The artifact prefix, or empty for none.
+
+    Returns:
+        The file name, without a directory.
+    """
+    name = f"{detector[0]}-{channel}_{format_time_token(gps_start)}-{format_time_token(duration)}.gwf"
+    if prefix:
+        name = f"{prefix}_{name}"
+    return name
+
+
 class FrameWriter:
     """Write simulator output to detector-specific GWF frame files.
 
@@ -199,16 +235,15 @@ class FrameWriter:
 
     def _frame_path(self, detector: str, channel: str, gps_start: float, duration: float) -> Path:
         """Return the output path for a detector frame segment."""
-        start_token = self._format_time_token(gps_start)
-        duration_token = self._format_time_token(duration)
-        name = f"{detector[0]}-{channel}_{start_token}-{duration_token}.gwf"
-        if self.prefix:
-            name = f"{self.prefix}_{name}"
-        return self.output_dir / name
+        return self.output_dir / compose_frame_name(
+            detector=detector, channel=channel, gps_start=gps_start, duration=duration, prefix=self.prefix
+        )
 
     @staticmethod
     def _format_time_token(value: float) -> str:
-        """Return a filename-safe token preserving sub-second precision."""
-        if float(value).is_integer():
-            return str(int(value))
-        return f"{value:.6f}".rstrip("0").rstrip(".").replace(".", "p")
+        """Return a filename-safe token preserving sub-second precision.
+
+        Kept as the name the HDF5 writer and the tests already call; the implementation moved to module
+        level so `compose_frame_name` can use it without a writer.
+        """
+        return format_time_token(value)

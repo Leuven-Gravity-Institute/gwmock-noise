@@ -16,7 +16,7 @@ from gwmock_noise.naming import (
     reject_overlong,
     reject_repeated,
 )
-from gwmock_noise.output.frame import FrameWriter
+from gwmock_noise.output.frame import FrameWriter, compose_frame_name
 from gwmock_noise.simulators.base import BaseNoiseSimulator, SimulationResult
 from gwmock_noise.simulators.composite import CompositeNoiseSimulator
 from gwmock_noise.simulators.glitches import _ZeroNoiseSimulator
@@ -25,6 +25,16 @@ from gwmock_noise.simulators.registry import build_component_simulator
 
 if TYPE_CHECKING:
     from gwmock_noise.config.models import NoiseConfig
+
+
+#: How each format's artifact is named in an error message. Spelled out rather than interpolating the
+#: format token, so the message reads as a person would write it -- and so it matches the wording
+#: `FrameWriter` already uses for the same name.
+_ARTIFACT_DESCRIPTIONS = {
+    "hdf5": "HDF5 artifact name",
+    "npy": "NumPy artifact name",
+    "gwf": "GWF frame name",
+}
 
 
 class DefaultNoiseSimulator(BaseNoiseSimulator):
@@ -340,13 +350,30 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
             }
         elif config.output.format == "npy":
             artifacts = {detector: self._numpy_name(config=config, detector=detector) for detector in config.detectors}
+        elif config.output.format == "gwf":
+            # Composed here as well as in the writer, from the writer's own function. Leaving GWF names to
+            # `FrameWriter` was mine and was wrong: its `__init__` requires a backend and creates the
+            # output directory, so an over-long frame name got as far as creating the directory, and on a
+            # machine without a backend the `ImportError` masked the name error entirely. A reviewer found
+            # it. Re-deriving the name here instead would be round 13's defect again, so this calls
+            # `compose_frame_name`, which the writer also calls.
+            artifacts = {
+                detector: compose_frame_name(
+                    detector=detector,
+                    channel=self._channel_for(config=config, detector=detector),
+                    gps_start=config.output.gps_start,
+                    duration=config.duration,
+                    prefix=config.output.prefix,
+                )
+                for detector in config.detectors
+            }
 
         for name in sidecars.values():
             reject_overlong(name, described_as="metadata sidecar name")
         for name in artifacts.values():
             reject_overlong(
                 name,
-                described_as="HDF5 artifact name" if config.output.format == "hdf5" else "NumPy artifact name",
+                described_as=_ARTIFACT_DESCRIPTIONS[config.output.format],
             )
 
         # Two detectors may compose one name. `_hdf5_name` claimed uniqueness "by construction" because

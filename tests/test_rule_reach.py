@@ -19,8 +19,14 @@ right, the demonstrated case was fixed, and a reviewer then found the same rule 
 enforced.
 
 So this is a matrix rather than a list: each bad name is pushed through the config *and* through a
-bypassed config into the simulator, and the writers must refuse it in both. A rule that only the config
-enforces fails here, which is what neither the unit tests nor the fuzz could say.
+bypassed config into the simulator, for **every output format**, and the writers must refuse it in both.
+A rule that only the config enforces fails here, which is what neither the unit tests nor the fuzz could
+say.
+
+The format axis was missing when this file was first written, and a reviewer said so: the docstring
+claimed every layer while the rows drove `hdf5` alone. That mattered -- the defect found in the same round
+was `gwf`-only, where the simulator composed no names at all and created the output directory before the
+frame writer could object.
 
 Adding a rule means adding a row. If a row cannot be written for some layer, that is worth knowing too.
 """
@@ -75,10 +81,10 @@ _BAD_NAMES = [
 ]
 
 
-def _settings(directory: Path, overrides: dict[str, object]) -> dict[str, object]:
+def _settings(directory: Path, overrides: dict[str, object], artifact_format: str = "hdf5") -> dict[str, object]:
     settings: dict[str, object] = {
         "directory": directory,
-        "format": "hdf5",
+        "format": artifact_format,
         "prefix": "noise",
         "gps_start": 0.0,
         "channel": "MOCK_NOISE",
@@ -107,9 +113,16 @@ def test_the_config_refuses_it(
         )
 
 
+@pytest.mark.parametrize("artifact_format", ["npy", "gwf", "hdf5"])
 @pytest.mark.parametrize(("label", "detectors", "overrides", "expected", "layers"), _BAD_NAMES, ids=str)
 def test_the_simulator_refuses_it_when_validation_was_skipped(  # noqa: PLR0913, PLR0917
-    tmp_path: Path, label: str, detectors: list[str], overrides: dict[str, object], expected: str, layers: set[str]
+    tmp_path: Path,
+    label: str,
+    detectors: list[str],
+    overrides: dict[str, object],
+    expected: str,
+    layers: set[str],
+    artifact_format: str,
 ) -> None:
     """Layer two, which is where reach goes missing.
 
@@ -119,6 +132,8 @@ def test_the_simulator_refuses_it_when_validation_was_skipped(  # noqa: PLR0913,
     """
     if "simulator" not in layers:
         pytest.skip("the defect does not survive channel resolution, so the writer never sees it")
+    if artifact_format == "npy" and ("channel" in overrides or "channels" in overrides):
+        pytest.skip("npy carries no channel, so its channel names are deliberately unchecked")
 
     target = tmp_path / "not-created-yet"
     config = NoiseConfig.model_construct(
@@ -127,7 +142,7 @@ def test_the_simulator_refuses_it_when_validation_was_skipped(  # noqa: PLR0913,
         sampling_frequency=4.0,
         seed=1,
         components=[],
-        output=OutputConfig.model_construct(**_settings(target, overrides)),
+        output=OutputConfig.model_construct(**_settings(target, overrides, artifact_format)),
     )
 
     with pytest.raises(ValueError, match=expected):
