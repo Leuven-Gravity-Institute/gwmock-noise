@@ -98,6 +98,19 @@ def reject_unsafe(value: str, *, field: str) -> str:
     # created, round-trips through GWpy, and is addressable as both `handle[".."]` and `handle["/.."]`.
     # That was checked rather than assumed -- the expectation was that it would resolve to the parent
     # group. Refusing it would be the over-rejection this rule has already had to walk back twice.
+    # NUL breaks every artifact this package writes, and it is the only control character that does.
+    # HDF5 stores names as VLEN strings, which cannot embed one -- h5py raises *after* opening the file,
+    # leaving a partial artifact -- and a POSIX path cannot contain one either, so `np.save` refuses it
+    # too. A reviewer found it. Applies to all three fields: each becomes either a dataset name or a
+    # file name, and NUL is invalid in both.
+    #
+    # Deliberately NOT extended to control characters generally. Newline, tab, CR, DEL and bell were all
+    # measured: every one round-trips through HDF5 and through a `.npy` file name. They look worse than
+    # they behave, and refusing them would be the over-rejection this rule has had to walk back twice.
+    if "\x00" in value:
+        raise ValueError(
+            f"{field} {value!r} contains a NUL byte, which cannot appear in an HDF5 name or a file path. Remove it."
+        )
     if field == "channel" and value == ".":
         raise ValueError(
             "channel '.' is HDF5's name for the current group, so no dataset can be created with it. "

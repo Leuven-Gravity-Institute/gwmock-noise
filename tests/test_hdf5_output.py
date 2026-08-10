@@ -813,3 +813,42 @@ class TestTheCurrentGroupToken:
             DefaultNoiseSimulator().run(config)
 
         assert not target.exists()
+
+
+class TestTheNulByte:
+    """The fourth structurally-invalid value, and the only control character that breaks anything.
+
+    Found in round 12, when the brief asked what the next one would be. HDF5 stores names as VLEN
+    strings, which cannot embed a NUL: h5py raises after opening the file, leaving a partial artifact.
+    A POSIX path cannot contain one either, so it breaks a `.npy` file name as well.
+    """
+
+    def test_a_nul_in_a_channel_is_refused(self) -> None:
+        """It raised `VLEN strings do not support embedded NULLs` with the file already created."""
+        with pytest.raises(ValueError, match="NUL"):
+            OutputConfig(format="hdf5", channels={"H1": "a\x00b"})
+
+    def test_a_lone_nul_channel_is_refused(self) -> None:
+        """The other message h5py produces, from the same cause."""
+        with pytest.raises(ValueError, match="NUL"):
+            OutputConfig(format="hdf5", channel="\x00")
+
+    def test_a_nul_in_a_detector_is_refused(self) -> None:
+        """A detector becomes a file name, and a POSIX path cannot hold a NUL either."""
+        with pytest.raises(ValueError, match="NUL"):
+            NoiseConfig(detectors=["a\x00b"], duration=1.0, sampling_frequency=4.0, seed=1)
+
+    def test_a_nul_in_a_prefix_is_refused(self) -> None:
+        """The prefix is a file-name component, so the same applies."""
+        with pytest.raises(ValueError, match="NUL"):
+            OutputConfig(format="npy", prefix="a\x00b")
+
+    @pytest.mark.parametrize("character", ["\n", "\t", "\r", "\x7f", "\x07"])
+    def test_other_control_characters_are_deliberately_allowed(self, character: str) -> None:
+        """Measured, not assumed: each of these round-trips through HDF5 and through a file name.
+
+        They look worse than they behave. Rejecting control characters as a class would refuse
+        configurations that work, which is the over-rejection this rule has twice had to walk back --
+        so the rule names the one character that actually breaks.
+        """
+        assert OutputConfig(format="hdf5", channel=f"a{character}b").channel == f"a{character}b"
