@@ -168,6 +168,91 @@ def _attempt(directory: Path, artifact_format: str, **name: str) -> tuple[str, s
     return "accepted", ""
 
 
+#: Epochs and durations enter composed names too, and they are what made the round-13 segment case bite:
+#: a name that fits at epoch `0` overflows at a ten-digit GPS time. A single epoch cannot see that.
+_GRIDS = [(0.0, 1.0), (1000000000.0, 4.0), (1234567890.5, 0.25)]
+
+#: Pairs that name one file on a case-insensitive or normalising filesystem, which is the round-14 defect.
+#: Distinct as Python strings in every case -- that is the point.
+_COLLIDING_PAIRS = [
+    ("H1", "h1"),
+    ("MOCK", "mock"),
+    ("\u00e91", "e\u03011"),  # NFC and NFD spellings of the same name
+    ("AbC", "aBc"),
+]
+
+
+@pytest.mark.parametrize("artifact_format", ["npy", "hdf5"])
+@pytest.mark.parametrize(("gps_start", "duration"), _GRIDS)
+def test_a_name_that_fits_one_epoch_is_measured_against_the_epoch_used(
+    tmp_path: Path, artifact_format: str, gps_start: float, duration: float
+) -> None:
+    """The epoch and the duration are part of the name, so the limit moves with them.
+
+    Not covered when this file was written, and named as a gap in the round-14 brief rather than left
+    silent: a detector whose name fits at epoch `0` can overflow at a ten-digit GPS time, which is exactly
+    how the frame-segment case escaped notice.
+    """
+    broken: list[str] = []
+    for index, length in enumerate((200, 230, 234, 238, 240, 250)):
+        directory = tmp_path / f"{artifact_format}-{index}"
+        directory.mkdir()
+        detector = "d" * length
+        try:
+            config = NoiseConfig(
+                detectors=[detector],
+                duration=duration,
+                sampling_frequency=4.0,
+                seed=1,
+                components=["white"],
+                output=OutputConfig(directory=directory, format=artifact_format, prefix="noise", gps_start=gps_start),
+            )
+            path = DefaultNoiseSimulator().run(config).output_paths[detector]
+        except ValueError:
+            leftover = sorted(p.name for p in directory.iterdir())
+            if leftover:
+                broken.append(f"length {length}: refused yet left {leftover}")
+            continue
+        except OSError as error:
+            broken.append(f"length {length}: OSError rather than a refusal ({error.errno})")
+            continue
+        if len(path.name.encode("utf-8")) > 255:
+            broken.append(f"length {length}: wrote a {len(path.name.encode())}-byte name")
+
+    assert not broken, f"at gps_start={gps_start}, duration={duration}:\n" + "\n".join(broken)
+
+
+@pytest.mark.parametrize("artifact_format", ["npy", "hdf5"])
+@pytest.mark.parametrize(("first", "second"), _COLLIDING_PAIRS)
+def test_two_names_never_share_one_file(tmp_path: Path, artifact_format: str, first: str, second: str) -> None:
+    """Distinct detectors must not end up writing the same artifact.
+
+    The round-14 defect: the config accepted `["H1", "h1"]`, reported two paths, and wrote one file. The
+    assertion is on the filesystem, not on the exception -- a refusal is fine, and so is writing two
+    genuinely distinct files, but reporting two paths while one artifact exists is not.
+    """
+    try:
+        config = NoiseConfig(
+            detectors=[first, second],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=["white"],
+            output=OutputConfig(directory=tmp_path, format=artifact_format, prefix="noise", gps_start=0.0),
+        )
+        result = DefaultNoiseSimulator().run(config)
+    except ValueError:
+        assert list(tmp_path.iterdir()) == [], "a refusal must not leave an artifact behind"
+        return
+
+    reported = {str(path) for path in result.output_paths.values()}
+    suffix = ".npy" if artifact_format == "npy" else ".hdf5"
+    written = [path for path in tmp_path.iterdir() if path.suffix == suffix]
+    assert len(written) == len(reported), (
+        f"reported {len(reported)} path(s) for {first!r} and {second!r} but {len(written)} file(s) exist"
+    )
+
+
 @pytest.mark.parametrize("artifact_format", ["npy", "hdf5"])
 @pytest.mark.parametrize("field", ["detector", "prefix", "channel"])
 def test_an_accepted_name_is_a_writable_name(tmp_path: Path, field: str, artifact_format: str) -> None:
