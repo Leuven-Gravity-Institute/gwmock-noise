@@ -37,6 +37,7 @@ empty string, which is not a name.
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Iterable, Mapping
 
 #: Characters a channel cannot contain. `/` is an HDF5 group separator, so a channel carrying one is
@@ -161,6 +162,50 @@ def reject_overlong(name: str, *, described_as: str) -> str:
         f"the {described_as} would be {encoded} bytes ({name[:40]!r}...), over the {MAX_NAME_BYTES}-byte "
         f"limit for one path component. Shorten the detector name or the prefix."
     )
+
+
+def reject_colliding_names(names: Mapping[str, str], *, described_as: str) -> None:
+    """Raise if two owners would write to what the filesystem may treat as one file.
+
+    `_hdf5_name` claimed the name was "unique by construction" because one detector writes one file. It
+    is injective in the detector *as a Python string*, which is not the same as unique on disk: APFS and
+    NTFS compare names case-insensitively by default, so ``detectors=["H1", "h1"]`` produced two distinct
+    reported paths and one file, with one detector's samples overwriting the other's and both paths
+    pointing at the survivor. A reviewer found the stale claim; the collision is the same silent data
+    loss that made this writer name artifacts after the detector rather than the channel in the first
+    place.
+
+    Compared under case-folding **and** NFC normalisation, both measured on the filesystem rather than
+    argued about. `H1` and `h1` collapse to one file; so do the NFC and NFD spellings of the same
+    detector, where the second write wins and the first detector's samples are gone.
+
+    Normalisation was briefly dropped from this key on the strength of a probe that appeared to show two
+    files surviving. Writing the two names directly, with no package code involved, showed one file
+    holding the second payload. The probe was wrong and the direct measurement is what this rests on --
+    which is the reason the test alongside it asserts the collision rather than the shape of the rule.
+
+    Both comparisons are **stricter than a case-sensitive, non-normalising filesystem needs**. On ext4 both those names work, so this refuses a configuration that would have
+    run. That trade is the opposite of the ones this module has walked back twice, and for a reason: the
+    earlier over-rejections refused sensible configurations to prevent a loud error, while this refuses a
+    pathological one to prevent silent loss. The alternative -- probing the filesystem's collation --
+    makes the behaviour depend on where the output happens to be pointed.
+
+    Args:
+        names: The composed name each owner (usually a detector) will write.
+        described_as: What to call the names in the message, e.g. ``"HDF5 artifact names"``.
+
+    Raises:
+        ValueError: If two owners map onto the same name under that comparison.
+    """
+    seen: dict[str, str] = {}
+    for owner, name in names.items():
+        folded = unicodedata.normalize("NFC", name).casefold()
+        if folded in seen:
+            raise ValueError(
+                f"{described_as} collide: {seen[folded]!r} and {owner!r} both write {name!r} on a "
+                f"filesystem that ignores case, so one would silently overwrite the other. Rename one."
+            )
+        seen[folded] = owner
 
 
 def check_artifact_names(*, detectors: Iterable[str], channels: Mapping[str, str], prefix: str = "") -> None:

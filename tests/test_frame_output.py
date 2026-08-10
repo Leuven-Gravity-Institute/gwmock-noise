@@ -487,3 +487,59 @@ class TestComposedFrameNameLength:
         output = writer.write(duration=1.0, sampling_frequency=4.0, detectors=["H1"])
 
         assert output["H1"].name == "unit_H-H1:MOCK_NOISE_0-1.gwf"
+
+
+class TestFrameNameCollisions:
+    """Frame names embed the channel, so an override can collide two detectors as easily as case can."""
+
+    @staticmethod
+    def _writer(directory: Path, monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> FrameWriter:
+        frame_output = import_module("gwmock_noise.output.frame")
+
+        class FakeSeries:
+            def __init__(self) -> None:
+                self.channel = ""
+
+            def write(self, path: Path, *, format: str, overwrite: bool) -> None:  # noqa: A002
+                path.write_bytes(b"")
+
+        class FakeAdapter:
+            def __init__(self, base: FixedNoiseSimulator, gps_start: float) -> None:
+                self.base = base
+                self.gps_start = gps_start
+
+            def generate(self, *, duration: float, sampling_frequency: float, detectors: list[str], seed: int | None):
+                self.gps_start += duration
+                return {detector: FakeSeries() for detector in detectors}
+
+        monkeypatch.setattr(frame_output, "_require_gwf_backend", lambda: None)
+        monkeypatch.setattr(frame_output, "GWpyAdapter", FakeAdapter)
+        return FrameWriter(FixedNoiseSimulator(), gps_start=0.0, output_dir=directory, **kwargs)
+
+    def test_detectors_differing_only_in_case_are_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Nothing written, rather than one frame standing in for two detectors."""
+        writer = self._writer(tmp_path, monkeypatch)
+
+        with pytest.raises(ValueError, match="collide"):
+            writer.write(duration=1.0, sampling_frequency=4.0, detectors=["H1", "h1"])
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_two_overrides_naming_one_frame_are_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The channel is in the frame name, so two overrides can collide distinct detectors."""
+        writer = self._writer(tmp_path, monkeypatch, channels={"H1": "X1:A", "H2": "x1:a"})
+
+        with pytest.raises(ValueError, match="collide"):
+            writer.write(duration=1.0, sampling_frequency=4.0, detectors=["H1", "H2"])
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_distinct_detectors_still_write(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Two ordinary detectors keep producing two frames."""
+        writer = self._writer(tmp_path, monkeypatch)
+
+        output = writer.write(duration=1.0, sampling_frequency=4.0, detectors=["H1", "L1"])
+
+        assert len({str(path) for path in output.values()}) == 2

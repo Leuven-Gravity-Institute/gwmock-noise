@@ -1028,3 +1028,70 @@ class TestTheWriterAndThePreflightAgreeOnNames:
             DefaultNoiseSimulator().run(config)
 
         assert list(tmp_path.iterdir()) == []
+
+
+class TestTwoDetectorsOneFile:
+    """`_hdf5_name` claimed the name was unique "by construction". It is injective, not unique.
+
+    A reviewer caught the claim in round 14. The name is injective in the detector *as a Python string*;
+    APFS and NTFS compare file names without regard to case, so `["H1", "h1"]` reported two paths and
+    wrote one file, one detector's samples overwriting the other's. That is the same silent loss that made
+    this writer name artifacts after the detector instead of the channel back in round 2.
+    """
+
+    @pytest.mark.parametrize("artifact_format", ["npy", "hdf5"])
+    def test_detectors_differing_only_in_case_are_refused(self, tmp_path: Path, artifact_format: str) -> None:
+        """Both formats: the sidecar name alone is enough to collide."""
+        config = NoiseConfig(
+            detectors=["H1", "h1"],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=["white"],
+            output=OutputConfig(directory=tmp_path, format=artifact_format, prefix="noise", gps_start=0.0),
+        )
+
+        with pytest.raises(ValueError, match="collide"):
+            DefaultNoiseSimulator().run(config)
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_a_repeated_detector_is_refused(self) -> None:
+        """The writers key output by detector, so a repeat silently produced one file for two entries."""
+        with pytest.raises(ValueError, match="more than once"):
+            NoiseConfig(detectors=["H1", "H1"], duration=1.0, sampling_frequency=4.0, seed=1)
+
+    def test_normalisation_forms_are_refused(self, tmp_path: Path) -> None:
+        """NFC and NFD spellings of one detector name one file, on this filesystem, measured directly.
+
+        This test began as its opposite. A probe through the package appeared to show two files surviving,
+        so the collision key dropped normalisation; this assertion then failed, and writing the two names
+        with no package code involved showed one file holding the second payload -- the first detector's
+        samples gone. The probe was wrong. Asserting the outcome on disk, rather than what the rule does,
+        is what caught it.
+        """
+        import unicodedata
+
+        nfc = unicodedata.normalize("NFC", "é1")
+        nfd = unicodedata.normalize("NFD", "é1")
+        assert nfc != nfd
+
+        config = NoiseConfig(
+            detectors=[nfc, nfd],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=["white"],
+            output=OutputConfig(directory=tmp_path, format="npy", prefix="noise", gps_start=0.0),
+        )
+
+        with pytest.raises(ValueError, match="collide"):
+            DefaultNoiseSimulator().run(config)
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_ordinary_detectors_are_unaffected(self, tmp_path: Path) -> None:
+        """The guard must not disturb the case every other test in this file uses."""
+        result = DefaultNoiseSimulator().run(_config(tmp_path))
+
+        assert sorted(result.output_paths) == ["H1", "L1"]

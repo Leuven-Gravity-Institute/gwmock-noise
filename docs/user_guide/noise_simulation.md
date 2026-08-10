@@ -74,14 +74,18 @@ with the epoch, the sample interval, the channel and the unit, so a reader does
 not need to be told the grid separately; GWpy reads these files directly.
 
 Detector, channel and prefix names may not contain `/` or `\`, and detector and
-prefix names may not contain `:`. A detector or channel may not be empty either;
-an empty prefix is fine and means no prefix. Those are HDF5 and path syntax: `/`
-is a group separator inside an HDF5 file, and a name carrying one would write
-the data into a nested group instead of the dataset the reader looks for.
-Channel names are checked for the formats that use the channel: `npy` writes a
-bare array and never reads it, so a channel is not restricted there. **Detector
-and prefix names are checked for every format**, because both become part of a
-file name whatever the format is -- and of the JSON sidecar's name too.
+prefix names may not contain `:`. A detector or channel may not be empty either.
+An empty prefix is accepted, but note that it does not remove the separator: the
+artifacts are named `_H1.npy` and `_H1.json`, not `H1.npy`. Two detectors may
+also not compose the same artifact name -- `H1` and `h1` differ as strings and
+name one file on macOS and Windows -- and a detector may not be repeated. Those
+are HDF5 and path syntax: `/` is a group separator inside an HDF5 file, and a
+name carrying one would write the data into a nested group instead of the
+dataset the reader looks for. Channel names are checked for the formats that use
+the channel: `npy` writes a bare array and never reads it, so a channel is not
+restricted there. **Detector and prefix names are checked for every format**,
+because both become part of a file name whatever the format is -- and of the
+JSON sidecar's name too.
 
 The simulator checks the same rule again before it generates anything, for every
 output format -- a config can be constructed in ways that skip validation, and a

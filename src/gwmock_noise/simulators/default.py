@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import h5py
 import numpy as np
 
-from gwmock_noise.naming import check_artifact_names, reject_overlong
+from gwmock_noise.naming import check_artifact_names, reject_colliding_names, reject_overlong
 from gwmock_noise.output.frame import FrameWriter
 from gwmock_noise.simulators.base import BaseNoiseSimulator, SimulationResult
 from gwmock_noise.simulators.composite import CompositeNoiseSimulator
@@ -227,8 +227,12 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         """Return the file name for one detector's HDF5 artifact.
 
         Named for the **detector**, not the channel: ``H-H1_1000000000-4.hdf5``. The dataset inside
-        carries the channel, so the name does not have to, and one detector writes one file -- which
-        makes the name unique by construction.
+        carries the channel, so the name does not have to, and one detector writes one file.
+
+        That is *not* the same as unique on disk, which this docstring used to claim: the name is
+        injective in the detector as a Python string, while APFS and NTFS compare file names without
+        regard to case, so ``["H1", "h1"]`` returned two paths and wrote one file. A reviewer caught the
+        claim. Collisions are now rejected before anything is written.
 
         Three attempts got here, and the discarded two are worth stating because each looked right.
 
@@ -311,25 +315,34 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         Raises:
             ValueError: If any composed name exceeds the filesystem's per-component limit.
         """
-        for detector in config.detectors:
+        sidecars = {detector: self._sidecar_name(config=config, detector=detector) for detector in config.detectors}
+        artifacts: dict[str, str] = {}
+        if config.output.format == "hdf5":
+            artifacts = {
+                detector: self._hdf5_name(
+                    config=config,
+                    detector=detector,
+                    channel=self._channel_for(config=config, detector=detector),
+                )
+                for detector in config.detectors
+            }
+        elif config.output.format == "npy":
+            artifacts = {detector: self._numpy_name(config=config, detector=detector) for detector in config.detectors}
+
+        for name in sidecars.values():
+            reject_overlong(name, described_as="metadata sidecar name")
+        for name in artifacts.values():
             reject_overlong(
-                self._sidecar_name(config=config, detector=detector),
-                described_as="metadata sidecar name",
+                name,
+                described_as="HDF5 artifact name" if config.output.format == "hdf5" else "NumPy artifact name",
             )
-            if config.output.format == "hdf5":
-                reject_overlong(
-                    self._hdf5_name(
-                        config=config,
-                        detector=detector,
-                        channel=self._channel_for(config=config, detector=detector),
-                    ),
-                    described_as="HDF5 artifact name",
-                )
-            elif config.output.format == "npy":
-                reject_overlong(
-                    self._numpy_name(config=config, detector=detector),
-                    described_as="NumPy artifact name",
-                )
+
+        # Two detectors may compose one name. `_hdf5_name` claimed uniqueness "by construction" because
+        # one detector writes one file; the name is injective in the detector as a string, which is not
+        # the same as unique on disk. `["H1", "h1"]` returned two paths and wrote one file on APFS.
+        reject_colliding_names(sidecars, described_as="metadata sidecar names")
+        if artifacts:
+            reject_colliding_names(artifacts, described_as=f"{config.output.format} artifact names")
 
     def run(self, config: NoiseConfig) -> SimulationResult:
         """Run the noise simulation with the given configuration."""

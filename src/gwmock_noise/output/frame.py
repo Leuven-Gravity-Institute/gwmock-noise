@@ -5,7 +5,12 @@ from __future__ import annotations
 from importlib import import_module
 from pathlib import Path
 
-from gwmock_noise.naming import check_artifact_names, reject_overlong, reject_unsafe
+from gwmock_noise.naming import (
+    check_artifact_names,
+    reject_colliding_names,
+    reject_overlong,
+    reject_unsafe,
+)
 from gwmock_noise.output.gwpy import GWpyAdapter
 from gwmock_noise.simulators.protocol import NoiseSimulator
 
@@ -169,11 +174,15 @@ class FrameWriter:
         Raises:
             ValueError: If any composed frame name exceeds the limit.
         """
-        for detector in detectors:
-            reject_overlong(
-                self._frame_path(detector, self._channel_name(detector), gps_start, duration).name,
-                described_as="GWF frame name",
-            )
+        names = {
+            detector: self._frame_path(detector, self._channel_name(detector), gps_start, duration).name
+            for detector in detectors
+        }
+        for name in names.values():
+            reject_overlong(name, described_as="GWF frame name")
+        # And no two detectors onto one name: a frame name embeds the channel, so a per-detector override
+        # can collide two detectors that differ only in case as easily as the detectors themselves can.
+        reject_colliding_names(names, described_as="GWF frame names")
 
     def _channel_name(self, detector: str) -> str:
         """Return the frame channel name for a detector."""

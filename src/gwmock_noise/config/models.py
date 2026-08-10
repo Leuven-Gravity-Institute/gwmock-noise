@@ -140,9 +140,26 @@ class NoiseConfig(BaseModel):
     @field_validator("detectors")
     @classmethod
     def _validate_detectors(cls, value: list[str]) -> list[str]:
-        """Reject a detector name that would put path syntax into a file name."""
+        """Reject a detector name that would put path syntax into a file name, or a repeated one.
+
+        A repeat is rejected here rather than downstream because the writers key their output by detector,
+        so a duplicate collapses into a single entry and the run reports one artifact for two requested
+        detectors -- no error, no second file, and nothing to tell the caller their list was not honoured.
+
+        Returns:
+            The validated detectors.
+
+        Raises:
+            ValueError: If a name carries path syntax, or the same detector appears twice.
+        """
         for detector in value:
             reject_unsafe(detector, field="detector")
+        duplicates = {detector for detector in value if value.count(detector) > 1}
+        if duplicates:
+            raise ValueError(
+                f"detectors contains {sorted(duplicates)!r} more than once; each detector writes one "
+                f"artifact, so a repeat would silently produce fewer files than detectors requested."
+            )
         return value
 
     detectors: list[str] = Field(
