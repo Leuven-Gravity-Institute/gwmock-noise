@@ -782,6 +782,24 @@ class TestNoColonSurvivesIntoAFrameName:
 
         assert ":" not in name, name
 
+    @pytest.mark.parametrize("channel", ["H1:", ":", "X1:"])
+    def test_the_composer_refuses_to_emit_a_colon_even_when_called_directly(self, channel: str) -> None:
+        """`reject_unsafe` stops these at the config, and `compose_frame_name` is still module-level.
+
+        A direct caller goes through no config at all -- the same reason `FrameWriter` re-checks names
+        that `OutputConfig` already checked. Without this test the composer's explicit branch is
+        unfalsifiable: a mutation restoring the `or channel` fallback survived the entire suite, because
+        every other path that reaches the composer has had the input rejected for it. A defence no test
+        can distinguish is a claim, not a defence -- this file has removed one such check before.
+        """
+        frame_output = import_module("gwmock_noise.output.frame")
+
+        name = frame_output.compose_frame_name(
+            detector="H1", channel=channel, gps_start=0.0, duration=1.0, prefix="noise"
+        )
+
+        assert ":" not in name, name
+
     def test_a_colon_less_channel_still_reaches_the_name(self) -> None:
         """The fallback's actual purpose, kept: `partition` returns an empty suffix here too."""
         frame_output = import_module("gwmock_noise.output.frame")
