@@ -107,6 +107,24 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
             seed=config.seed,
         )
 
+    @staticmethod
+    def _numpy_name(*, config: NoiseConfig, detector: str) -> str:
+        """Return the file name for one detector's NumPy artifact.
+
+        Here rather than inline in the writer so the length pre-flight can ask for the name the writer
+        will actually use. The pre-flight originally re-derived it and got the empty-prefix case wrong --
+        it modelled `f"{detector}.npy"` while the writer wrote `f"_{detector}.npy"` -- so a name one byte
+        under the limit passed the check and failed the write, leaving the artifact behind and raising on
+        the sidecar. A reviewer found it. Two expressions for one name is the defect; one function is the
+        fix.
+        """
+        return f"{config.output.prefix}_{detector}.npy"
+
+    @staticmethod
+    def _sidecar_name(*, config: NoiseConfig, detector: str) -> str:
+        """Return the file name for one detector's JSON metadata sidecar. Written by every format."""
+        return f"{config.output.prefix}_{detector}.json"
+
     def _write_numpy_outputs(
         self,
         *,
@@ -116,7 +134,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         """Persist per-detector strain arrays as NumPy artifacts."""
         output_paths: dict[str, Path] = {}
         for detector, strain in strain_by_detector.items():
-            output_path = Path(config.output.directory) / f"{config.output.prefix}_{detector}.npy"
+            output_path = Path(config.output.directory) / self._numpy_name(config=config, detector=detector)
             np.save(output_path, strain)
             output_paths[detector] = output_path
         return output_paths
@@ -255,7 +273,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
     ) -> None:
         """Write metadata sidecars describing the emitted detector artifacts."""
         for detector, artifact_path in output_paths.items():
-            metadata_path = Path(config.output.directory) / f"{config.output.prefix}_{detector}.json"
+            metadata_path = Path(config.output.directory) / self._sidecar_name(config=config, detector=detector)
             file_metadata = self.metadata | {
                 "detector": detector,
                 "artifact_format": config.output.format,
@@ -295,7 +313,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         """
         for detector in config.detectors:
             reject_overlong(
-                f"{config.output.prefix}_{detector}.json" if config.output.prefix else f"{detector}.json",
+                self._sidecar_name(config=config, detector=detector),
                 described_as="metadata sidecar name",
             )
             if config.output.format == "hdf5":
@@ -309,7 +327,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
                 )
             elif config.output.format == "npy":
                 reject_overlong(
-                    f"{config.output.prefix}_{detector}.npy" if config.output.prefix else f"{detector}.npy",
+                    self._numpy_name(config=config, detector=detector),
                     described_as="NumPy artifact name",
                 )
 

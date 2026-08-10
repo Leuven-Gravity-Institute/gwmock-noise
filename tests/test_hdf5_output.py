@@ -993,3 +993,38 @@ class TestTheComposedNameLength:
         path = DefaultNoiseSimulator().run(config).output_paths["H1"]
 
         assert path.exists()
+
+
+class TestTheWriterAndThePreflightAgreeOnNames:
+    """One name, one expression. The pre-flight used to re-derive what the writer composes.
+
+    With `prefix=""` the writer wrote `_H1.npy` while the pre-flight checked `H1.npy`, so a name one byte
+    under the limit passed the check and failed the write -- leaving the `.npy` artifact behind and raising
+    on the sidecar. A reviewer found it. The check now calls the same helpers the writers call, which is
+    why this test asserts the *names*, not just the refusal.
+    """
+
+    def test_an_empty_prefix_still_leads_the_name_with_an_underscore(self, tmp_path: Path) -> None:
+        """Whatever one thinks of that name, both layers must agree on it."""
+        config = _config(tmp_path, format="npy", prefix="")
+
+        result = DefaultNoiseSimulator().run(config)
+
+        assert result.output_paths["H1"].name == "_H1.npy"
+        assert (tmp_path / "_H1.json").exists()
+
+    def test_an_empty_prefix_is_measured_the_way_it_is_written(self, tmp_path: Path) -> None:
+        """The case that slipped through: 250 characters, no prefix, refused before anything is written."""
+        config = NoiseConfig(
+            detectors=["D" * 250],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=["white"],
+            output=OutputConfig(directory=tmp_path, format="npy", prefix="", gps_start=0.0),
+        )
+
+        with pytest.raises(ValueError, match="over the 255-byte limit"):
+            DefaultNoiseSimulator().run(config)
+
+        assert list(tmp_path.iterdir()) == []

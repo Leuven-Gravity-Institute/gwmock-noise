@@ -5,7 +5,7 @@ from __future__ import annotations
 from importlib import import_module
 from pathlib import Path
 
-from gwmock_noise.naming import check_artifact_names, reject_unsafe
+from gwmock_noise.naming import check_artifact_names, reject_overlong, reject_unsafe
 from gwmock_noise.output.gwpy import GWpyAdapter
 from gwmock_noise.simulators.protocol import NoiseSimulator
 
@@ -89,6 +89,7 @@ class FrameWriter:
             channels={detector: self._channel_name(detector) for detector in detectors},
             prefix=self.prefix,
         )
+        self._check_frame_name_lengths(detectors=detectors, gps_start=self.gps_start, duration=duration)
         _require_gwf_backend()
         segment_start = self.gps_start
         adapter = GWpyAdapter(self.base, gps_start=segment_start)
@@ -132,6 +133,12 @@ class FrameWriter:
         for gps_start, gps_end in segments:
             if gps_end <= gps_start:
                 raise ValueError(f"Invalid segment ({gps_start}, {gps_end}); expected gps_end > gps_start.")
+            # Names too, and for every segment before the first is written. A frame name carries the
+            # epoch, so segment 2 can exceed the limit while segment 1 fits: a reviewer wrote segment
+            # `(0, 1)` and then `(1000000000, 1000000001)` with a 232-character detector, and the first
+            # frame was left on disk with `gps_start` advanced while the second raised `OSError` from
+            # inside GWpy. Checking inside the writing loop would have reproduced exactly that.
+            self._check_frame_name_lengths(detectors=detectors, gps_start=gps_start, duration=gps_end - gps_start)
 
         written_segments: list[dict[str, Path]] = []
         for index, (gps_start, gps_end) in enumerate(segments):
@@ -145,6 +152,28 @@ class FrameWriter:
                 )
             )
         return written_segments
+
+    def _check_frame_name_lengths(self, *, detectors: list[str], gps_start: float, duration: float) -> None:
+        """Check each composed frame name against the filesystem's per-component limit.
+
+        Asks `_frame_path` for the name rather than re-deriving it: the simulator's pre-flight re-derived
+        its own names and disagreed with its writer on the empty-prefix case, which is the mistake this
+        avoids. A frame name is longer than the other formats' -- it carries the channel as well as the
+        epoch and the duration -- so it reaches the limit at a shorter detector name.
+
+        Args:
+            detectors: The detectors this segment will write.
+            gps_start: The epoch of the segment, which appears in the name.
+            duration: The duration of the segment, which also appears in the name.
+
+        Raises:
+            ValueError: If any composed frame name exceeds the limit.
+        """
+        for detector in detectors:
+            reject_overlong(
+                self._frame_path(detector, self._channel_name(detector), gps_start, duration).name,
+                described_as="GWF frame name",
+            )
 
     def _channel_name(self, detector: str) -> str:
         """Return the frame channel name for a detector."""

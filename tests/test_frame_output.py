@@ -401,3 +401,89 @@ class TestRoundNineGaps:
 
         assert list(tmp_path.iterdir()) == []
         assert writer.gps_start == pytest.approx(100.0)
+
+
+class TestComposedFrameNameLength:
+    """Frames compose their own names, so they need their own length check.
+
+    Left out of the first length fix deliberately rather than guessed at, and flagged as absent in the
+    round-13 brief; a reviewer then demonstrated both ways it bites.
+    """
+
+    @staticmethod
+    def _writer(directory: Path, monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> FrameWriter:
+        frame_output = import_module("gwmock_noise.output.frame")
+
+        class FakeSeries:
+            def __init__(self) -> None:
+                self.channel = ""
+
+            def write(self, path: Path, *, format: str, overwrite: bool) -> None:  # noqa: A002
+                path.write_bytes(b"")
+
+        class FakeAdapter:
+            def __init__(self, base: FixedNoiseSimulator, gps_start: float) -> None:
+                self.base = base
+                self.gps_start = gps_start
+
+            def generate(self, *, duration: float, sampling_frequency: float, detectors: list[str], seed: int | None):
+                self.gps_start += duration
+                return {detector: FakeSeries() for detector in detectors}
+
+        monkeypatch.setattr(frame_output, "_require_gwf_backend", lambda: None)
+        monkeypatch.setattr(frame_output, "GWpyAdapter", FakeAdapter)
+        return FrameWriter(FixedNoiseSimulator(), gps_start=0.0, output_dir=directory, **kwargs)
+
+    def test_an_overlong_frame_name_is_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A frame name carries the channel as well as the epoch, so it hits the limit soonest.
+
+        The boundary was measured, not assumed: at epoch `0` with no prefix, 234 characters composes to
+        exactly 255 bytes and 235 to 256. This test first used 232 -- the length from the reviewer's
+        *two-segment* reproduction, where the second segment's ten-digit epoch is what pushes it over --
+        and failed with DID NOT RAISE, because at epoch `0` that name fits.
+        """
+        writer = self._writer(tmp_path, monkeypatch, prefix="")
+
+        with pytest.raises(ValueError, match="GWF frame name"):
+            writer.write(duration=1.0, sampling_frequency=4.0, detectors=["D" * 235])
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_the_last_frame_name_that_fits_is_still_written(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """234 characters composes to exactly 255 bytes, so it must go through."""
+        writer = self._writer(tmp_path, monkeypatch, prefix="")
+
+        output = writer.write(duration=1.0, sampling_frequency=4.0, detectors=["D" * 234])
+
+        assert len(output["D" * 234].name.encode("utf-8")) == 255
+
+    def test_a_later_segment_that_will_not_fit_stops_the_whole_sequence(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The reviewer's reproduction: segment 2's epoch is longer than segment 1's.
+
+        `(0, 1)` composes a name that fits and `(1000000000, 1000000001)` does not, so the first frame was
+        written and left behind with `gps_start` advanced while the second raised `OSError` from GWpy.
+        Every segment's name is now checked before any is written.
+        """
+        writer = self._writer(tmp_path, monkeypatch, prefix="")
+
+        with pytest.raises(ValueError, match="GWF frame name"):
+            writer.write_segments(
+                segments=[(0.0, 1.0), (1000000000.0, 1000000001.0)],
+                sampling_frequency=4.0,
+                detectors=["D" * 232],
+            )
+
+        assert list(tmp_path.iterdir()) == []
+        assert writer.gps_start == pytest.approx(0.0)
+
+    def test_an_ordinary_frame_name_is_unaffected(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The check must not disturb the names the other frame tests assert."""
+        writer = self._writer(tmp_path, monkeypatch, prefix="unit")
+
+        output = writer.write(duration=1.0, sampling_frequency=4.0, detectors=["H1"])
+
+        assert output["H1"].name == "unit_H-H1:MOCK_NOISE_0-1.gwf"

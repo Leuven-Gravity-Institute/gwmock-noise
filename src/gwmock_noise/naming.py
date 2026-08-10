@@ -126,9 +126,11 @@ def reject_unsafe(value: str, *, field: str) -> str:
     )
 
 
-#: The longest a single path component may be, in bytes, on the filesystems this package targets (APFS,
-#: ext4, NTFS all stop at 255). Bytes rather than characters: the limit is on the encoded name, so a name
-#: of accented or CJK characters exhausts it sooner than its length in characters suggests.
+#: The longest a single path component may be, in bytes. APFS and ext4 stop at 255 bytes; NTFS stops at
+#: 255 UTF-16 units, which is characters rather than bytes, so counting bytes over-rejects some names NTFS
+#: would hold. That direction is the safe one and the limit stays a single constant. It is not universal:
+#: eCryptfs stops at 143, and network filesystems vary. A reviewer checked the NTFS claim, which this
+#: comment previously got wrong by lumping all three together.
 MAX_NAME_BYTES = 255
 
 
