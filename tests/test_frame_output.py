@@ -782,26 +782,35 @@ class TestNoColonSurvivesIntoAFrameName:
 
         assert ":" not in name, name
 
-    @pytest.mark.parametrize("channel", ["H1:", ":", "X1:"])
-    def test_the_composer_refuses_to_emit_a_colon_even_when_called_directly(self, channel: str) -> None:
-        """`reject_unsafe` stops these at the config, and `compose_frame_name` is still module-level.
+    @pytest.mark.parametrize(
+        ("channel", "expected"),
+        [
+            ("H1:", "nothing after"),
+            (":", "nothing after"),
+            ("X1:", "nothing after"),
+            # The shape the previous version of this test missed. `split(":", 1)` drops only the first
+            # colon, so `A:B:C` composed `noise_H-H1_B:C_0-1.gwf` -- a colon in a file name, which is
+            # the whole thing this change exists to prevent. Codex found it on the round-19b review,
+            # and it landed on the comment above the composer rather than on the config rule: the
+            # config refuses this input, and the composer claimed it could not emit a colon at all.
+            ("A:B:C", "more than one"),
+            ("H1:A:B", "more than one"),
+        ],
+    )
+    def test_the_composer_refuses_a_channel_it_could_not_name_safely(self, channel: str, expected: str) -> None:
+        """`compose_frame_name` is module level, so a direct caller reaches it through no config at all.
 
-        A direct caller goes through no config at all -- the same reason `FrameWriter` re-checks names
-        that `OutputConfig` already checked. Without this test the composer's explicit branch is
-        unfalsifiable: a mutation restoring the `or channel` fallback survived the entire suite, because
-        every other path that reaches the composer has had the input rejected for it. A defence no test
-        can distinguish is a claim, not a defence -- this file has removed one such check before.
+        That is the same reason `FrameWriter` re-checks the names `OutputConfig` already checked, and the
+        reason this branch has now produced five defects of one shape: a rule that was right and did not
+        reach a layer. The composer re-asserts the shared channel rule rather than trusting its callers.
         """
         frame_output = import_module("gwmock_noise.output.frame")
 
-        name = frame_output.compose_frame_name(
-            detector="H1", channel=channel, gps_start=0.0, duration=1.0, prefix="noise"
-        )
-
-        assert ":" not in name, name
+        with pytest.raises(ValueError, match=expected):
+            frame_output.compose_frame_name(detector="H1", channel=channel, gps_start=0.0, duration=1.0, prefix="noise")
 
     def test_a_colon_less_channel_still_reaches_the_name(self) -> None:
-        """The fallback's actual purpose, kept: `partition` returns an empty suffix here too."""
+        """A channel with no `IFO:` to strip is used whole, which is the branch's other half."""
         frame_output = import_module("gwmock_noise.output.frame")
 
         name = frame_output.compose_frame_name(

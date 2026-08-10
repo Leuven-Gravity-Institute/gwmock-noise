@@ -171,12 +171,24 @@ def reject_unsafe(value: str, *, field: str) -> str:
     found = [character for character in forbidden if character in value]
     if not found:
         return value
+    # The reasons are per field, and deliberately share no phrase. They used to be one sentence listing
+    # every reason for every field, which read fine and cost a mutation: once `compose_frame_name`
+    # re-asserted the channel rule, a bad *detector* reached the channel check first (its resolved
+    # channel contains the detector), raised the shared message, and `match="path syntax"` still matched
+    # -- so a test written to prove the writer's detector check passed on a refusal from a different
+    # rule at a different layer, and the mutation removing that check survived. A message that names one
+    # field's reasons only is what makes `match=` discriminate.
+    reasons = (
+        "'/' is an HDF5 group separator inside the artifact"
+        if field == "channel"
+        else "'/' and '\\' are path syntax, and ':' opens an alternate data stream on NTFS"
+    )
     raise ValueError(
         f"{field} {value!r} contains {', '.join(repr(character) for character in found)}, which cannot "
-        f"appear in an artifact name: '/' is an HDF5 group separator, '\\' and ':' are path syntax, and "
-        f"'<', '>', '\"', '|', '?' and '*' are reserved by Windows in a file name -- refused on every "
-        f"platform so the same configuration stays valid wherever it runs. Rename it, or the artifact "
-        f"would be written somewhere other than where it is reported, or not at all."
+        f"appear in an artifact name: {reasons}, and '<', '>', '\"', '|', '?' and '*' are reserved by "
+        f"Windows in a file name -- refused on every platform so the same configuration stays valid "
+        f"wherever it runs. Rename it, or the artifact would be written somewhere other than where it "
+        f"is reported, or not at all."
     )
 
 

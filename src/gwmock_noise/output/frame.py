@@ -78,14 +78,19 @@ def compose_frame_name(*, detector: str, channel: str, gps_start: float, duratio
     Returns:
         The file name, without a directory.
     """
-    # Everything after the first colon, which is the channel proper -- and only when there *is* a colon.
-    # This was `channel_name or channel`, which conflated "no prefix to drop" with "nothing after the
-    # colon": `"H1:"` partitions to an empty name, fell through to the unstripped channel, and put the
-    # colon back into the file name as `noise_H-H1_H1:_0-1.gwf`. Codex found it on the round-19 review.
+    # The shared rule, re-asserted here rather than assumed of the caller. This function is module level,
+    # so the config validator and the pre-flight are not on the path a direct caller takes -- the same
+    # reason `FrameWriter` re-checks the names `OutputConfig` has already checked.
     #
-    # `reject_unsafe` now refuses both a second colon and an empty channel name, so the branch below is
-    # total over what can reach it -- and the assertion that no colon survives is tested over every
-    # shape a channel can take, rather than claimed here.
+    # Two rounds of review landed on this line. First `channel_name or channel` conflated "no prefix to
+    # drop" with "nothing after the colon", so `"H1:"` fell through to the unstripped value and produced
+    # `noise_H-H1_H1:_0-1.gwf`. The comment that replaced it then claimed no colon could survive, which
+    # was true through a config and false on a direct call: `"A:B:C"` keeps its second colon through
+    # `split(":", 1)` and composed `noise_H-H1_B:C_0-1.gwf`. Codex found both. The rule that was right
+    # and did not reach a layer is the shape of five defects on this branch now, so the fix is reach,
+    # not another special case: whatever `reject_unsafe` refuses of a channel, this refuses too.
+    reject_unsafe(channel, field="channel")
+    # Exactly one colon or none is left, so this cannot leave one behind.
     channel_name = channel.split(":", 1)[1] if ":" in channel else channel
     tag = f"{detector}_{channel_name}"
     name = f"{detector[0]}-{tag}_{format_time_token(gps_start)}-{format_time_token(duration)}.gwf"
