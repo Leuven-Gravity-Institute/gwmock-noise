@@ -340,7 +340,13 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         # Two detectors may compose one name. `_hdf5_name` claimed uniqueness "by construction" because
         # one detector writes one file; the name is injective in the detector as a string, which is not
         # the same as unique on disk. `["H1", "h1"]` returned two paths and wrote one file on APFS.
-        reject_colliding_names(sidecars, described_as="metadata sidecar names")
+        #
+        # The artifact names only. Checking the sidecars too was redundant and a mutation proved it: a
+        # sidecar name is `{prefix}_{detector}.json`, so two detectors can only collide there if they
+        # collide in the detector, which collides their artifact names as well -- and for `gwf`, where
+        # `artifacts` is empty, `FrameWriter` checks its own. A second call no test could distinguish is
+        # not defence in depth, it is a claim that nothing verifies. Their *lengths* still differ from the
+        # artifacts' and are checked above.
         if artifacts:
             reject_colliding_names(artifacts, described_as=f"{config.output.format} artifact names")
 
