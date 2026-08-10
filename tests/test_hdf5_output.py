@@ -852,3 +852,115 @@ class TestTheNulByte:
         so the rule names the one character that actually breaks.
         """
         assert OutputConfig(format="hdf5", channel=f"a{character}b").channel == f"a{character}b"
+
+
+class TestTheComposedNameLength:
+    """The fifth structurally-invalid value, and the first found by fuzzing rather than by review.
+
+    The limit belongs to the composed file name, not to any one field: a 248-character detector is fine
+    alone and not once `noise_`, an epoch, a duration and `.hdf5` surround it. It is the partial-write
+    class again -- with several detectors the over-long one failed *after* the earlier artifacts were on
+    disk, so a run reported `OSError` from inside h5py and left an incomplete set.
+    """
+
+    def test_an_overlong_detector_is_refused(self, tmp_path: Path) -> None:
+        """248 characters plus `noise_` and `.json` is 259 bytes, over the 255-byte component limit.
+
+        Refused by the simulator rather than by the config, because only the writer knows how the name
+        is composed: `npy` adds a prefix and a suffix, HDF5 adds an epoch and a duration too.
+        """
+        config = NoiseConfig(
+            detectors=["a" * 248],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=["white"],
+            output=OutputConfig(directory=tmp_path, format="npy", prefix="noise", gps_start=0.0),
+        )
+
+        with pytest.raises(ValueError, match="over the 255-byte limit"):
+            DefaultNoiseSimulator().run(config)
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_a_length_that_fits_still_works(self, tmp_path: Path) -> None:
+        """The boundary must not move: 240 characters composes to 250 bytes and is written."""
+        detector = "a" * 240
+        config = NoiseConfig(
+            detectors=[detector],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=["white"],
+            output=OutputConfig(directory=tmp_path, format="npy", prefix="noise", gps_start=0.0),
+        )
+
+        path = DefaultNoiseSimulator().run(config).output_paths[detector]
+
+        assert path.exists()
+        assert len(path.name.encode("utf-8")) == 250
+
+    def test_the_limit_counts_bytes_not_characters(self, tmp_path: Path) -> None:
+        """200 accented characters is 400 bytes in UTF-8, so it must be refused.
+
+        A character-count check would have passed this: the filesystem's limit is on the encoded name.
+        """
+        config = NoiseConfig.model_construct(
+            detectors=["é" * 200],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=[],
+            output=OutputConfig.model_construct(
+                directory=tmp_path,
+                format="npy",
+                channel="MOCK_NOISE",
+                channels=None,
+                prefix="noise",
+                gps_start=0.0,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="bytes"):
+            DefaultNoiseSimulator().run(config)
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_one_overlong_detector_among_several_writes_nothing(self, tmp_path: Path) -> None:
+        """The partial set the fuzz found: `H1` and `L1` were written, then the run raised."""
+        config = NoiseConfig.model_construct(
+            detectors=["H1", "L1", "a" * 300],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=[],
+            output=OutputConfig.model_construct(
+                directory=tmp_path,
+                format="hdf5",
+                channel="MOCK_NOISE",
+                channels=None,
+                prefix="noise",
+                gps_start=0.0,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="over the 255-byte limit"):
+            DefaultNoiseSimulator().run(config)
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_a_long_channel_is_unaffected(self, tmp_path: Path) -> None:
+        """An HDF5 dataset name is not a path component, so the limit does not apply to it."""
+        channel = "C" * 400
+        config = NoiseConfig(
+            detectors=["H1"],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=["white"],
+            output=OutputConfig(directory=tmp_path, format="hdf5", prefix="noise", gps_start=0.0, channel=channel),
+        )
+
+        path = DefaultNoiseSimulator().run(config).output_paths["H1"]
+
+        assert path.exists()

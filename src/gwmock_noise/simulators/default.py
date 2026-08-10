@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import h5py
 import numpy as np
 
-from gwmock_noise.naming import check_artifact_names
+from gwmock_noise.naming import check_artifact_names, reject_overlong
 from gwmock_noise.output.frame import FrameWriter
 from gwmock_noise.simulators.base import BaseNoiseSimulator, SimulationResult
 from gwmock_noise.simulators.composite import CompositeNoiseSimulator
@@ -277,6 +277,42 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         self.seed = config.seed
         self._active_metadata = metadata
 
+    def _check_artifact_lengths(self, config: NoiseConfig) -> None:
+        """Check the composed names, which is where the filesystem's limit actually applies.
+
+        Separate from `check_artifact_names` because it needs the names as *composed*, and composition is
+        per format: only the writer knows that HDF5 adds an epoch and a duration while `npy` adds
+        neither. Every format also writes the JSON sidecar, so that name is checked whatever the format.
+
+        `gwf` is absent here on purpose: `FrameWriter` composes its own names and checks them itself, as
+        it does for the character rules.
+
+        Args:
+            config: The configuration whose artifacts are about to be written.
+
+        Raises:
+            ValueError: If any composed name exceeds the filesystem's per-component limit.
+        """
+        for detector in config.detectors:
+            reject_overlong(
+                f"{config.output.prefix}_{detector}.json" if config.output.prefix else f"{detector}.json",
+                described_as="metadata sidecar name",
+            )
+            if config.output.format == "hdf5":
+                reject_overlong(
+                    self._hdf5_name(
+                        config=config,
+                        detector=detector,
+                        channel=self._channel_for(config=config, detector=detector),
+                    ),
+                    described_as="HDF5 artifact name",
+                )
+            elif config.output.format == "npy":
+                reject_overlong(
+                    f"{config.output.prefix}_{detector}.npy" if config.output.prefix else f"{detector}.npy",
+                    described_as="NumPy artifact name",
+                )
+
     def run(self, config: NoiseConfig) -> SimulationResult:
         """Run the noise simulation with the given configuration."""
         # First, before anything is created or loaded. The config boundary is bypassable --
@@ -298,6 +334,8 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
             ),
             prefix=config.output.prefix,
         )
+
+        self._check_artifact_lengths(config)
 
         Path(config.output.directory).mkdir(parents=True, exist_ok=True)
 

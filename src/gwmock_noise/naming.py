@@ -126,6 +126,41 @@ def reject_unsafe(value: str, *, field: str) -> str:
     )
 
 
+#: The longest a single path component may be, in bytes, on the filesystems this package targets (APFS,
+#: ext4, NTFS all stop at 255). Bytes rather than characters: the limit is on the encoded name, so a name
+#: of accented or CJK characters exhausts it sooner than its length in characters suggests.
+MAX_NAME_BYTES = 255
+
+
+def reject_overlong(name: str, *, described_as: str) -> str:
+    """Return *name* unchanged, or raise if the filesystem cannot hold a component that long.
+
+    Checked on the **composed** artifact name rather than on any one field, because that is what the
+    filesystem sees: a 250-character detector is fine alone and not once a prefix, an epoch, a duration
+    and a suffix are around it. Found by fuzzing names against both writers rather than by review, and it
+    matters for the same reason the other name rules do: with several detectors, the over-long one failed
+    *after* the earlier detectors' artifacts were written, leaving a partial set on disk and an `OSError`
+    from inside h5py or numpy instead of a statement about the name.
+
+    Args:
+        name: The composed artifact name, including any prefix and suffix.
+        described_as: What to call it in the message, e.g. ``"HDF5 artifact name"``.
+
+    Returns:
+        The name, unchanged.
+
+    Raises:
+        ValueError: If the encoded name exceeds :data:`MAX_NAME_BYTES`.
+    """
+    encoded = len(name.encode("utf-8"))
+    if encoded <= MAX_NAME_BYTES:
+        return name
+    raise ValueError(
+        f"the {described_as} would be {encoded} bytes ({name[:40]!r}...), over the {MAX_NAME_BYTES}-byte "
+        f"limit for one path component. Shorten the detector name or the prefix."
+    )
+
+
 def check_artifact_names(*, detectors: Iterable[str], channels: Mapping[str, str], prefix: str = "") -> None:
     """Check every name a run is about to use, before anything is generated or written.
 
