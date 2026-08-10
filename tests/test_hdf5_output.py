@@ -755,3 +755,61 @@ class TestAnEmptyNameIsNotAName:
         inert. Rejecting it would refuse configurations that work.
         """
         assert OutputConfig(format="npy", channel="").channel == ""
+
+
+class TestTheCurrentGroupToken:
+    """`.` is HDF5's name for the current group, so it cannot name a dataset.
+
+    Found in round 11, and the same shape as the empty channel: h5py raises after opening the file,
+    leaving a partial artifact. It is the third degenerate value a pure character rule could not see --
+    after the empty string, and unlike whitespace, which is merely odd.
+    """
+
+    def test_a_dot_channel_is_refused(self) -> None:
+        """It reached `create_dataset` and failed with `noise_H-H1_0-1.hdf5` already written."""
+        with pytest.raises(ValueError, match="current group"):
+            OutputConfig(format="hdf5", channels={"H1": "."})
+
+    def test_a_dot_channel_is_refused_as_the_shared_channel_too(self) -> None:
+        """Not only through an override."""
+        with pytest.raises(ValueError, match="current group"):
+            OutputConfig(format="hdf5", channel=".")
+
+    def test_a_dot_dot_channel_is_deliberately_allowed(self) -> None:
+        """The mirror case, kept working on purpose.
+
+        `..` reads like the same class and is not: h5py creates the dataset, GWpy round-trips it, and it
+        is addressable as both `handle[".."]` and `handle["/.."]`. That was measured rather than assumed
+        -- the expectation was that it would resolve to the parent group. Rejecting it would refuse a
+        configuration that works, which this rule has already had to walk back twice.
+        """
+        assert OutputConfig(format="hdf5", channels={"H1": ".."}).channels == {"H1": ".."}
+
+    def test_a_dot_prefix_and_detector_are_unaffected(self) -> None:
+        """The token only matters where it names an HDF5 object, not a file."""
+        assert OutputConfig(format="hdf5", prefix=".").prefix == "."
+        assert NoiseConfig(detectors=["."], duration=1.0, sampling_frequency=4.0, seed=1).detectors == ["."]
+
+    def test_the_dot_channel_writes_nothing_when_bypassed(self, tmp_path: Path) -> None:
+        """And the writer refuses before the file exists, which is the point of the pre-flight."""
+        target = tmp_path / "not-created-yet"
+        config = NoiseConfig.model_construct(
+            detectors=["H1"],
+            duration=4.0,
+            sampling_frequency=128.0,
+            seed=1,
+            components=[],
+            output=OutputConfig.model_construct(
+                directory=target,
+                format="hdf5",
+                channel="MOCK_NOISE",
+                channels={"H1": "."},
+                prefix="",
+                gps_start=1000000000.0,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="current group"):
+            DefaultNoiseSimulator().run(config)
+
+        assert not target.exists()

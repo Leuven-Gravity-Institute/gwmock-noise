@@ -89,6 +89,20 @@ def reject_unsafe(value: str, *, field: str) -> str:
             f"{field} is empty, which cannot name an artifact. Give it a name, or omit the field if the "
             f"caller meant to leave it unset."
         )
+    # `.` is HDF5's own name for the current group, so no dataset can be created with it: h5py raises
+    # "name already exists" *after* opening the file, leaving a partial artifact -- the same shape as the
+    # empty-channel case, and found the same way. Only the channel is affected: as a file-name component
+    # `.` merely produces `noise_..npy`, which is odd and harmless.
+    #
+    # `..` is deliberately NOT rejected. It looks like the same class and is not: a dataset named `..` is
+    # created, round-trips through GWpy, and is addressable as both `handle[".."]` and `handle["/.."]`.
+    # That was checked rather than assumed -- the expectation was that it would resolve to the parent
+    # group. Refusing it would be the over-rejection this rule has already had to walk back twice.
+    if field == "channel" and value == ".":
+        raise ValueError(
+            "channel '.' is HDF5's name for the current group, so no dataset can be created with it. "
+            "Rename the channel."
+        )
     found = [character for character in forbidden if character in value]
     if not found:
         return value
