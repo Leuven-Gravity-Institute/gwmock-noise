@@ -1039,9 +1039,15 @@ class TestTwoDetectorsOneFile:
     this writer name artifacts after the detector instead of the channel back in round 2.
     """
 
-    @pytest.mark.parametrize("artifact_format", ["npy", "hdf5"])
+    @pytest.mark.parametrize("artifact_format", ["npy", "hdf5", "gwf"])
     def test_detectors_differing_only_in_case_are_refused(self, tmp_path: Path, artifact_format: str) -> None:
-        """Both formats: the sidecar name alone is enough to collide."""
+        """Every format: with one channel for both detectors, the *artifact* names collide.
+
+        This docstring used to say the sidecar name alone was enough. It was not: the sidecar was never
+        checked, and what refused these configurations was always the artifact name. The case the sidecar
+        does catch on its own is in `TestSidecarsThatCollideWhenTheArtifactsDoNot`, where the channels
+        differ and the frame names therefore do not collide.
+        """
         config = NoiseConfig(
             detectors=["H1", "h1"],
             duration=1.0,
@@ -1095,6 +1101,108 @@ class TestTwoDetectorsOneFile:
         result = DefaultNoiseSimulator().run(_config(tmp_path))
 
         assert sorted(result.output_paths) == ["H1", "L1"]
+
+
+class TestSidecarsThatCollideWhenTheArtifactsDoNot:
+    """Round 17: the sidecar name is not checked, and the reason given for not checking it was wrong.
+
+    The pre-flight checked artifact names only, on the argument that a sidecar is
+    `{prefix}_{detector}.json`, so two detectors can only collide there if they collide in the detector --
+    which collides their artifact names too. That holds for `npy` and `hdf5`, whose names are composed
+    from the detector. It does not hold for `gwf`: a frame name embeds the *resolved channel*, so two
+    detectors with distinct channel overrides compose distinct frame names while their sidecars still
+    fold together.
+
+    Measured on this branch before the fix: `detectors=["H1", "h1"]` with `channels={"H1": "X1:A",
+    "h1": "Y1:B"}` wrote two frames and **one** sidecar, `noise_H1.json`, holding `h1`'s metadata. No
+    error. The loss is filesystem-dependent -- APFS and NTFS fold case, ext4 does not -- which is exactly
+    why `reject_colliding_names` folds case rather than asking the filesystem.
+
+    Codex found it in round 17; the sidecar-name docstring in `TestTwoDetectorsOneFile` had claimed for
+    three rounds that the sidecar was what refused these configurations, and it never was.
+    """
+
+    @staticmethod
+    def _colliding_sidecars(directory: Path) -> NoiseConfig:
+        """Two detectors whose frame names differ and whose sidecar names do not."""
+        return NoiseConfig(
+            detectors=["H1", "h1"],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=["white"],
+            output=OutputConfig(
+                directory=directory,
+                format="gwf",
+                prefix="noise",
+                gps_start=0.0,
+                channel="MOCK_NOISE",
+                channels={"H1": "X1:A", "h1": "Y1:B"},
+            ),
+        )
+
+    def test_the_preflight_refuses_them(self, tmp_path: Path) -> None:
+        """Asserted against the pre-flight directly, so it needs no GWF backend and cannot pass by error.
+
+        Through `run` this raises before `FrameWriter` is constructed, so on a machine without a backend
+        the pre-fix failure was an `ImportError` rather than a missing refusal -- a red test for the wrong
+        reason. Calling the check itself makes the assertion say what it means on either machine.
+        """
+        with pytest.raises(ValueError, match="collide"):
+            DefaultNoiseSimulator()._check_artifact_lengths(self._colliding_sidecars(tmp_path))
+
+    def test_the_message_names_the_sidecar_rather_than_the_artifact(self, tmp_path: Path) -> None:
+        """The frame names are fine here. A message blaming them would send the reader to the wrong name."""
+        with pytest.raises(ValueError, match="metadata sidecar names"):
+            DefaultNoiseSimulator()._check_artifact_lengths(self._colliding_sidecars(tmp_path))
+
+    def test_a_refused_run_creates_nothing(self, tmp_path: Path) -> None:
+        """The refusal has to land before the output directory, as every other name rule here does."""
+        target = tmp_path / "not-created-yet"
+
+        with pytest.raises(ValueError, match="collide"):
+            DefaultNoiseSimulator().run(self._colliding_sidecars(target))
+
+        assert not target.exists()
+
+    @pytest.mark.parametrize("artifact_format", ["npy", "hdf5"])
+    def test_a_format_where_both_collide_still_blames_the_artifact(self, tmp_path: Path, artifact_format: str) -> None:
+        """The sidecar check runs after the artifact check, and this is the assertion that says so.
+
+        Without it the ordering is a claim in a comment: put the sidecar check first and every collision
+        message changes to name a file the caller never chose, with no test to notice.
+        """
+        config = NoiseConfig(
+            detectors=["H1", "h1"],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=["white"],
+            output=OutputConfig(directory=tmp_path, format=artifact_format, prefix="noise", gps_start=0.0),
+        )
+
+        with pytest.raises(ValueError, match=f"{artifact_format} artifact names"):
+            DefaultNoiseSimulator()._check_artifact_lengths(config)
+
+    def test_distinct_detectors_with_distinct_channels_are_unaffected(self, tmp_path: Path) -> None:
+        """The guard must not refuse the ordinary per-detector override, which is the point of the feature."""
+        config = NoiseConfig(
+            detectors=["H1", "L1"],
+            duration=1.0,
+            sampling_frequency=4.0,
+            seed=1,
+            components=["white"],
+            output=OutputConfig(
+                directory=tmp_path,
+                format="gwf",
+                prefix="noise",
+                gps_start=0.0,
+                channel="MOCK_NOISE",
+                channels={"H1": "X1:A", "L1": "Y1:B"},
+            ),
+        )
+
+        DefaultNoiseSimulator()._check_artifact_lengths(config)
 
 
 class TestARepeatedDetectorOnTheBypassPath:

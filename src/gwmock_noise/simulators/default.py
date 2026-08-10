@@ -321,14 +321,17 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         per format: only the writer knows that HDF5 adds an epoch and a duration while `npy` adds
         neither. Every format also writes the JSON sidecar, so that name is checked whatever the format.
 
-        `gwf` is absent here on purpose: `FrameWriter` composes its own names and checks them itself, as
-        it does for the character rules.
+        `gwf` was absent here on purpose until round 16, on the grounds that `FrameWriter` composes and
+        checks its own names. It does, but only once it exists, and constructing it needs a backend and
+        creates the output directory -- so the name error arrived after the side effect, or not at all.
+        It is composed here now, from the writer's own `compose_frame_name`.
 
         Args:
             config: The configuration whose artifacts are about to be written.
 
         Raises:
-            ValueError: If any composed name exceeds the filesystem's per-component limit.
+            ValueError: If a composed name exceeds the filesystem's per-component limit, or if two
+                detectors compose one name -- as artifacts, or as sidecars.
         """
         # Before the names are collected, not after. Each map below is keyed by detector, so an exact
         # repeat collapses into one entry and the collision check then sees nothing wrong -- which is how
@@ -380,14 +383,21 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         # one detector writes one file; the name is injective in the detector as a string, which is not
         # the same as unique on disk. `["H1", "h1"]` returned two paths and wrote one file on APFS.
         #
-        # The artifact names only. Checking the sidecars too was redundant and a mutation proved it: a
-        # sidecar name is `{prefix}_{detector}.json`, so two detectors can only collide there if they
-        # collide in the detector, which collides their artifact names as well -- and for `gwf`, where
-        # `artifacts` is empty, `FrameWriter` checks its own. A second call no test could distinguish is
-        # not defence in depth, it is a claim that nothing verifies. Their *lengths* still differ from the
-        # artifacts' and are checked above.
         if artifacts:
             reject_colliding_names(artifacts, described_as=f"{config.output.format} artifact names")
+
+        # The sidecars too, and the argument for leaving them out was wrong. It ran: a sidecar name is
+        # `{prefix}_{detector}.json`, so two detectors can only collide there if they collide in the
+        # detector, which collides their artifact names as well -- making a second call no test could
+        # distinguish. That holds for `npy` and `hdf5`, whose names are composed from the detector. It
+        # does not hold for `gwf`, whose name embeds the resolved *channel*: with
+        # `channels={"H1": "X1:A", "h1": "Y1:B"}` the frame names differ, the artifact check passes, and
+        # the sidecars still fold onto one file. Measured before this line existed -- two frames written,
+        # one `noise_H1.json` left holding `h1`'s metadata, no error raised. Codex found it in round 17.
+        #
+        # After the artifact check, not before it, so that the formats where both collide go on blaming
+        # the artifact name -- the one the caller chose.
+        reject_colliding_names(sidecars, described_as="metadata sidecar names")
 
     def run(self, config: NoiseConfig) -> SimulationResult:
         """Run the noise simulation with the given configuration."""

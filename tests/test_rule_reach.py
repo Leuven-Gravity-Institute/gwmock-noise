@@ -64,6 +64,16 @@ _BAD_NAMES = [
     ("over-long detector", ["a" * 300], {}, "over the 255-byte limit", {"simulator"}),
     ("repeated detector", ["H1", "H1"], {}, "more than once", {"config", "simulator"}),
     ("detectors colliding on case", ["H1", "h1"], {}, "collide", {"simulator"}),
+    # Round 17: distinct channels keep the *frame* names apart, so for `gwf` only the sidecar collides.
+    # `hdf5` names its artifact for the detector, so this row is caught there by the artifact rule
+    # instead -- the row asserts the refusal, not which rule produced it.
+    (
+        "detectors colliding in the sidecar only",
+        ["H1", "h1"],
+        {"channels": {"H1": "X1:A", "h1": "Y1:B"}},
+        "collide",
+        {"simulator"},
+    ),
     ("prefix with a slash", ["H1"], {"prefix": "sub/run"}, "path syntax", {"config", "simulator"}),
     ("prefix with a NUL", ["H1"], {"prefix": "a\x00b"}, "NUL", {"config", "simulator"}),
     ("over-long prefix", ["H1"], {"prefix": "p" * 300}, "over the 255-byte limit", {"simulator"}),
