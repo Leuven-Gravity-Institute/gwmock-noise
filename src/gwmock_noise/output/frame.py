@@ -78,10 +78,16 @@ def compose_frame_name(*, detector: str, channel: str, gps_start: float, duratio
     Returns:
         The file name, without a directory.
     """
-    # Everything after the first colon, which is the channel proper. A channel carrying more than one
-    # colon is refused by `reject_unsafe` before this runs, so no colon can survive into the name.
-    _, _, channel_name = channel.partition(":")
-    tag = f"{detector}_{channel_name or channel}"
+    # Everything after the first colon, which is the channel proper -- and only when there *is* a colon.
+    # This was `channel_name or channel`, which conflated "no prefix to drop" with "nothing after the
+    # colon": `"H1:"` partitions to an empty name, fell through to the unstripped channel, and put the
+    # colon back into the file name as `noise_H-H1_H1:_0-1.gwf`. Codex found it on the round-19 review.
+    #
+    # `reject_unsafe` now refuses both a second colon and an empty channel name, so the branch below is
+    # total over what can reach it -- and the assertion that no colon survives is tested over every
+    # shape a channel can take, rather than claimed here.
+    channel_name = channel.split(":", 1)[1] if ":" in channel else channel
+    tag = f"{detector}_{channel_name}"
     name = f"{detector[0]}-{tag}_{format_time_token(gps_start)}-{format_time_token(duration)}.gwf"
     if prefix:
         name = f"{prefix}_{name}"

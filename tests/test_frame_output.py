@@ -747,3 +747,47 @@ class TestWriteSegmentsChecksNamesToo:
         written = writer.write_segments([(0.0, 1.0), (1.0, 2.0)], sampling_frequency=4.0, detectors=["H1"])
 
         assert [path["H1"].name for path in written] == ["H-H1_MOCK_NOISE_0-1.gwf", "H-H1_MOCK_NOISE_1-1.gwf"]
+
+
+class TestNoColonSurvivesIntoAFrameName:
+    """Round 19's own defect: the `IFO:` strip fell back to the raw channel when the suffix was empty.
+
+    `compose_frame_name` took `channel.partition(":")` and then `channel_name or channel`, so a channel
+    whose colon is trailing -- `"H1:"`, or `":"` alone -- produced an empty suffix, fell back to the
+    unstripped channel, and put the colon straight back into the file name: `noise_H-H1_H1:_0-1.gwf`.
+    The one-colon rule passed it, because there *is* only one colon.
+
+    Codex found it by probing the composer rather than by reading it, which is the only way this was
+    going to be found: the fallback exists for the colon-less case, and `partition` returns an empty
+    suffix for both, so the two cases are indistinguishable to `or`.
+    """
+
+    @pytest.mark.parametrize("channel", ["H1:", ":", "X1:"])
+    def test_a_channel_whose_colon_is_trailing_is_refused(self, channel: str) -> None:
+        """An empty channel name is not a name, whatever precedes the colon."""
+        with pytest.raises(ValueError, match="empty"):
+            gwmock_noise.OutputConfig(format="gwf", channels={"H1": channel})
+
+    @pytest.mark.parametrize("channel", ["H1:MOCK_NOISE", "MOCK_NOISE", "X1:A"])
+    def test_the_composed_name_never_carries_a_colon(self, channel: str) -> None:
+        """The property the composer's comment claims, asserted over the shapes a channel can take.
+
+        Including the colon-less channel, which is what the fallback was there for.
+        """
+        frame_output = import_module("gwmock_noise.output.frame")
+
+        name = frame_output.compose_frame_name(
+            detector="H1", channel=channel, gps_start=0.0, duration=1.0, prefix="noise"
+        )
+
+        assert ":" not in name, name
+
+    def test_a_colon_less_channel_still_reaches_the_name(self) -> None:
+        """The fallback's actual purpose, kept: `partition` returns an empty suffix here too."""
+        frame_output = import_module("gwmock_noise.output.frame")
+
+        name = frame_output.compose_frame_name(
+            detector="H1", channel="MOCK_NOISE", gps_start=0.0, duration=1.0, prefix=""
+        )
+
+        assert name == "H-H1_MOCK_NOISE_0-1.gwf"

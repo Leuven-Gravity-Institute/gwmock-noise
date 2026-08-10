@@ -151,6 +151,18 @@ def reject_unsafe(value: str, *, field: str) -> str:
             f"channel {value!r} carries more than one ':'. Only the leading 'IFO:' is dropped when the "
             f"channel enters a frame name, so the rest would remain in the file name. Use one."
         )
+    # And the part *after* the colon has to be a name. `"H1:"` has exactly one colon, so the rule above
+    # passes it, and `partition(":")` then yields an empty channel name -- which the composer read as
+    # "this channel has no IFO prefix" and fell back to the unstripped value, putting the colon straight
+    # back into the file name: `noise_H-H1_H1:_0-1.gwf`. Codex found that by probing the composer rather
+    # than reading it, which is the only way it was going to be found: an absent prefix and an empty
+    # channel name are indistinguishable to `partition`. The composer no longer guesses; this rejects the
+    # input that made it guess.
+    if field == "channel" and ":" in value and not value.split(":", 1)[1]:
+        raise ValueError(
+            f"channel {value!r} has nothing after its ':', so its channel name is empty and only the "
+            f"observatory prefix remains. Give the channel a name, or drop the ':'."
+        )
     if field == "channel" and value == ".":
         raise ValueError(
             "channel '.' is HDF5's name for the current group, so no dataset can be created with it. "
