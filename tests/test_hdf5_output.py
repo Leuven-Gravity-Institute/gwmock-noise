@@ -261,20 +261,24 @@ class TestTheNameIsUniquePerDetector:
     """Naming is the part of this writer that has been wrong twice, in opposite directions.
 
     Note what is *not* claimed: that the two formats name a file identically. They deliberately do not --
-    a frame keeps the channel and a colon, this keeps the detector -- and an earlier version of this
-    docstring said otherwise while the tests below checked only the site letter and the absence of a
-    colon.
+    a frame keeps the channel (without its `IFO:` prefix, since Windows reserves the colon), this keeps
+    the detector alone -- and an earlier version of this docstring said otherwise while the tests below
+    checked only the site letter and the absence of a colon.
+
+    The original demonstration used `channels={"H1": "H1:A:B", "L1": "H1:A_B"}`, where the colon-escaping
+    name produced `H-H1_A_B_...hdf5` for both detectors and one silently overwrote the other. That exact
+    pair can no longer be configured: a channel carrying two colons is refused outright now, because the
+    frame name drops only the first. So the property is demonstrated with channels that are *identical*
+    instead, which is the strongest form of the same collision.
     """
 
     def test_two_detectors_never_share_a_file(self, tmp_path: Path) -> None:
-        """The collision that lost data: two channels escaping onto one name.
+        """Two detectors given one and the same channel still write two files.
 
-        With `channels={"H1": "H1:A:B", "L1": "H1:A_B"}` the colon-escaping name produced
-        `H-H1_A_B_...hdf5` for both, so one detector silently overwrote the other and both returned
-        paths pointed at the survivor. A reviewer demonstrated it on disk. Naming for the detector makes
-        a collision impossible, and this asserts the property rather than that one escape.
+        Naming for the detector makes the collision impossible by construction, which is the property
+        worth asserting -- not that one particular escape sequence is handled.
         """
-        result = DefaultNoiseSimulator().run(_config(tmp_path, channels={"H1": "H1:A:B", "L1": "H1:A_B"}))
+        result = DefaultNoiseSimulator().run(_config(tmp_path, channels={"H1": "H1:A_B", "L1": "H1:A_B"}))
 
         assert result.output_paths["H1"] != result.output_paths["L1"]
         assert len(list(tmp_path.glob("*.hdf5"))) == 2
@@ -282,12 +286,21 @@ class TestTheNameIsUniquePerDetector:
     def test_each_file_holds_its_own_detector_s_channel(self, tmp_path: Path) -> None:
         """The other half of the collision: the data, not just the paths, must be distinct."""
         h5py = pytest.importorskip("h5py")
-        result = DefaultNoiseSimulator().run(_config(tmp_path, channels={"H1": "H1:A:B", "L1": "H1:A_B"}))
+        result = DefaultNoiseSimulator().run(_config(tmp_path, channels={"H1": "H1:A_B", "L1": "L1:C_D"}))
 
         with h5py.File(result.output_paths["H1"], "r") as handle:
-            assert list(handle) == ["H1:A:B"]
-        with h5py.File(result.output_paths["L1"], "r") as handle:
             assert list(handle) == ["H1:A_B"]
+        with h5py.File(result.output_paths["L1"], "r") as handle:
+            assert list(handle) == ["L1:C_D"]
+
+    def test_a_channel_carrying_two_colons_is_refused(self, tmp_path: Path) -> None:
+        """The pair above used to be configurable, and the rule that replaced it is asserted here.
+
+        Only the leading `IFO:` is dropped when a channel enters a frame name, so a second colon would
+        survive into the file name and NTFS would read it as an alternate data stream.
+        """
+        with pytest.raises(ValueError, match="more than one ':'"):
+            _config(tmp_path, channels={"H1": "H1:A:B"})
 
     def test_an_override_does_not_move_the_site_letter(self, tmp_path: Path) -> None:
         """`channels={"H1": "L1:CUSTOM"}` is still H1's data, so the name still starts with H."""
@@ -843,15 +856,36 @@ class TestTheNulByte:
         with pytest.raises(ValueError, match="NUL"):
             OutputConfig(format="npy", prefix="a\x00b")
 
-    @pytest.mark.parametrize("character", ["\n", "\t", "\r", "\x7f", "\x07"])
-    def test_other_control_characters_are_deliberately_allowed(self, character: str) -> None:
-        """Measured, not assumed: each of these round-trips through HDF5 and through a file name.
+    @pytest.mark.parametrize("character", ["\n", "\t", "\r", "\x07"])
+    def test_control_characters_are_refused_because_windows_reserves_them(self, character: str) -> None:
+        """This test asserted the opposite until CI first ran on Windows, and the reversal is the point.
 
-        They look worse than they behave. Rejecting control characters as a class would refuse
-        configurations that work, which is the over-rejection this rule has twice had to walk back --
-        so the rule names the one character that actually breaks.
+        It used to read "deliberately allowed", on a measurement that each of these round-trips through
+        HDF5 and through a file name. The measurement was real and the conclusion was wrong, because it
+        was taken on POSIX only: `windows-latest` refused every one of them with `OSError [Errno 22]
+        Invalid argument`, for `npy`, `hdf5` and `gwf` alike. Windows reserves everything below `0x20`
+        in a file name.
+
+        Refusing them everywhere rather than only on Windows is the deliberate part: a configuration
+        should not become invalid by being run on a different machine.
         """
-        assert OutputConfig(format="hdf5", channel=f"a{character}b").channel == f"a{character}b"
+        with pytest.raises(ValueError, match="Windows reserves"):
+            OutputConfig(format="hdf5", channel=f"a{character}b")
+
+    def test_del_is_still_allowed(self) -> None:
+        """`0x7f` is not in the reserved range, and it was measured to work on all three platforms.
+
+        Kept as its own case so the new rule's *edge* is asserted rather than assumed: a rule written as
+        "control characters" rather than "below 0x20" would take this one too, and that would be the
+        over-rejection this module has already had to walk back twice.
+        """
+        assert OutputConfig(format="hdf5", channel="a\x7fb").channel == "a\x7fb"
+
+    @pytest.mark.parametrize("character", ["<", ">", '"', "|", "?", "*"])
+    def test_the_windows_reserved_characters_are_refused(self, character: str) -> None:
+        """The printable half of the same finding, and refused on every platform for the same reason."""
+        with pytest.raises(ValueError, match="reserved by Windows"):
+            OutputConfig(format="hdf5", channel=f"a{character}b")
 
 
 class TestTheComposedNameLength:

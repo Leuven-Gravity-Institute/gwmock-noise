@@ -73,21 +73,30 @@ read frames. `hdf5` writes one file per detector carrying the samples together
 with the epoch, the sample interval, the channel and the unit, so a reader does
 not need to be told the grid separately; GWpy reads these files directly.
 
-Detector, channel and prefix names may not contain `/` or `\`, and detector and
-prefix names may not contain `:`. A detector or channel may not be empty either.
+Detector, channel and prefix names may not contain `/` or `\`, nor any character
+Windows reserves in a file name: `< > " | ? *`, and anything below `0x20`, which
+includes newline and tab. Detector and prefix names may not contain `:` either.
+A channel may carry one colon, and only one: a resolved channel is `IFO:name` by
+convention, and that prefix is dropped when the channel enters a frame name. A
+detector or channel may not be empty.
+
+Two different reasons sit behind that list. `/` is a group separator inside an
+HDF5 file, so a channel carrying one writes the data into a nested group instead
+of the dataset the reader looks for. The rest cannot appear in a file name on at
+least one supported platform -- and they are refused **everywhere**, not only on
+Windows, so that the same configuration stays valid wherever it is run.
+
 An empty prefix is accepted, but note that it does not remove the separator: the
 artifacts are named `_H1.npy` and `_H1.json`, not `H1.npy`. Two detectors may
 also not compose the same artifact name -- `H1` and `h1` differ as strings and
 name one file on macOS and Windows -- and a detector may not be repeated. Those
 two are checked by the simulator and by the frame writer as well as by the
-config, since a configuration can be built in ways that skip validation. Those
-are HDF5 and path syntax: `/` is a group separator inside an HDF5 file, and a
-name carrying one would write the data into a nested group instead of the
-dataset the reader looks for. Channel names are checked for the formats that use
-the channel: `npy` writes a bare array and never reads it, so a channel is not
-restricted there. **Detector and prefix names are checked for every format**,
-because both become part of a file name whatever the format is -- and of the
-JSON sidecar's name too.
+config, since a configuration can be built in ways that skip validation.
+
+Channel names are checked for the formats that use the channel: `npy` writes a
+bare array and never reads it, so a channel is not restricted there. **Detector
+and prefix names are checked for every format**, because both become part of a
+file name whatever the format is -- and of the JSON sidecar's name too.
 
 The simulator checks the same rule again before it generates anything, for every
 output format -- a config can be constructed in ways that skip validation, and a

@@ -37,7 +37,26 @@ def format_time_token(value: float) -> str:
 
 
 def compose_frame_name(*, detector: str, channel: str, gps_start: float, duration: float, prefix: str) -> str:
-    """Return the file name a frame segment will be written to.
+    """Return the file name a frame segment will be written to, as `H-H1_MOCK_NOISE_100-2.gwf`.
+
+    The name embeds the channel, but not the channel's `IFO:` prefix. A resolved channel follows the
+    `IFO:name` convention and so carries a colon -- and Windows reserves `:` for NTFS alternate data
+    streams, which made every GWF artifact unwritable there. CI caught that the hour this branch first ran
+    on Windows; eighteen review rounds on POSIX machines could not. The observatory convention drops the
+    same component for the same practical reason: `H-H1_HOFT_C00-1187008512-4096.gwf` carries the site
+    letter, then `{detector}_{channel}`, and no colon anywhere.
+
+    Dropping the `IFO:` loses nothing, because the detector is already the next component of the name, and
+    the frame itself still carries the full resolved channel -- `write` sets `series.channel` before the
+    frame is written, so a reader gets `H1:MOCK_NOISE` from the metadata regardless of the file name.
+
+    Where the channel is an override naming a *different* observatory (`X1:A` on detector `H1`), the
+    detector wins the name and the override's own IFO is dropped with the colon: `H-H1_A_0-1.gwf`. The
+    frame metadata still says `X1:A`. That is a naming choice, not a rule -- it keeps the file name
+    agreeing with the detector it holds.
+
+    The epoch and duration stay: a frame reader needs them, and the length rules were measured against a
+    name that carries them.
 
     Module level, and taking no writer, because the simulator must know this name *before* a `FrameWriter`
     exists. `FrameWriter.__init__` requires a GWF backend and creates the output directory, so a run whose
@@ -51,15 +70,19 @@ def compose_frame_name(*, detector: str, channel: str, gps_start: float, duratio
 
     Args:
         detector: The detector, whose first character is the site letter.
-        channel: The resolved channel, which a frame name embeds.
         gps_start: The epoch of the segment.
         duration: The duration of the segment.
         prefix: The artifact prefix, or empty for none.
+        channel: The resolved channel, whose `IFO:` prefix is dropped before it enters the name.
 
     Returns:
         The file name, without a directory.
     """
-    name = f"{detector[0]}-{channel}_{format_time_token(gps_start)}-{format_time_token(duration)}.gwf"
+    # Everything after the first colon, which is the channel proper. A channel carrying more than one
+    # colon is refused by `reject_unsafe` before this runs, so no colon can survive into the name.
+    _, _, channel_name = channel.partition(":")
+    tag = f"{detector}_{channel_name or channel}"
+    name = f"{detector[0]}-{tag}_{format_time_token(gps_start)}-{format_time_token(duration)}.gwf"
     if prefix:
         name = f"{prefix}_{name}"
     return name
@@ -166,6 +189,19 @@ class FrameWriter:
             ValueError: If any segment is empty or reversed, or if a name cannot survive becoming part of
                 a file name.
         """
+        # The character rules first, exactly as `write` runs them, and for the same reason: this is public
+        # API and the caller may have gone through no config at all. `write` had them and this did not, so
+        # the order was inverted for one of the two entry points -- CodeRabbit found it on the PR. The
+        # consequence was not cosmetic: `_check_frame_name_lengths` reaches `compose_frame_name`, which
+        # evaluates `detector[0]`, so `detectors=[""]` raised `IndexError` here while the docstring
+        # promised `ValueError`. The empty detector is precisely the case `reject_unsafe` exists to turn
+        # into a statement about the name.
+        check_artifact_names(
+            detectors=detectors,
+            channels={detector: self._channel_name(detector) for detector in detectors},
+            prefix=self.prefix,
+        )
+
         # Every segment validated before the first one is written. Checking inside the loop meant an
         # invalid second segment raised with the first already on disk and `gps_start` advanced, leaving
         # the caller a partial set they never chose to keep and a writer whose state had moved. Both

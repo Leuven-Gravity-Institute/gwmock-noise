@@ -40,14 +40,30 @@ from __future__ import annotations
 import unicodedata
 from collections.abc import Iterable, Mapping
 
+#: Characters Windows reserves in a file name, minus `:`, which the channel needs for `IFO:name` and the
+#: detector rule already forbids outright. Rejected on **every** platform, not only Windows: a config is
+#: written on one machine and run on another, and a rule that consulted the host would make the same
+#: configuration valid in one place and invalid in the next -- the same reason `reject_colliding_names`
+#: folds case rather than asking the filesystem. The price is refusing a `*` in a channel on Linux, where
+#: it would have worked.
+#:
+#: Measured, not guessed: the first CI run on `windows-latest` failed on every one of these, in `npy`,
+#: `hdf5` and `gwf` alike, with `OSError [Errno 22] Invalid argument`.
+WINDOWS_RESERVED = ("<", ">", '"', "|", "?", "*")
+
 #: Characters a channel cannot contain. `/` is an HDF5 group separator, so a channel carrying one is
 #: written into a nested group rather than the dataset a reader looks for -- silently, since the file is
-#: created and its path returned. `\` is the same story on a Windows path.
-UNSAFE_FOR_CHANNEL = ("/", "\\")
+#: created and its path returned. `\` is the same story on a Windows path. The Windows set belongs here
+#: too, because a channel reaches a *file* name: a frame is `H-H1_MOCK_NOISE_100-2.gwf`.
+#:
+#: `:` is deliberately absent. A resolved channel is `IFO:name` by convention, and `compose_frame_name`
+#: drops that prefix before the channel enters a file name. A *second* colon is refused separately, since
+#: only the first one is dropped and the rest would survive into the name.
+UNSAFE_FOR_CHANNEL = ("/", "\\", *WINDOWS_RESERVED)
 
 #: Characters a detector cannot contain. A superset: a detector becomes a file name, so `:` matters too
 #: -- on NTFS it opens an alternate data stream, and the artifact would not exist as a file at all.
-UNSAFE_FOR_DETECTOR = ("/", "\\", ":")
+UNSAFE_FOR_DETECTOR = ("/", "\\", ":", *WINDOWS_RESERVED)
 
 #: Which rule each kind of name takes. A prefix is a file-name component like a detector, so it takes the
 #: detector rule; it is never written inside an artifact, which is what distinguishes it from a channel.
@@ -105,12 +121,35 @@ def reject_unsafe(value: str, *, field: str) -> str:
     # too. A reviewer found it. Applies to all three fields: each becomes either a dataset name or a
     # file name, and NUL is invalid in both.
     #
-    # Deliberately NOT extended to control characters generally. Newline, tab, CR, DEL and bell were all
-    # measured: every one round-trips through HDF5 and through a `.npy` file name. They look worse than
-    # they behave, and refusing them would be the over-rejection this rule has had to walk back twice.
+    # This comment used to say the rule was deliberately NOT extended to control characters generally,
+    # because newline, tab, CR, DEL and bell had been measured to round-trip through HDF5 and through a
+    # `.npy` file name. That measurement was right and its conclusion was wrong: it was taken on POSIX
+    # only. The first CI run on `windows-latest` refused `a\nb`, `a\tb`, `a\rb` and `\x07` outright --
+    # `OSError [Errno 22] Invalid argument` -- for `npy`, `hdf5` and `gwf`. Windows reserves every
+    # character below 0x20 in a file name.
+    #
+    # So NUL keeps its own message, because it is the one that also breaks HDF5 (VLEN strings cannot
+    # embed it, and h5py raises *after* opening the file, leaving a partial artifact) and POSIX paths,
+    # and the rest are refused as a class. DEL (0x7f) is left alone: it is not in the reserved range and
+    # it was measured to work on all three platforms.
     if "\x00" in value:
         raise ValueError(
             f"{field} {value!r} contains a NUL byte, which cannot appear in an HDF5 name or a file path. Remove it."
+        )
+    control = sorted({character for character in value if character < " "})
+    if control:
+        raise ValueError(
+            f"{field} {value!r} contains {''.join(repr(character) for character in control)}, which Windows "
+            f"reserves in a file name. Remove it."
+        )
+    # One colon, and only in a channel. `compose_frame_name` drops everything up to the first colon as the
+    # `IFO:` prefix, so a second colon would survive into a GWF file name, where NTFS reads it as an
+    # alternate data stream. The rule is here rather than in the composer because the composer's job is to
+    # name a file, not to judge one.
+    if field == "channel" and value.count(":") > 1:
+        raise ValueError(
+            f"channel {value!r} carries more than one ':'. Only the leading 'IFO:' is dropped when the "
+            f"channel enters a frame name, so the rest would remain in the file name. Use one."
         )
     if field == "channel" and value == ".":
         raise ValueError(
@@ -122,8 +161,10 @@ def reject_unsafe(value: str, *, field: str) -> str:
         return value
     raise ValueError(
         f"{field} {value!r} contains {', '.join(repr(character) for character in found)}, which cannot "
-        f"appear in an artifact name: '/' is an HDF5 group separator, and '\\' and ':' are path syntax. "
-        f"Rename it, or the artifact would be written somewhere other than where it is reported."
+        f"appear in an artifact name: '/' is an HDF5 group separator, '\\' and ':' are path syntax, and "
+        f"'<', '>', '\"', '|', '?' and '*' are reserved by Windows in a file name -- refused on every "
+        f"platform so the same configuration stays valid wherever it runs. Rename it, or the artifact "
+        f"would be written somewhere other than where it is reported, or not at all."
     )
 
 

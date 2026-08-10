@@ -86,8 +86,8 @@ def test_frame_writer_round_trips_gwf_output(tmp_path: Path) -> None:
 
     output_paths = writer.write(duration=2.0, sampling_frequency=4.0, detectors=["H1", "L1"])
 
-    assert output_paths["H1"].name == "H-H1:MOCK_NOISE_100-2.gwf"
-    assert output_paths["L1"].name == "L-L1:MOCK_NOISE_100-2.gwf"
+    assert output_paths["H1"].name == "H-H1_MOCK_NOISE_100-2.gwf"
+    assert output_paths["L1"].name == "L-L1_MOCK_NOISE_100-2.gwf"
 
     prefixed = FrameWriter(
         FixedNoiseSimulator(),
@@ -96,8 +96,8 @@ def test_frame_writer_round_trips_gwf_output(tmp_path: Path) -> None:
         prefix="run_a",
     )
     prefixed_paths = prefixed.write(duration=2.0, sampling_frequency=4.0, detectors=["H1", "L1"])
-    assert prefixed_paths["H1"].name == "run_a_H-H1:MOCK_NOISE_100-2.gwf"
-    assert prefixed_paths["L1"].name == "run_a_L-L1:MOCK_NOISE_100-2.gwf"
+    assert prefixed_paths["H1"].name == "run_a_H-H1_MOCK_NOISE_100-2.gwf"
+    assert prefixed_paths["L1"].name == "run_a_L-L1_MOCK_NOISE_100-2.gwf"
 
     recovered = timeseries.TimeSeries.read(output_paths["H1"], "H1:MOCK_NOISE", start=100, end=102)
     assert np.allclose(recovered.value, np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]))
@@ -116,8 +116,8 @@ def test_frame_writer_writes_multiple_segments(tmp_path: Path) -> None:
     )
 
     assert [segment["H1"].name for segment in written] == [
-        "H-H1:MOCK_NOISE_100-2.gwf",
-        "H-H1:MOCK_NOISE_102-1.gwf",
+        "H-H1_MOCK_NOISE_100-2.gwf",
+        "H-H1_MOCK_NOISE_102-1.gwf",
     ]
 
     prefixed_writer = FrameWriter(FixedNoiseSimulator(), gps_start=0.0, output_dir=tmp_path, prefix="seg")
@@ -128,8 +128,8 @@ def test_frame_writer_writes_multiple_segments(tmp_path: Path) -> None:
         seed=7,
     )
     assert [segment["H1"].name for segment in prefixed_written] == [
-        "seg_H-H1:MOCK_NOISE_100-2.gwf",
-        "seg_H-H1:MOCK_NOISE_102-1.gwf",
+        "seg_H-H1_MOCK_NOISE_100-2.gwf",
+        "seg_H-H1_MOCK_NOISE_102-1.gwf",
     ]
     assert writer.gps_start == pytest.approx(103.0)
 
@@ -172,7 +172,7 @@ def test_frame_writer_write_and_write_segments_without_real_gwpy(
     output = writer.write(duration=1.25, sampling_frequency=8.0, detectors=["H1"], seed=9)
 
     path = output["H1"]
-    assert path.name == "unit_H-H1:MOCK_NOISE_100p25-1p25.gwf"
+    assert path.name == "unit_H-H1_MOCK_NOISE_100p25-1p25.gwf"
     assert writer.gps_start == pytest.approx(101.5)
 
     with pytest.raises(ValueError, match="expected gps_end > gps_start"):
@@ -262,17 +262,22 @@ class TestTheWriterChecksItsOwnInputs:
         A reviewer's second reproduction was `FrameWriter(..., channel="MOCK/NOISE")`, which is refused at
         construction now, so that input cannot reach `write` at all. `channel` is a plain public
         attribute, though, so assigning to it afterwards gets there instead, and without the check in
-        `write` that produced `H-H1:MOCK/NOISE_100-2.gwf`. Written because the construction-time check
+        `write` that produced `H-H1_MOCK/NOISE_100-2.gwf`. Written because the construction-time check
         made the one in `write` look redundant, and it is not.
+
+        The decoy directory used to be `H-H1:MOCK`, which is the shape the name had before the channel's
+        `IFO:` prefix was dropped -- and creating it raised `NotADirectoryError [WinError 267]` on
+        Windows, so this test failed there for a reason that had nothing to do with what it asserts. That
+        was the second of the two Windows CI failures.
         """
         writer = self._writer(tmp_path, monkeypatch)
         writer.channel = "MOCK/NOISE"
-        (tmp_path / "H-H1:MOCK").mkdir()
+        (tmp_path / "H-H1_MOCK").mkdir()
 
         with pytest.raises(ValueError, match="group separator"):
             writer.write(duration=2.0, sampling_frequency=4.0, detectors=["H1"])
 
-        assert list((tmp_path / "H-H1:MOCK").iterdir()) == []
+        assert list((tmp_path / "H-H1_MOCK").iterdir()) == []
 
     def test_a_bad_channel_is_refused_at_construction_before_the_directory_is_made(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -323,7 +328,7 @@ class TestTheWriterChecksItsOwnInputs:
         writer = self._writer(tmp_path, monkeypatch, channels={"H1": "H1:STRAIN_NOISE"})
 
         assert writer._channel_name("H1") == "H1:STRAIN_NOISE"
-        assert writer._frame_path("H1", "H1:STRAIN_NOISE", 100.0, 2.0).name == "H-H1:STRAIN_NOISE_100-2.gwf"
+        assert writer._frame_path("H1", "H1:STRAIN_NOISE", 100.0, 2.0).name == "H-H1_STRAIN_NOISE_100-2.gwf"
 
 
 class TestRoundNineGaps:
@@ -404,6 +409,56 @@ class TestRoundNineGaps:
         assert writer.gps_start == pytest.approx(100.0)
 
 
+def _writer_over_fake_backend(
+    directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    recorded: dict[str, str] | None = None,
+    **kwargs: object,
+) -> FrameWriter:
+    """Return a `FrameWriter` over a fake GWF backend, writing real (empty) files at the composed paths.
+
+    One helper rather than the three near-copies this file had grown: CodeRabbit flagged the duplication
+    on the PR, and two of the copies were already identical, which is how a fake drifts from the real
+    interface it stands for without anything failing.
+
+    Args:
+        directory: The output directory the writer is given.
+        monkeypatch: Used to replace the backend check and the GWpy adapter.
+        recorded: If given, filled with the channel each detector's frame was written with -- the channel
+            still has to reach the frame, now that it no longer reaches the file name.
+        **kwargs: Passed to `FrameWriter`.
+
+    Returns:
+        The writer.
+    """
+    frame_output = import_module("gwmock_noise.output.frame")
+
+    class FakeSeries:
+        def __init__(self, detector: str) -> None:
+            self.channel = ""
+            self._detector = detector
+
+        def write(self, path: Path, *, format: str, overwrite: bool) -> None:  # noqa: A002
+            # At write time, not at generate time: `write` assigns `series.channel` in between, and that
+            # assignment is what keeps the channel in the frame after it left the file name.
+            if recorded is not None:
+                recorded[self._detector] = self.channel
+            path.write_bytes(b"")
+
+    class FakeAdapter:
+        def __init__(self, base: FixedNoiseSimulator, gps_start: float) -> None:
+            self.base = base
+            self.gps_start = gps_start
+
+        def generate(self, *, duration: float, sampling_frequency: float, detectors: list[str], seed: int | None):
+            self.gps_start += duration
+            return {detector: FakeSeries(detector) for detector in detectors}
+
+    monkeypatch.setattr(frame_output, "_require_gwf_backend", lambda: None)
+    monkeypatch.setattr(frame_output, "GWpyAdapter", FakeAdapter)
+    return FrameWriter(FixedNoiseSimulator(), gps_start=0.0, output_dir=directory, **kwargs)
+
+
 class TestComposedFrameNameLength:
     """Frames compose their own names, so they need their own length check.
 
@@ -411,29 +466,7 @@ class TestComposedFrameNameLength:
     round-13 brief; a reviewer then demonstrated both ways it bites.
     """
 
-    @staticmethod
-    def _writer(directory: Path, monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> FrameWriter:
-        frame_output = import_module("gwmock_noise.output.frame")
-
-        class FakeSeries:
-            def __init__(self) -> None:
-                self.channel = ""
-
-            def write(self, path: Path, *, format: str, overwrite: bool) -> None:  # noqa: A002
-                path.write_bytes(b"")
-
-        class FakeAdapter:
-            def __init__(self, base: FixedNoiseSimulator, gps_start: float) -> None:
-                self.base = base
-                self.gps_start = gps_start
-
-            def generate(self, *, duration: float, sampling_frequency: float, detectors: list[str], seed: int | None):
-                self.gps_start += duration
-                return {detector: FakeSeries() for detector in detectors}
-
-        monkeypatch.setattr(frame_output, "_require_gwf_backend", lambda: None)
-        monkeypatch.setattr(frame_output, "GWpyAdapter", FakeAdapter)
-        return FrameWriter(FixedNoiseSimulator(), gps_start=0.0, output_dir=directory, **kwargs)
+    _writer = staticmethod(_writer_over_fake_backend)
 
     def test_an_overlong_frame_name_is_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A frame name carries the channel as well as the epoch, so it hits the limit soonest.
@@ -487,35 +520,24 @@ class TestComposedFrameNameLength:
 
         output = writer.write(duration=1.0, sampling_frequency=4.0, detectors=["H1"])
 
-        assert output["H1"].name == "unit_H-H1:MOCK_NOISE_0-1.gwf"
+        assert output["H1"].name == "unit_H-H1_MOCK_NOISE_0-1.gwf"
 
 
 class TestFrameNameCollisions:
-    """Frame names embed the channel, so an override can collide two detectors as easily as case can."""
+    """Frame names embed the detector *and* the channel, so only the detector can collide them now.
 
-    @staticmethod
-    def _writer(directory: Path, monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> FrameWriter:
-        frame_output = import_module("gwmock_noise.output.frame")
+    This class used to say an override could collide two distinct detectors as easily as case could, and
+    it could: the name was `{site}-{channel}_{epoch}-{duration}.gwf`, so `channels={"H1": "X1:A", "H2":
+    "x1:a"}` put `H1` and `H2` on one file. Dropping the channel's `IFO:` prefix -- forced by Windows
+    reserving `:` -- put the detector into the name and closed that case: two detectors that differ at
+    all now differ in the name, whatever their channels say.
 
-        class FakeSeries:
-            def __init__(self) -> None:
-                self.channel = ""
+    The collision surface for frames is therefore now exactly the collision surface for detectors, which
+    is what the other two formats have always had. The override test below is kept, inverted: "this can
+    no longer happen" is worth asserting where it used to happen.
+    """
 
-            def write(self, path: Path, *, format: str, overwrite: bool) -> None:  # noqa: A002
-                path.write_bytes(b"")
-
-        class FakeAdapter:
-            def __init__(self, base: FixedNoiseSimulator, gps_start: float) -> None:
-                self.base = base
-                self.gps_start = gps_start
-
-            def generate(self, *, duration: float, sampling_frequency: float, detectors: list[str], seed: int | None):
-                self.gps_start += duration
-                return {detector: FakeSeries() for detector in detectors}
-
-        monkeypatch.setattr(frame_output, "_require_gwf_backend", lambda: None)
-        monkeypatch.setattr(frame_output, "GWpyAdapter", FakeAdapter)
-        return FrameWriter(FixedNoiseSimulator(), gps_start=0.0, output_dir=directory, **kwargs)
+    _writer = staticmethod(_writer_over_fake_backend)
 
     def test_detectors_differing_only_in_case_are_refused(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -528,14 +550,37 @@ class TestFrameNameCollisions:
 
         assert list(tmp_path.iterdir()) == []
 
-    def test_two_overrides_naming_one_frame_are_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The channel is in the frame name, so two overrides can collide distinct detectors."""
+    def test_two_overrides_can_no_longer_collide_distinct_detectors(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The exact pair that used to name one file, asserted to name two.
+
+        `channels={"H1": "X1:A", "H2": "x1:a"}` collided when the name was composed from the channel
+        alone. The name now carries the detector, so `H1` and `H2` cannot meet however their channels
+        fold. Written as two files on disk, not as two strings: the collision it replaces was only ever
+        visible on the filesystem.
+        """
         writer = self._writer(tmp_path, monkeypatch, channels={"H1": "X1:A", "H2": "x1:a"})
 
-        with pytest.raises(ValueError, match="collide"):
-            writer.write(duration=1.0, sampling_frequency=4.0, detectors=["H1", "H2"])
+        output = writer.write(duration=1.0, sampling_frequency=4.0, detectors=["H1", "H2"])
 
-        assert list(tmp_path.iterdir()) == []
+        assert len({str(path) for path in output.values()}) == 2
+        assert len(list(tmp_path.glob("*.gwf"))) == 2
+
+    def test_the_override_still_reaches_the_frame_content(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Dropping `IFO:` from the *name* must not drop the channel from the frame.
+
+        The whole justification for taking the colon out of the file name is that GWF carries the channel
+        natively, so nothing is lost. That is only true if the writer still sets it.
+        """
+        recorded: dict[str, str] = {}
+        writer = self._writer(tmp_path, monkeypatch, channels={"H1": "X1:A"}, recorded=recorded)
+
+        writer.write(duration=1.0, sampling_frequency=4.0, detectors=["H1"])
+
+        assert recorded == {"H1": "X1:A"}
 
     def test_distinct_detectors_still_write(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Two ordinary detectors keep producing two frames."""
@@ -620,3 +665,85 @@ class TestGwfNamesAreCheckedBeforeAnythingExists:
         )
 
         assert writer._frame_path("H1", "H1:MOCK_NOISE", 1234.5, 2.0).name == composed
+
+
+class TestWriteSegmentsChecksNamesToo:
+    """`write` ran the character rules and `write_segments` did not.
+
+    CodeRabbit found it on the PR, and the consequence was not cosmetic. `write_segments` went straight
+    to `_check_frame_name_lengths`, which reaches `compose_frame_name` and evaluates `detector[0]`, so an
+    empty detector raised `IndexError` from inside the composer while the docstring promised `ValueError`.
+    The empty detector is exactly the case `reject_unsafe` exists to turn into a statement about the name.
+
+    This is the reach problem the branch has now hit four times -- a rule present at one entry point and
+    missing from another -- and `test_rule_reach.py` could not see it, because it drives `run`, and `run`
+    never calls `write_segments`.
+    """
+
+    @staticmethod
+    def _writer(directory: Path, monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> FrameWriter:
+        return _writer_over_fake_backend(directory, monkeypatch, **kwargs)
+
+    def test_an_empty_detector_raises_a_value_error_rather_than_an_index_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The reported failure: `IndexError` from `detector[0]`, where the docstring promises `ValueError`."""
+        writer = self._writer(tmp_path, monkeypatch)
+
+        with pytest.raises(ValueError, match="empty"):
+            writer.write_segments([(0.0, 1.0)], sampling_frequency=4.0, detectors=[""])
+
+    @pytest.mark.parametrize(
+        ("detectors", "channel", "expected"),
+        [
+            (["H1/A"], "MOCK_NOISE", "path syntax"),
+            (["H1|A"], "MOCK_NOISE", "reserved by Windows"),
+            (["H1\nA"], "MOCK_NOISE", "Windows reserves"),
+            (["H1", "h1"], "MOCK_NOISE", "collide"),
+            (["H1", "H1"], "MOCK_NOISE", "more than once"),
+        ],
+    )
+    def test_every_name_rule_reaches_write_segments(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        detectors: list[str],
+        channel: str,
+        expected: str,
+    ) -> None:
+        """The same rules `write` enforces, at the entry point that was missing them.
+
+        Parametrised over the rules rather than asserting one of them, because the defect was never a
+        wrong rule -- it was a rule that did not reach here.
+        """
+        writer = self._writer(tmp_path, monkeypatch, channel=channel)
+
+        with pytest.raises(ValueError, match=expected):
+            writer.write_segments([(0.0, 1.0)], sampling_frequency=4.0, detectors=detectors)
+
+        assert list(tmp_path.glob("*.gwf")) == [], "a refusal must not leave a frame behind"
+
+    def test_a_channel_replaced_after_construction_reaches_write_segments_too(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The channel half of the rule, which cannot be reached through the constructor.
+
+        `FrameWriter(..., channel="MOCK/NOISE")` is refused at construction, so the only way a bad channel
+        reaches either writing method is assignment afterwards -- `channel` is a plain public attribute.
+        `write` already had a test for exactly this; `write_segments` did not.
+        """
+        writer = self._writer(tmp_path, monkeypatch)
+        writer.channel = "MOCK/NOISE"
+
+        with pytest.raises(ValueError, match="group separator"):
+            writer.write_segments([(0.0, 1.0)], sampling_frequency=4.0, detectors=["H1"])
+
+        assert list(tmp_path.glob("*.gwf")) == []
+
+    def test_ordinary_segments_still_write(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The check must not disturb the case `write_segments` exists for."""
+        writer = self._writer(tmp_path, monkeypatch)
+
+        written = writer.write_segments([(0.0, 1.0), (1.0, 2.0)], sampling_frequency=4.0, detectors=["H1"])
+
+        assert [path["H1"].name for path in written] == ["H-H1_MOCK_NOISE_0-1.gwf", "H-H1_MOCK_NOISE_1-1.gwf"]
