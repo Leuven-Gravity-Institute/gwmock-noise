@@ -949,6 +949,35 @@ class TestTheComposedNameLength:
 
         assert list(tmp_path.iterdir()) == []
 
+    def test_the_hdf5_name_is_checked_and_not_only_the_sidecar(self, tmp_path: Path) -> None:
+        """An HDF5 name is six bytes longer than its sidecar, so one check cannot stand for the other.
+
+        A mutation disabling the artifact-name check survived: for most lengths the sidecar check refuses
+        first, so the outcome was unchanged. The gap is real and narrow -- a 239-character detector makes
+        a 250-byte sidecar name, which fits, and a 256-byte HDF5 name, which does not, because HDF5 adds
+        the site letter, the epoch and the duration. 238 is the last length that fits.
+        """
+        for length, expectation in ((238, "written"), (239, "refused")):
+            directory = tmp_path / str(length)
+            directory.mkdir()
+            detector = "a" * length
+            config = NoiseConfig(
+                detectors=[detector],
+                duration=1.0,
+                sampling_frequency=4.0,
+                seed=1,
+                components=["white"],
+                output=OutputConfig(directory=directory, format="hdf5", prefix="noise", gps_start=0.0),
+            )
+
+            if expectation == "written":
+                path = DefaultNoiseSimulator().run(config).output_paths[detector]
+                assert len(path.name.encode("utf-8")) == 255
+            else:
+                with pytest.raises(ValueError, match="HDF5 artifact name"):
+                    DefaultNoiseSimulator().run(config)
+                assert list(directory.iterdir()) == []
+
     def test_a_long_channel_is_unaffected(self, tmp_path: Path) -> None:
         """An HDF5 dataset name is not a path component, so the limit does not apply to it."""
         channel = "C" * 400
