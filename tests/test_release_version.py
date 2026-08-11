@@ -132,3 +132,30 @@ class TestTheFormatItReturns:
     def test_a_prefixless_current_is_accepted_and_the_proposal_s_shape_is_kept(self) -> None:
         """`git describe` and git-cliff both emit the `v`, but neither is guaranteed to."""
         assert choose_version(current="0.10.1", proposed="1.0.0") == "0.11.0"
+
+
+class TestWhitespaceNeverReachesTheTag:
+    """The returned string goes straight to `git tag`, so it has to be a tag.
+
+    The parser stripped before matching, and the untouched path then returned the *original* string --
+    so `" v2.0.0 "` was validated as `v2.0.0` and emitted with its spaces intact, and
+    `git check-ref-format 'refs/tags/ v2.0.0 '` rejects that. The demoted path happened to be safe,
+    because it rebuilds the string from parsed numbers rather than passing one through. Codex found it:
+    validating a normalised copy and returning the raw one is the gap.
+    """
+
+    @pytest.mark.parametrize(
+        ("current", "proposed", "expected"),
+        [
+            ("v1.0.0", " v2.0.0 ", "v2.0.0"),
+            ("v1.0.0", "v2.0.0\n", "v2.0.0"),
+            ("v0.10.2", "  v0.11.0", "v0.11.0"),
+        ],
+    )
+    def test_the_untouched_path_returns_a_clean_tag(self, current: str, proposed: str, expected: str) -> None:
+        """A proposal taken unchanged is still normalised -- `git-cliff` output can carry a newline."""
+        assert choose_version(current=current, proposed=proposed) == expected
+
+    def test_the_demoted_path_is_clean_too(self) -> None:
+        """It always was, since it composes the string; asserted so both paths are pinned together."""
+        assert choose_version(current="v0.10.2", proposed=" v1.0.0 ") == "v0.11.0"

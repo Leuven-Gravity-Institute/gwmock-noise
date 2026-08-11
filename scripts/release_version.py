@@ -103,7 +103,17 @@ def choose_version(*, current: str, proposed: str, allow_major_bump: bool = Fals
             f"existing tag or publish a version that reads as older."
         )
 
-    prefix = "v" if proposed.strip().startswith("v") else ""
+    # Normalised once, and it is the normalised form that is returned. Validating a stripped copy while
+    # returning the original meant `" v2.0.0 "` passed the parser and came back with its spaces, and
+    # `git check-ref-format 'refs/tags/ v2.0.0 '` refuses that -- so the release would have failed at the
+    # tag, with a message about ref format rather than about where the whitespace came from. The demoted
+    # path was never exposed to it, since it builds its answer out of parsed numbers. Codex found it; the
+    # general shape is that validating a copy is not validating the thing you return.
+    #
+    # Not cosmetic in practice: the proposal arrives from `$(git-cliff ...)`, and command substitution
+    # strips trailing newlines but nothing else.
+    proposed = proposed.strip()
+    prefix = "v" if proposed.startswith("v") else ""
 
     # The rule applies to exactly one situation: a 0.x package being pushed to 1.0 by a breaking change.
     # Everything else -- 0.x staying in 0.x, and any bump at 1.x or above -- is git-cliff's answer.

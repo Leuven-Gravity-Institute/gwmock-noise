@@ -72,9 +72,14 @@ jobs:
             - name: Bump version and push tag
               id: tag_version
               env:
-                  # The flag itself, or empty. A boolean input arrives as the *string* `false` on a
-                  # dispatch that left it off, so testing the variable for non-emptiness in the shell
-                  # would pass `--allow-major-bump` every time and defeat the rule entirely.
+                  # The flag itself, or empty, so the shell never has to interpret a truth value.
+                  # The `inputs` context keeps a typed boolean as a boolean, so this expression is
+                  # sound; `github.event.inputs` would have handed over the *string* `false`, which is
+                  # truthy in a shell test and would have passed `--allow-major-bump` on every run that
+                  # left it off. Resolving it here rather than in `run:` keeps that distinction from
+                  # mattering. On a `schedule` event `inputs` is absent, which is falsy -- the default.
+                  # An earlier version of this comment claimed the string-`false` pitfall applied to
+                  # this code; codex corrected it, citing the workflow-syntax docs.
                   ALLOW_MAJOR_BUMP:
                       ${{ inputs.allow_major_bump && '--allow-major-bump' || ''
                       }}
@@ -86,7 +91,7 @@ jobs:
                   else
                     # git-cliff proposes; `release_version.py` decides. Its default sends a breaking
                     # change straight to the next major, which is right once an API has been promised
-                    # and wrong before: at v0.10.1 it answers v1.0.0, publishing a stable-API claim as
+                    # and wrong before: at v0.10.2 it answers v1.0.0, publishing a stable-API claim as
                     # a side effect of a bug fix. While the major is 0 that is demoted to a minor bump
                     # unless this run was dispatched with allow_major_bump. At 1.x and above the
                     # proposal is taken unchanged.
