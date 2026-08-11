@@ -36,7 +36,7 @@ def test_noise_config_custom_values() -> None:
             directory=Path("out"),
             prefix="run1",
             format="gwf",
-            gps_start=1234567890.5,
+            gps_start=1234567890,
             channel="GWMOCK",
         ),
         seed=123,
@@ -51,7 +51,7 @@ def test_noise_config_custom_values() -> None:
     assert config.output.directory == Path("out")
     assert config.output.prefix == "run1"
     assert config.output.format == "gwf"
-    assert config.output.gps_start == 1234567890.5
+    assert config.output.gps_start == 1234567890.0
     assert config.output.channel == "GWMOCK"
     assert config.seed == 123
     assert [component.simulator for component in config.components] == ["colored", "spectral_lines"]

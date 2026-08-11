@@ -30,10 +30,47 @@ def _require_gwf_backend() -> None:
 
 
 def format_time_token(value: float) -> str:
-    """Return a filename-safe token for a GPS time or a duration, preserving sub-second precision."""
-    if float(value).is_integer():
-        return str(int(value))
-    return f"{value:.6f}".rstrip("0").rstrip(".").replace(".", "p")
+    """Return the filename token for a GPS epoch or a duration, which must be a whole second.
+
+    This formatted to six decimals and stripped, so any two values that *round to the same six decimals*
+    produced the same token: `format_time_token(1.0)` and `format_time_token(1.0000001)` were both `"1"`,
+    and `1e-7` was `"0"`. Two segments whose epochs did that composed one file name, and the second
+    overwrote the first, reporting two paths to one file. Nothing caught it --
+    `_check_frame_name_lengths` compares names across *detectors* within one segment, so two segments are
+    never compared with each other. A reviewer found it during the review of #298; it is issue #299.
+
+    Note the predicate: rounding alike, **not** being within a microsecond. Two comments of mine said the
+    latter, and codex refuted it with `1.0000004` and `1.0000006` -- `2e-7` apart, and formatted as `"1"`
+    and `"1p000001"`. Being close was neither necessary nor sufficient; agreeing to six decimals was.
+
+    Widening the precision moves the cliff rather than removing it. The convention already says what the
+    right answer is: an observatory frame is `H-H1_HOFT_C00-1187008512-4096.gwf`, integer epoch and
+    integer duration. So a value that cannot be written as a whole second is refused here, which is the
+    one place every name composer passes through -- `compose_frame_name` for `gwf` and `_hdf5_name` for
+    `hdf5`, both via this function.
+
+    `npy` is unaffected, deliberately: its artifact name carries no time at all, so a fractional duration
+    there cannot collide with anything. Binding the rule to the formats whose names carry the value is
+    the same choice the channel rule makes, and for the same reason -- this module has walked back two
+    over-rejections already.
+
+    Args:
+        value: A GPS epoch or a duration, in seconds.
+
+    Returns:
+        The token, which is the value's integer form.
+
+    Raises:
+        ValueError: If the value is not a whole number of seconds.
+    """
+    if not float(value).is_integer():
+        raise ValueError(
+            f"{value!r} is not a whole number of seconds, and an artifact name carries the time as an "
+            f"integer. Encoding it instead -- as this did, to six decimal places -- gives two values that "
+            f"round alike the same name, such as 1.0 and 1.0000001, and the second run overwrites the "
+            f"first without an error. Use a whole second, or write `npy`, whose name carries no time."
+        )
+    return str(int(value))
 
 
 def compose_frame_name(*, detector: str, channel: str, gps_start: float, duration: float, prefix: str) -> str:
@@ -288,9 +325,19 @@ class FrameWriter:
 
     @staticmethod
     def _format_time_token(value: float) -> str:
-        """Return a filename-safe token preserving sub-second precision.
+        """Return the filename token for a whole-second GPS epoch or duration.
 
         Kept as the name the HDF5 writer and the tests already call; the implementation moved to module
         level so `compose_frame_name` can use it without a writer.
+
+        This said "preserving sub-second precision" until issue #299 stopped that being true, and codex
+        caught it on review -- the wrapper is one line and was not where I looked when I changed what it
+        wraps.
+
+        Returns:
+            The token, which is the value's integer form.
+
+        Raises:
+            ValueError: If the value is not a whole number of seconds. See `format_time_token`.
         """
         return format_time_token(value)

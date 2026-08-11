@@ -185,3 +185,34 @@ class NoiseConfig(BaseModel):
     )
 
     model_config = {"frozen": False, "extra": "ignore"}
+
+    @model_validator(mode="after")
+    def _validate_times_the_name_will_carry(self) -> Self:
+        """Reject a fractional epoch or duration for the formats whose artifact names carry them.
+
+        `format_time_token` refuses these too and is the guarantee; this is the convenience, so a caller
+        learns at the config boundary rather than part-way through a run. Both layers, as every other
+        name rule here has -- `model_construct` skips validators and this repo's own tests use it.
+
+        Only `gwf` and `hdf5`. An `npy` artifact's name carries no time, so a fractional duration there
+        collides with nothing, and refusing it would break configurations that work today for no benefit
+        -- the over-rejection this package has already walked back twice.
+
+        Returns:
+            The validated model.
+
+        Raises:
+            ValueError: If the epoch or the duration is not a whole number of seconds.
+        """
+        if self.output.format not in {"gwf", "hdf5"}:
+            return self
+        for name, value in (("gps_start", self.output.gps_start), ("duration", self.duration)):
+            if not float(value).is_integer():
+                raise ValueError(
+                    f"{name} {value!r} is not a whole number of seconds, and a {self.output.format} "
+                    f"artifact name carries it: times are written as integers, so two runs whose times "
+                    f"round alike -- 1.0 and 1.0000001, say -- would compose one name and the second "
+                    f"would overwrite the first. Use a whole second, or write `npy`, whose name carries "
+                    f"no time."
+                )
+        return self

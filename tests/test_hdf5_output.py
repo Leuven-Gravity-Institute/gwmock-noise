@@ -1349,3 +1349,81 @@ class TestEachFieldsMessageIsItsOwn:
         for other, clause in self._CLAUSES.items():
             if other != field:
                 assert clause not in message, f"{field}'s message also carries {other}'s clause"
+
+
+class TestTimesMustBeWholeSecondsWhereTheNameCarriesThem:
+    """Issue #299 at the config boundary, and the npy carve-out that keeps it from over-rejecting.
+
+    `format_time_token` is the guarantee; this is the convenience, so a caller is refused before a run
+    starts rather than part-way through it. Both layers, because `model_construct` skips validators and
+    this repo's own tests use it.
+    """
+
+    @pytest.mark.parametrize("fmt", ["gwf", "hdf5"])
+    def test_a_fractional_epoch_is_refused_for_the_formats_that_name_it(self, fmt: str) -> None:
+        """The epoch is in the artifact name for both of these."""
+        with pytest.raises(ValueError, match=r"gps_start .* not a whole number of seconds"):
+            NoiseConfig(
+                detectors=["H1"],
+                duration=1.0,
+                sampling_frequency=4.0,
+                seed=1,
+                output=OutputConfig(format=fmt, gps_start=100.5),
+            )
+
+    @pytest.mark.parametrize("fmt", ["gwf", "hdf5"])
+    def test_a_fractional_duration_is_refused_for_the_formats_that_name_it(self, fmt: str) -> None:
+        """So is the duration, which is the other half of the name."""
+        with pytest.raises(ValueError, match=r"duration .* not a whole number of seconds"):
+            NoiseConfig(
+                detectors=["H1"],
+                duration=1.25,
+                sampling_frequency=4.0,
+                seed=1,
+                output=OutputConfig(format=fmt, gps_start=100.0),
+            )
+
+    def test_npy_still_takes_a_fractional_duration(self, tmp_path: Path) -> None:
+        """The carve-out, asserted rather than assumed.
+
+        An `npy` artifact is `{prefix}_{detector}.npy` -- no epoch, no duration -- so a fractional
+        duration cannot collide with anything, and refusing it would break configurations that work
+        today. This package has walked back two over-rejections already; this test is what stops a third.
+        """
+        config = NoiseConfig(
+            detectors=["H1"],
+            duration=1.25,
+            sampling_frequency=8.0,
+            seed=1,
+            components=["white"],
+            output=OutputConfig(directory=tmp_path, format="npy", prefix="noise", gps_start=100.5),
+        )
+
+        result = DefaultNoiseSimulator().run(config)
+
+        assert result.output_paths["H1"].name == "noise_H1.npy"
+        assert result.output_paths["H1"].exists()
+
+    def test_the_simulator_refuses_a_fraction_a_bypassed_config_carries(self, tmp_path: Path) -> None:
+        """Layer two: `model_construct` skips the validator, so the name composer has to refuse it too."""
+        target = tmp_path / "not-created-yet"
+        config = NoiseConfig.model_construct(
+            detectors=["H1"],
+            duration=1.25,
+            sampling_frequency=4.0,
+            seed=1,
+            components=[],
+            output=OutputConfig.model_construct(
+                directory=target,
+                format="hdf5",
+                channel="MOCK_NOISE",
+                channels=None,
+                prefix="noise",
+                gps_start=0.0,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="whole number of seconds"):
+            DefaultNoiseSimulator().run(config)
+
+        assert not target.exists(), "a refused run must not create the output directory"
