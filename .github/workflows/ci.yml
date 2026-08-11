@@ -22,6 +22,15 @@ jobs:
                     - os: ubuntu-latest
                       python-version: '3.12'
                       resolution: lowest-direct
+                    # One leg installs the `gwpy` extra, so the test asserting that GWpy reads the
+                    # HDF5 files this package writes actually runs. It is one test, and GWpy brings
+                    # astropy and matplotlib with it, so it does not belong on all ten legs -- but a
+                    # compatibility guard that skips everywhere is indistinguishable from one that
+                    # passes, which is how it stayed broken through a whole review round.
+                    - os: ubuntu-latest
+                      python-version: '3.13'
+                      resolution: highest
+                      extras: gwpy
         runs-on: ${{ matrix.os }}
         steps:
             - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -36,14 +45,24 @@ jobs:
               shell: bash
               env:
                   RESOLUTION: ${{ matrix.resolution }}
+                  EXTRAS: ${{ matrix.extras }}
               run: |
+                  EXTRA_ARGS=""
+                  if [ -n "$EXTRAS" ]; then
+                      EXTRA_ARGS="--extra $EXTRAS"
+                  fi
                   if [ "$RESOLUTION" = "lowest-direct" ]; then
-                      uv sync --group dev --upgrade --resolution lowest-direct
+                      uv sync --group dev --upgrade --resolution lowest-direct $EXTRA_ARGS
                   else
-                      uv sync --group dev --upgrade
+                      uv sync --group dev --upgrade $EXTRA_ARGS
                   fi
 
             - name: Run tests with pytest
+              env:
+                  # On the leg that installed GWpy, the compatibility test must run rather than skip:
+                  # it is the only check that the HDF5 files here stay readable by GWpy.
+                  GWMOCK_NOISE_REQUIRE_GWPY:
+                      ${{ matrix.extras == 'gwpy' && '1' || '' }}
               run: uv run --no-sync pytest
 
             - name: Upload coverage to Codecov

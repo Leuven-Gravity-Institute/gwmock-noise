@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from gwmock_noise.naming import reject_repeated, reject_unsafe
 
 
 class NoiseComponentConfig(BaseModel):
@@ -62,13 +64,14 @@ class OutputConfig(BaseModel):
     prefix: str = Field(default="noise", description="Prefix for output filenames.")
     format: str = Field(
         default="npy",
-        description="Artifact format written by BaseNoiseSimulator.run().",
-        pattern="^(npy|gwf)$",
+        description="Artifact format written by BaseNoiseSimulator.run(): 'npy', 'gwf', or 'hdf5'.",
+        pattern="^(npy|gwf|hdf5)$",
     )
     gps_start: float = Field(
         default=0.0,
         description="GPS start time used for timestamped output formats such as GWF.",
     )
+
     channel: str = Field(
         default="MOCK_NOISE",
         description="Channel name suffix for GWF frame output. Assembled as {detector}:{channel}.",
@@ -80,6 +83,51 @@ class OutputConfig(BaseModel):
         ),
     )
 
+    @field_validator("prefix")
+    @classmethod
+    def _validate_prefix(cls, value: str) -> str:
+        """Reject a prefix that would put path syntax into a file name.
+
+        Every format prepends the prefix and none writes it inside the artifact, so unlike the channel
+        this applies to `npy` as well, and a field validator suffices because the rule does not depend on
+        `format`. This was the one name component nobody checked, and not only on the bypass path: a
+        fully validated `OutputConfig(prefix="sub/run")` wrote `sub/run_H1.npy`, below the directory the
+        caller named. A reviewer found it in round 9, after eight rounds spent on the other two names.
+
+        Returns:
+            The validated prefix.
+
+        Raises:
+            ValueError: If the prefix contains path syntax.
+        """
+        return reject_unsafe(value, field="prefix")
+
+    @model_validator(mode="after")
+    def _validate_channel_names(self) -> Self:
+        """Reject channel names that the selected format cannot represent.
+
+        Only for the formats that use the channel. `npy` writes a bare array and never reads it, so
+        rejecting `MOCK/NOISE` there would turn a configuration that worked into a hard failure on
+        upgrade for no benefit -- both reviewers caught that, and it is why this is not a field
+        validator: a field validator cannot see `format`.
+
+        Returns:
+            The validated model.
+
+        Raises:
+            ValueError: If a channel the format will use contains characters it cannot carry.
+        """
+        if self.format not in {"gwf", "hdf5"}:
+            return self
+        reject_unsafe(self.channel, field="channel")
+        for detector, channel in (self.channels or {}).items():
+            reject_unsafe(channel, field="channel")
+            # The key is a detector name and gets the detector rule. Such an entry can never match a
+            # validated detector, so it is inert rather than dangerous -- but an inert override is
+            # almost certainly a typo, and saying so beats silently ignoring it.
+            reject_unsafe(detector, field="detector")
+        return self
+
 
 def _default_components() -> list[NoiseComponentConfig]:
     """Return the legacy default of one white-noise component."""
@@ -88,6 +136,25 @@ def _default_components() -> list[NoiseComponentConfig]:
 
 class NoiseConfig(BaseModel):
     """Generic configuration for composed detector-noise simulations."""
+
+    @field_validator("detectors")
+    @classmethod
+    def _validate_detectors(cls, value: list[str]) -> list[str]:
+        """Reject a detector name that would put path syntax into a file name, or a repeated one.
+
+        A repeat is rejected here rather than downstream because the writers key their output by detector,
+        so a duplicate collapses into a single entry and the run reports one artifact for two requested
+        detectors -- no error, no second file, and nothing to tell the caller their list was not honoured.
+
+        Returns:
+            The validated detectors.
+
+        Raises:
+            ValueError: If a name carries path syntax, or the same detector appears twice.
+        """
+        for detector in value:
+            reject_unsafe(detector, field="detector")
+        return reject_repeated(value)
 
     detectors: list[str] = Field(
         default=["H1", "L1"],
