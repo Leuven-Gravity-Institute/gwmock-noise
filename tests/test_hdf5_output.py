@@ -28,12 +28,14 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 import pytest
 from _pytest.outcomes import Skipped
 
 from gwmock_noise import NoiseComponentConfig, NoiseConfig, OutputConfig
+from gwmock_noise.naming import reject_unsafe
 from gwmock_noise.simulators.default import DefaultNoiseSimulator
 
 pytestmark = pytest.mark.unit
@@ -883,8 +885,14 @@ class TestTheNulByte:
 
     @pytest.mark.parametrize("character", ["<", ">", '"', "|", "?", "*"])
     def test_the_windows_reserved_characters_are_refused(self, character: str) -> None:
-        """The printable half of the same finding, and refused on every platform for the same reason."""
-        with pytest.raises(ValueError, match="reserved by Windows"):
+        """The printable half of the same finding, and refused on every platform for the same reason.
+
+        Matched on the *channel's* clause. Each field's message is unique end to end, so a match that
+        named a phrase every field shares would pass on a refusal from the wrong rule -- which is how a
+        detector-rule test came to be satisfied by a channel refusal, and how the mutation removing that
+        detector check survived.
+        """
+        with pytest.raises(ValueError, match="a frame file name carries the channel into"):
             OutputConfig(format="hdf5", channel=f"a{character}b")
 
 
@@ -1300,3 +1308,39 @@ class TestARepeatedDetectorOnTheBypassPath:
             DefaultNoiseSimulator().run(config)
 
         assert list(tmp_path.iterdir()) == []
+
+
+class TestEachFieldsMessageIsItsOwn:
+    """No two fields' refusals share a clause, so `match=` can only be satisfied by the right rule.
+
+    Two review rounds landed here. `compose_frame_name` re-asserting the channel rule meant a bad
+    detector -- whose resolved channel contains it -- reached the channel check first; while the messages
+    shared wording, a test proving `FrameWriter.write`'s detector check was satisfied by a channel
+    refusal, and the mutation deleting that check survived. Splitting the first half fixed one case and
+    left the Windows clause shared, which opencode then caught on the same pattern.
+
+    So the property is asserted here rather than maintained by care: if someone reunifies the wording,
+    this fails before a mutation has to.
+    """
+
+    _CLAUSES: ClassVar[dict[str, str]] = {
+        "channel": "a frame file name carries the channel into",
+        "detector": "file name a detector becomes",
+        "prefix": "file name a prefix is prepended to",
+    }
+
+    @pytest.mark.parametrize("field", ["channel", "detector", "prefix"])
+    def test_a_field_is_refused_with_its_own_clause_and_no_others(self, field: str) -> None:
+        """The message names this field's reason and none of the other two.
+
+        `match=` asserts the positive half, which is also what every other test in the suite relies on;
+        the loop asserts the half that actually failed twice -- that no *other* field's clause is in
+        there for a `match=` elsewhere to latch onto.
+        """
+        with pytest.raises(ValueError, match=self._CLAUSES[field]) as raised:
+            reject_unsafe("a|b", field=field)
+
+        message = str(raised.value)
+        for other, clause in self._CLAUSES.items():
+            if other != field:
+                assert clause not in message, f"{field}'s message also carries {other}'s clause"

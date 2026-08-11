@@ -697,7 +697,11 @@ class TestWriteSegmentsChecksNamesToo:
         ("detectors", "channel", "expected"),
         [
             (["H1/A"], "MOCK_NOISE", "path syntax"),
-            (["H1|A"], "MOCK_NOISE", "reserved by Windows"),
+            # Matched on the clause that names the *detector*, not on "reserved by Windows", which every
+            # field's message used to carry. `H1|A` resolves to a channel of `H1|A:MOCK_NOISE`, so the
+            # channel check refuses it too -- and this row exists to prove the detector rule reaches
+            # `write_segments`, which a channel refusal does not show. Opencode caught it in round 19c.
+            (["H1|A"], "MOCK_NOISE", "file name a detector becomes"),
             (["H1\nA"], "MOCK_NOISE", "Windows reserves"),
             (["H1", "h1"], "MOCK_NOISE", "collide"),
             (["H1", "H1"], "MOCK_NOISE", "more than once"),
