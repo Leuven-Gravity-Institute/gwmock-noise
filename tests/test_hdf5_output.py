@@ -1311,16 +1311,21 @@ class TestARepeatedDetectorOnTheBypassPath:
 
 
 class TestEachFieldsMessageIsItsOwn:
-    """No two fields' refusals share a clause, so `match=` can only be satisfied by the right rule.
+    """Each field's refusal carries a clause no other field's carries, so `match=` names one rule.
 
-    Two review rounds landed here. `compose_frame_name` re-asserting the channel rule meant a bad
+    Not the stronger claim that no two messages share any wording: `detector` and `prefix` share their
+    lead-in and should, since they take the same rule. What a test needs is a clause it can match that
+    only one field can produce, and that is what this asserts.
+
+    Three review rounds landed on this. `compose_frame_name` re-asserting the channel rule meant a bad
     detector -- whose resolved channel contains it -- reached the channel check first; while the messages
     shared wording, a test proving `FrameWriter.write`'s detector check was satisfied by a channel
     refusal, and the mutation deleting that check survived. Splitting the first half fixed one case and
-    left the Windows clause shared, which opencode then caught on the same pattern.
+    left the Windows clause shared, which opencode caught the same way. Codex then caught the claim
+    itself over-reaching, which is why the docstring above says less than the last one did.
 
-    So the property is asserted here rather than maintained by care: if someone reunifies the wording,
-    this fails before a mutation has to.
+    So the property is asserted here rather than maintained by care: if someone gives two fields the same
+    trailing clause, this fails before a mutation has to.
     """
 
     _CLAUSES: ClassVar[dict[str, str]] = {

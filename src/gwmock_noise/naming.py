@@ -73,20 +73,28 @@ _RULES = {
     "prefix": UNSAFE_FOR_DETECTOR,
 }
 
-#: Why each field's characters are refused, phrased so that **no two fields share a clause**. Three
-#: fields, three messages, and a `pytest.raises(match=...)` on any of them names exactly one of them.
+#: Why each field's characters are refused. **Each field's message carries a clause no other field's
+#: message contains** -- the trailing one, naming what that field becomes -- so a
+#: `pytest.raises(match=...)` on that clause can only be satisfied by that field's rule.
 #:
-#: This was one shared sentence listing every reason for every field. It read well and cost a mutation.
-#: Once `compose_frame_name` re-asserted the channel rule, a bad *detector* reached the channel check
-#: first -- its resolved channel contains the detector -- and raised a message that still carried the
-#: words "path syntax", so a test written to prove `FrameWriter.write`'s own detector check passed on a
-#: refusal from a different rule at a different layer, and the mutation removing that check survived.
+#: Note what is deliberately *not* claimed: that no two messages share any wording. `detector` and
+#: `prefix` share their lead-in, and should -- they take the same rule (`UNSAFE_FOR_DETECTOR`), and
+#: forcing their prose apart would invent a distinction the code does not make. What matters for a test
+#: is that each has a clause the others do not, which is the property `TestEachFieldsMessageIsItsOwn`
+#: asserts. An earlier version of this comment said "no two fields share a clause"; codex pointed out
+#: that this was false of `detector` and `prefix`, and the third over-claim on this one sentence.
+#:
+#: The sentence was originally shared by every field, which read well and cost a mutation. Once
+#: `compose_frame_name` re-asserted the channel rule, a bad *detector* reached the channel check first --
+#: its resolved channel contains the detector -- and raised a message that still carried the words "path
+#: syntax", so a test written to prove `FrameWriter.write`'s own detector check passed on a refusal from
+#: a different rule at a different layer, and the mutation removing that check survived.
 #:
 #: Splitting the first half fixed that one and left the Windows clause shared, which opencode caught on
 #: the round-19c review: `test_every_name_rule_reaches_write_segments` proved the *detector* rule with
 #: `match="reserved by Windows"`, and a detector of `H1|A` resolves to a channel of `H1|A:MOCK_NOISE`,
-#: so the channel check satisfied it just as well. Same defect, one clause further along. Hence: unique
-#: end to end, and the tests match the clause that names the field they are about.
+#: so the channel check satisfied it just as well. Same defect, one clause further along. Hence the
+#: field-owned trailing clause, and tests that match it rather than a phrase they do not own.
 _REASONS = {
     "channel": (
         "'/' is an HDF5 group separator inside the artifact, and '<', '>', '\"', '|', '?' and '*' are "
