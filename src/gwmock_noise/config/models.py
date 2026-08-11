@@ -210,8 +210,9 @@ class NoiseConfig(BaseModel):
             if not float(value).is_integer():
                 raise ValueError(
                     f"{name} {value!r} is not a whole number of seconds, and a {self.output.format} "
-                    f"artifact name carries it: times are written as integers, so two runs a fraction "
-                    f"apart would compose one name and the second would overwrite the first. Use a "
-                    f"whole second, or write `npy`, whose name carries no time."
+                    f"artifact name carries it: times are written as integers, so two runs whose times "
+                    f"round alike -- 1.0 and 1.0000001, say -- would compose one name and the second "
+                    f"would overwrite the first. Use a whole second, or write `npy`, whose name carries "
+                    f"no time."
                 )
         return self

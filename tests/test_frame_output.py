@@ -869,7 +869,7 @@ class TestTimesThatNameOneFile:
 
         assert frame_output.format_time_token(value) == str(int(value))
 
-    def test_two_segments_a_fraction_apart_are_refused_rather_than_written_over_each_other(
+    def test_two_segments_that_round_alike_are_refused_rather_than_written_over_each_other(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The reported failure, end to end: two frames, one file, no error.
