@@ -180,9 +180,9 @@ def test_frame_writer_write_and_write_segments_without_real_gwpy(
 
     # This used to be `gps_start=100.25`, `duration=1.25` and a name of
     # `unit_H-H1_MOCK_NOISE_100p25-1p25.gwf`, with `_format_time_token(10.125) == "10p125"`. Sub-second
-    # times are refused now (issue #299): the `p` form gave two values a fraction apart the same token,
-    # so one silently overwrote the other. Rewritten rather than deleted, so the change of contract is
-    # visible here rather than only in the changelog.
+    # times are refused now (issue #299): the `p` form gave two values that *round to the same six
+    # decimals* one token, so one silently overwrote the other. Rewritten rather than deleted, so the
+    # change of contract is visible here rather than only in the changelog.
     assert FrameWriter._format_time_token(10.0) == "10"
     with pytest.raises(ValueError, match="whole number of seconds"):
         FrameWriter._format_time_token(10.125)
