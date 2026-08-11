@@ -32,12 +32,16 @@ def _require_gwf_backend() -> None:
 def format_time_token(value: float) -> str:
     """Return the filename token for a GPS epoch or a duration, which must be a whole second.
 
-    This formatted to six decimals and stripped, so any two values differing below `1e-6` produced the
-    *same* token: `format_time_token(1.0)` and `format_time_token(1.0000001)` were both `"1"`, and `1e-7`
-    was `"0"`. Two segments a fraction of a microsecond apart therefore composed one file name and the
-    second overwrote the first, reporting two paths to one file. Nothing caught it --
+    This formatted to six decimals and stripped, so any two values that *round to the same six decimals*
+    produced the same token: `format_time_token(1.0)` and `format_time_token(1.0000001)` were both `"1"`,
+    and `1e-7` was `"0"`. Two segments whose epochs did that composed one file name, and the second
+    overwrote the first, reporting two paths to one file. Nothing caught it --
     `_check_frame_name_lengths` compares names across *detectors* within one segment, so two segments are
     never compared with each other. A reviewer found it during the review of #298; it is issue #299.
+
+    Note the predicate: rounding alike, **not** being within a microsecond. Two comments of mine said the
+    latter, and codex refuted it with `1.0000004` and `1.0000006` -- `2e-7` apart, and formatted as `"1"`
+    and `"1p000001"`. Being close was neither necessary nor sufficient; agreeing to six decimals was.
 
     Widening the precision moves the cliff rather than removing it. The convention already says what the
     right answer is: an observatory frame is `H-H1_HOFT_C00-1187008512-4096.gwf`, integer epoch and
@@ -62,9 +66,9 @@ def format_time_token(value: float) -> str:
     if not float(value).is_integer():
         raise ValueError(
             f"{value!r} is not a whole number of seconds, and an artifact name carries the time as an "
-            f"integer. Encoding it instead -- as this did, to six decimal places -- gives any two values "
-            f"closer than a microsecond the same name, and the second run overwrites the first without "
-            f"an error. Use a whole second, or write `npy`, whose name carries no time."
+            f"integer. Encoding it instead -- as this did, to six decimal places -- gives two values that "
+            f"round alike the same name, such as 1.0 and 1.0000001, and the second run overwrites the "
+            f"first without an error. Use a whole second, or write `npy`, whose name carries no time."
         )
     return str(int(value))
 

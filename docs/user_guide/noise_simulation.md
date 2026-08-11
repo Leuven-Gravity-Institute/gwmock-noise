@@ -101,10 +101,10 @@ file name whatever the format is -- and of the JSON sidecar's name too.
 `gps_start` and `duration` must be **whole seconds** for `gwf` and `hdf5`, whose
 artifact names carry both -- `H-H1_MOCK_NOISE_1187008512-4096.gwf`, following
 the observatory convention. They previously accepted sub-second values and
-encoded them as `100p25`, which gave any two times less than a microsecond apart
-the same name: the second run silently overwrote the first. `npy` is unaffected,
-since its name carries no time at all, so a fractional duration there collides
-with nothing.
+encoded them as `100p25`, which gave two times that round alike -- `1.0` and
+`1.0000001`, say -- the same name: the second run silently overwrote the first.
+`npy` is unaffected, since its name carries no time at all, so a fractional
+duration there collides with nothing.
 
 The simulator checks the same rule again before it generates anything, for every
 output format -- a config can be constructed in ways that skip validation, and a
