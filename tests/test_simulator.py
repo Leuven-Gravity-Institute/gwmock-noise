@@ -176,7 +176,7 @@ def test_default_simulator_run_uses_frame_writer_for_gwf_output(
             directory=tmp_path,
             prefix="frame",
             format="gwf",
-            gps_start=100.5,
+            gps_start=100.0,
             channel="SIM",
         ),
         seed=11,
@@ -187,7 +187,7 @@ def test_default_simulator_run_uses_frame_writer_for_gwf_output(
     assert result.output_paths["H1"] == tmp_path / "frame_H1.gwf"
     assert captured == {
         "base": captured["base"],
-        "gps_start": 100.5,
+        "gps_start": 100.0,
         "output_dir": tmp_path,
         "channel": "SIM",
         "channels": None,

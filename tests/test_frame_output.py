@@ -168,18 +168,24 @@ def test_frame_writer_write_and_write_segments_without_real_gwpy(
     monkeypatch.setattr(frame_output, "import_module", lambda name: FakeGwfModule())
     monkeypatch.setattr(frame_output, "GWpyAdapter", FakeAdapter)
 
-    writer = FrameWriter(FixedNoiseSimulator(), gps_start=100.25, output_dir=tmp_path, prefix="unit")
-    output = writer.write(duration=1.25, sampling_frequency=8.0, detectors=["H1"], seed=9)
+    writer = FrameWriter(FixedNoiseSimulator(), gps_start=100.0, output_dir=tmp_path, prefix="unit")
+    output = writer.write(duration=1.0, sampling_frequency=8.0, detectors=["H1"], seed=9)
 
     path = output["H1"]
-    assert path.name == "unit_H-H1_MOCK_NOISE_100p25-1p25.gwf"
-    assert writer.gps_start == pytest.approx(101.5)
+    assert path.name == "unit_H-H1_MOCK_NOISE_100-1.gwf"
+    assert writer.gps_start == pytest.approx(101.0)
 
     with pytest.raises(ValueError, match="expected gps_end > gps_start"):
         writer.write_segments(segments=[(3.0, 3.0)], sampling_frequency=8.0, detectors=["H1"])
 
+    # This used to be `gps_start=100.25`, `duration=1.25` and a name of
+    # `unit_H-H1_MOCK_NOISE_100p25-1p25.gwf`, with `_format_time_token(10.125) == "10p125"`. Sub-second
+    # times are refused now (issue #299): the `p` form gave two values a fraction apart the same token,
+    # so one silently overwrote the other. Rewritten rather than deleted, so the change of contract is
+    # visible here rather than only in the changelog.
     assert FrameWriter._format_time_token(10.0) == "10"
-    assert FrameWriter._format_time_token(10.125) == "10p125"
+    with pytest.raises(ValueError, match="whole number of seconds"):
+        FrameWriter._format_time_token(10.125)
 
 
 def test_frame_writer_channel_name_uses_channel_field(
@@ -658,13 +664,13 @@ class TestGwfNamesAreCheckedBeforeAnythingExists:
         """
         frame_output = import_module("gwmock_noise.output.frame")
         monkeypatch.setattr(frame_output, "_require_gwf_backend", lambda: None)
-        writer = FrameWriter(FixedNoiseSimulator(), gps_start=1234.5, output_dir=tmp_path, prefix="run")
+        writer = FrameWriter(FixedNoiseSimulator(), gps_start=1234.0, output_dir=tmp_path, prefix="run")
 
         composed = frame_output.compose_frame_name(
-            detector="H1", channel="H1:MOCK_NOISE", gps_start=1234.5, duration=2.0, prefix="run"
+            detector="H1", channel="H1:MOCK_NOISE", gps_start=1234.0, duration=2.0, prefix="run"
         )
 
-        assert writer._frame_path("H1", "H1:MOCK_NOISE", 1234.5, 2.0).name == composed
+        assert writer._frame_path("H1", "H1:MOCK_NOISE", 1234.0, 2.0).name == composed
 
 
 class TestWriteSegmentsChecksNamesToo:
@@ -822,3 +828,68 @@ class TestNoColonSurvivesIntoAFrameName:
         )
 
         assert name == "H-H1_MOCK_NOISE_0-1.gwf"
+
+
+class TestTimesThatNameOneFile:
+    """Issue #299: two epochs a microsecond apart composed one name, and the second overwrote the first.
+
+    `format_time_token` formatted to six decimals and stripped, so anything differing below `1e-6` gave
+    the same token -- `format_time_token(1.0)` and `format_time_token(1.0000001)` were both `'1'`. The
+    collision check could not see it: `_check_frame_name_lengths` runs per segment, across *detectors*,
+    so two segments are never compared with each other. `write_segments` wrote the first frame and then
+    overwrote it, reporting two paths to one file.
+
+    The fix is the convention rather than more decimals: an observatory frame is
+    `H-H1_HOFT_C00-1187008512-4096.gwf`, integer epoch and integer duration. A token that cannot be
+    formed without loss is refused, which is the single place every name composer inherits it from.
+    """
+
+    def test_the_token_refuses_a_value_it_cannot_represent(self) -> None:
+        """The heart of it: the two inputs that used to collapse onto one token."""
+        frame_output = import_module("gwmock_noise.output.frame")
+
+        assert frame_output.format_time_token(1.0) == "1"
+        with pytest.raises(ValueError, match="whole number of seconds"):
+            frame_output.format_time_token(1.0000001)
+
+    @pytest.mark.parametrize("value", [0.5, 1.25, 1e-7, 1187008512.5])
+    def test_a_fractional_time_is_refused(self, value: float) -> None:
+        """Including `1e-7`, which used to format as `'0'` and name a zero-length segment."""
+        frame_output = import_module("gwmock_noise.output.frame")
+
+        with pytest.raises(ValueError, match="whole number of seconds"):
+            frame_output.format_time_token(value)
+
+    @pytest.mark.parametrize("value", [0.0, 1.0, 4096.0, 1187008512.0, -1.0])
+    def test_an_integral_time_is_unaffected(self, value: float) -> None:
+        """A float that happens to be integral is the ordinary case and must keep working."""
+        frame_output = import_module("gwmock_noise.output.frame")
+
+        assert frame_output.format_time_token(value) == str(int(value))
+
+    def test_two_segments_a_fraction_apart_are_refused_rather_than_written_over_each_other(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The reported failure, end to end: two frames, one file, no error.
+
+        Asserted on the filesystem rather than on the exception -- the defect was never that it raised
+        the wrong thing, it was that it raised nothing and lost a frame.
+        """
+        writer = _writer_over_fake_backend(tmp_path, monkeypatch)
+
+        with pytest.raises(ValueError, match="whole number of seconds"):
+            writer.write_segments([(0.0, 1.0), (1.0000001, 2.0000001)], sampling_frequency=4.0, detectors=["H1"])
+
+        assert list(tmp_path.glob("*.gwf")) == [], "a refusal must not leave a frame behind"
+
+    def test_ordinary_integer_segments_still_write(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The case `write_segments` exists for, unchanged."""
+        writer = _writer_over_fake_backend(tmp_path, monkeypatch)
+
+        written = writer.write_segments([(0.0, 1.0), (1.0, 2.0)], sampling_frequency=4.0, detectors=["H1"])
+
+        assert [path["H1"].name for path in written] == [
+            "H-H1_MOCK_NOISE_0-1.gwf",
+            "H-H1_MOCK_NOISE_1-1.gwf",
+        ]
+        assert len(list(tmp_path.glob("*.gwf"))) == 2

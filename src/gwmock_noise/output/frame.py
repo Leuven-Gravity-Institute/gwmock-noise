@@ -30,10 +30,42 @@ def _require_gwf_backend() -> None:
 
 
 def format_time_token(value: float) -> str:
-    """Return a filename-safe token for a GPS time or a duration, preserving sub-second precision."""
-    if float(value).is_integer():
-        return str(int(value))
-    return f"{value:.6f}".rstrip("0").rstrip(".").replace(".", "p")
+    """Return the filename token for a GPS epoch or a duration, which must be a whole second.
+
+    This formatted to six decimals and stripped, so any two values differing below `1e-6` produced the
+    *same* token: `format_time_token(1.0)` and `format_time_token(1.0000001)` were both `"1"`, and `1e-7`
+    was `"0"`. Two segments a fraction of a microsecond apart therefore composed one file name and the
+    second overwrote the first, reporting two paths to one file. Nothing caught it --
+    `_check_frame_name_lengths` compares names across *detectors* within one segment, so two segments are
+    never compared with each other. A reviewer found it during the review of #298; it is issue #299.
+
+    Widening the precision moves the cliff rather than removing it. The convention already says what the
+    right answer is: an observatory frame is `H-H1_HOFT_C00-1187008512-4096.gwf`, integer epoch and
+    integer duration. So a value that cannot be written as a whole second is refused here, which is the
+    one place every name composer passes through -- `compose_frame_name` for `gwf` and `_hdf5_name` for
+    `hdf5`, both via this function.
+
+    `npy` is unaffected, deliberately: its artifact name carries no time at all, so a fractional duration
+    there cannot collide with anything. Binding the rule to the formats whose names carry the value is
+    the same choice the channel rule makes, and for the same reason -- this module has walked back two
+    over-rejections already.
+
+    Args:
+        value: A GPS epoch or a duration, in seconds.
+
+    Returns:
+        The token, which is the value's integer form.
+
+    Raises:
+        ValueError: If the value is not a whole number of seconds.
+    """
+    if not float(value).is_integer():
+        raise ValueError(
+            f"{value!r} is not a whole number of seconds, and an artifact name cannot carry it without "
+            f"loss: times are written as integers, so it would share a name with every other value "
+            f"rounding to the same second and silently overwrite it. Use a whole second."
+        )
+    return str(int(value))
 
 
 def compose_frame_name(*, detector: str, channel: str, gps_start: float, duration: float, prefix: str) -> str:
