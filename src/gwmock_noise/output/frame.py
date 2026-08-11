@@ -61,9 +61,10 @@ def format_time_token(value: float) -> str:
     """
     if not float(value).is_integer():
         raise ValueError(
-            f"{value!r} is not a whole number of seconds, and an artifact name cannot carry it without "
-            f"loss: times are written as integers, so it would share a name with every other value "
-            f"rounding to the same second and silently overwrite it. Use a whole second."
+            f"{value!r} is not a whole number of seconds, and an artifact name carries the time as an "
+            f"integer. Encoding it instead -- as this did, to six decimal places -- gives any two values "
+            f"closer than a microsecond the same name, and the second run overwrites the first without "
+            f"an error. Use a whole second, or write `npy`, whose name carries no time."
         )
     return str(int(value))
 
@@ -320,9 +321,19 @@ class FrameWriter:
 
     @staticmethod
     def _format_time_token(value: float) -> str:
-        """Return a filename-safe token preserving sub-second precision.
+        """Return the filename token for a whole-second GPS epoch or duration.
 
         Kept as the name the HDF5 writer and the tests already call; the implementation moved to module
         level so `compose_frame_name` can use it without a writer.
+
+        This said "preserving sub-second precision" until issue #299 stopped that being true, and codex
+        caught it on review -- the wrapper is one line and was not where I looked when I changed what it
+        wraps.
+
+        Returns:
+            The token, which is the value's integer form.
+
+        Raises:
+            ValueError: If the value is not a whole number of seconds. See `format_time_token`.
         """
         return format_time_token(value)
