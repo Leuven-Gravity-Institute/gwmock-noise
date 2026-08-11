@@ -831,11 +831,13 @@ class TestNoColonSurvivesIntoAFrameName:
 
 
 class TestTimesThatNameOneFile:
-    """Issue #299: two epochs a microsecond apart composed one name, and the second overwrote the first.
+    """Issue #299: two epochs that rounded alike composed one name, and the second overwrote the first.
 
     `format_time_token` formatted to six decimals and stripped, so any two values that round to the same
-    six decimals gave the same token -- `format_time_token(1.0)` and `format_time_token(1.0000001)` were both `'1'`. The
-    collision check could not see it: `_check_frame_name_lengths` runs per segment, across *detectors*,
+    six decimals gave the same token -- `format_time_token(1.0)` and `format_time_token(1.0000001)` were
+    both `'1'`. Proximity was not the predicate: `1.0000004` and `1.0000006` are `2e-7` apart and gave
+    `'1'` and `'1p000001'`. The collision check could not see any of it:
+    `_check_frame_name_lengths` runs per segment, across *detectors*,
     so two segments are never compared with each other. `write_segments` wrote the first frame and then
     overwrote it, reporting two paths to one file.
 
