@@ -42,6 +42,7 @@ dev = [
   "pytest-mock>=3.15.1",
   "pytest>=9.1.1",
   "pytest-github-actions-annotate-failures>=0.4.2",
+  "mutmut>=3.7.0",
 ]
 docs = ["zensical>=0.0.54", "mkdocstrings-python>=2.0.5"]
 build = ["hatch>=1.18.0"]
@@ -71,6 +72,31 @@ source = "uv-dynamic-versioning"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gwmock_noise"]
+
+[tool.mutmut]
+# mutmut copies the project into `mutants/` and mutates the copy, so the working tree is untouched.
+source_paths = ["src/gwmock_noise"]
+# `tests/`, `pyproject.toml` and `uv.lock` are copied by default. `scripts/` is not, and
+# tests/test_release_version.py imports `release_version` from it (via the `scripts` pythonpath
+# entry), so it has to come along or every mutant is judged against a suite that errors for
+# reasons unrelated to the mutation.
+also_copy = ["scripts/"]
+pytest_add_cli_args_test_selection = ["tests/"]
+# The default `addopts` turn on coverage, an XML report and a JUnit file. Under mutation testing
+# they cost more than the test run itself and the reports get overwritten once per mutant, so the
+# ini value is cleared and only the marker filter is restated. Integration and slow tests are
+# excluded as well: a mutant is judged by the fast unit suite.
+pytest_add_cli_args = [
+  "--override-ini=addopts=",
+  # `pythonpath = ["src", "scripts"]` has to go too, and this one is load-bearing rather than a
+  # speed-up. mutmut puts `mutants/src` at the front of `sys.path` and deletes `src` from it, but
+  # pytest re-inserts its `pythonpath` entries when it builds its config, so the real `src` lands
+  # back in front of the mutated copy and every test imports unmutated code. Clearing the ini
+  # leaves `mutants/src` as the only source on the path.
+  "--override-ini=pythonpath=",
+  "-m",
+  "not integration and not slow",
+]
 
 [tool.coverage.run]
 branch = true
