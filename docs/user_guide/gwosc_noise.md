@@ -31,8 +31,8 @@ from gwmock_noise.gwosc import (
 
 config = GwoscNoiseConfig(
     detectors=["H1", "L1"],
-    gps_start=1135136000,    # ~350 s before GW151226
-    gps_end=1135137000,      # ~650 s after GW151226
+    gps_start=1135136000,  # ~350 s before GW151226
+    gps_end=1135137000,  # ~650 s after GW151226
     sample_rate=4096.0,
     filters=GwoscFilterConfig(
         filter_types=[FilterType.HIGH_CONFIDENCE_GW],
@@ -191,7 +191,9 @@ arrays, usable everywhere the protocol is expected:
 class GwoscNoiseSimulator:
     def __init__(self, config: GwoscNoiseConfig) -> None: ...
     def generate(duration, sampling_frequency, detectors, seed=None) -> dict[str, np.ndarray]: ...
-    def generate_stream(chunk_duration, sampling_frequency, detectors, seed=None) -> Iterator[dict[str, np.ndarray]]: ...
+    def generate_stream(
+        chunk_duration, sampling_frequency, detectors, seed=None
+    ) -> Iterator[dict[str, np.ndarray]]: ...
     @property
     def metadata(self) -> dict[str, Any]: ...
 ```
@@ -313,7 +315,7 @@ from gwmock_noise.gwosc import FilterType, GwoscFilterConfig, GwoscNoiseConfig
 config = GwoscNoiseConfig(
     detectors=["H1", "L1"],
     gps_start=1135136000,  # ~350 s before GW151226
-    gps_end=1135137000,    # ~650 s after GW151226
+    gps_end=1135137000,  # ~650 s after GW151226
     sample_rate=4096.0,
     filters=GwoscFilterConfig(
         filter_types=[FilterType.HIGH_CONFIDENCE_GW],
@@ -374,8 +376,7 @@ stream = open_stream(
 )
 
 for i, chunk in enumerate(stream):
-    print(f"Chunk {i}: {len(chunk['H1'])} samples, "
-          f"mean = {chunk['H1'].mean():.2e}")
+    print(f"Chunk {i}: {len(chunk['H1'])} samples, mean = {chunk['H1'].mean():.2e}")
 ```
 
 Output:
