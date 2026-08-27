@@ -162,7 +162,7 @@ config = NoiseConfig(
                     amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.5),
                 )
             ],
-        }
+        },
     ],
     output=OutputConfig(directory=Path("output"), prefix="noise"),
     seed=42,
@@ -261,13 +261,7 @@ config = NoiseConfig(
     detectors=["H1"],
     duration=4.0,
     sampling_frequency=4096.0,
-    components=[
-        {
-            "simulator": "ar",
-            "psd_file": "ET_D_psd",
-            "order": 16
-        }
-    ],
+    components=[{"simulator": "ar", "psd_file": "ET_D_psd", "order": 16}],
     output=OutputConfig(directory=Path("output"), prefix="noise"),
     seed=42,
 )
@@ -350,7 +344,7 @@ print(chunk)
 # Or collect a specific duration
 strain_dict = take(stream, total_duration=12.0, chunk_duration=4.0, sampling_frequency=4096.0)
 
-print(strain_dict)     # strain_dict["H1"].shape == (round(12.0 * 4096.0),)  ← 12 s of seamless noise
+print(strain_dict)  # strain_dict["H1"].shape == (round(12.0 * 4096.0),)  ← 12 s of seamless noise
 ```
 
 <!-- prettier-ignore-start -->
@@ -462,7 +456,7 @@ result = parallel.generate(
     detectors=["H1", "L1", "V1"],
 )
 
-print(result)       # result is dict[str, np.ndarray] — each detector generated in parallel
+print(result)  # result is dict[str, np.ndarray] — each detector generated in parallel
 ```
 
 Note: `ParallelAdapter` runs independent detectors concurrently — it does not

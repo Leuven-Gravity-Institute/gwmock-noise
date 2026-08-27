@@ -28,7 +28,6 @@ import gwsim_noise
 
 # How you'd like to use the new feature
 result = gwsim_noise.new_function(param="example")
-
 ```
 
 ## 🌈 Use Case & Benefits
