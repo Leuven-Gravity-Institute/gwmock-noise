@@ -12,6 +12,7 @@ from gwmock_noise.glitches.models import (
     ScatteredLightGlitch,
     normalize_glitch_models,
     supported_glitch_kinds,
+    validate_glitch_detector_coverage,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "ScatteredLightGlitch",
     "normalize_glitch_models",
     "supported_glitch_kinds",
+    "validate_glitch_detector_coverage",
 ]

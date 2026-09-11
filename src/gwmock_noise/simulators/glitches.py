@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from gwmock_noise.glitches.models import GlitchDraw, GlitchModel
+from gwmock_noise.glitches.models import GlitchDraw, GlitchModel, validate_glitch_detector_coverage
 from gwmock_noise.simulators.protocol import NoiseSimulator
 
 #: Schema version of the per-event glitch truth catalogue. Bumped when the meaning of a
@@ -434,6 +434,41 @@ class InjectGlitches:
         if hasattr(self.base, "reset"):
             self.base.reset()
 
+    @staticmethod
+    def _copy_checked_base_strain(
+        base_result: dict[str, np.ndarray],
+        detectors: list[str],
+        n_samples: int,
+    ) -> dict[str, np.ndarray]:
+        """Return a writable copy of the base strain, checked against what was asked for.
+
+        Copied rather than injected into in place, so a base simulator handing back a
+        cached or shared array does not accumulate this run's glitches.
+
+        Args:
+            base_result: What the base simulator returned.
+            detectors: The interferometers this segment asked for.
+            n_samples: The sample count the requested duration and rate imply.
+
+        Returns:
+            One writable array per requested detector.
+
+        Raises:
+            KeyError: If the base simulator omitted a requested detector.
+            ValueError: If its output is not the requested length.
+        """
+        combined: dict[str, np.ndarray] = {}
+        for detector in detectors:
+            if detector not in base_result:
+                raise KeyError(f"Base simulator did not return detector '{detector}'.")
+            base_strain = np.asarray(base_result[detector], dtype=float)
+            if base_strain.shape != (n_samples,):
+                raise ValueError(
+                    "Base simulator output shape must match the requested duration and sampling_frequency."
+                )
+            combined[detector] = base_strain.copy()
+        return combined
+
     def generate(
         self,
         duration: float,
@@ -443,6 +478,12 @@ class InjectGlitches:
     ) -> dict[str, np.ndarray]:
         """Generate base noise and inject the configured glitches."""
         runtime_detectors = list(detectors)
+        # Before the base runs, so a configuration that does not say what every
+        # interferometer gets is refused rather than half-generated. The detectors
+        # asked for here are the run's, which a caller may narrow between segments,
+        # so the question is settled against them rather than against whatever set
+        # the models were built beside.
+        validate_glitch_detector_coverage(self.glitch_models, runtime_detectors)
         base_result = self.base.generate(duration, sampling_frequency, runtime_detectors, seed=seed)
 
         self.duration = duration
@@ -452,16 +493,7 @@ class InjectGlitches:
             self._initialize_process(seed if seed is not None else self.seed)
 
         n_samples = round(duration * sampling_frequency)
-        combined: dict[str, np.ndarray] = {}
-        for detector in runtime_detectors:
-            if detector not in base_result:
-                raise KeyError(f"Base simulator did not return detector '{detector}'.")
-            base_strain = np.asarray(base_result[detector], dtype=float)
-            if base_strain.shape != (n_samples,):
-                raise ValueError(
-                    "Base simulator output shape must match the requested duration and sampling_frequency."
-                )
-            combined[detector] = base_strain.copy()
+        combined = self._copy_checked_base_strain(base_result, runtime_detectors, n_samples)
 
         segment_start = self._elapsed_time
         segment_end = segment_start + duration
@@ -475,7 +507,10 @@ class InjectGlitches:
         self._segment_events = []
 
         for index, model in enumerate(self.glitch_models):
-            for detector in runtime_detectors:
+            # Only the interferometers this model is scoped to. A model the run does
+            # not reach here draws nothing and consumes no stream, so the detectors it
+            # does reach realize exactly what they would have without the selector.
+            for detector in filter(model.applies_to, runtime_detectors):
                 key = (index, detector)
                 rng = self._rng_for(index, detector)
 

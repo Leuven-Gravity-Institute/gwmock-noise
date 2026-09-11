@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from gwmock_noise.glitches.models import normalize_glitch_models
+from gwmock_noise.glitches.models import normalize_glitch_models, validate_glitch_detector_coverage
 from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
 from gwmock_noise.simulators.glitches import InjectGlitches, _ZeroNoiseSimulator
 
@@ -27,6 +27,11 @@ class GlitchNoiseSimulator(ConfigurableNoiseSimulator):
         if options:
             unexpected = ", ".join(sorted(options))
             raise ValueError(f"glitches component received unexpected options: {unexpected}.")
+        # At configuration time, against the interferometers the config declares, so a
+        # run that does not say what every interferometer gets is refused before it
+        # generates or writes anything -- the injector re-asserts it per segment for a
+        # caller that builds one directly.
+        validate_glitch_detector_coverage(glitch_models, config.detectors)
         return InjectGlitches(
             _ZeroNoiseSimulator(
                 detectors=config.detectors,
