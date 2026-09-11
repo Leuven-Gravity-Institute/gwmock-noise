@@ -3,6 +3,11 @@ repos:
       rev: v6.0.0
       hooks:
           - id: check-added-large-files
+            # Bundled detector PSD tables are deliberate, individually reviewed data
+            # assets documented in src/gwmock_noise/data/psd/PROVENANCE.md. A measured
+            # O3 spectrum on its native 0.25 Hz grid is ~1 MB. The 500 KB guard against
+            # accidental blobs still applies everywhere else in the tree.
+            exclude: ^src/gwmock_noise/data/psd/
           - id: check-case-conflict
           - id: check-merge-conflict
           - id: check-symlinks

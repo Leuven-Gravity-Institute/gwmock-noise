@@ -367,9 +367,21 @@ for detector, path in result.output_paths.items():
 ```
 
 Colored-noise components accept `psd_file` values as local paths, HTTP(S) URLs,
-and bundled Einstein Telescope preset names. The built-in presets are
-`ET_D_psd`, `ET_10_HF_psd`, `ET_10_full_cryo_psd`, `ET_15_HF_psd`,
-`ET_15_full_cryo_psd`, `ET_20_HF_psd`, and `ET_20_full_cryo_psd`.
+and bundled preset names. The Einstein Telescope presets are `ET_D_psd`,
+`ET_10_HF_psd`, `ET_10_full_cryo_psd`, `ET_15_HF_psd`, `ET_15_full_cryo_psd`,
+`ET_20_HF_psd`, and `ET_20_full_cryo_psd`; the Advanced LIGO presets are
+`aLIGO_O3_actual_H1_psd`, `aLIGO_O3_actual_L1_psd`,
+`aLIGO_O4_high_projected_psd`, and `aLIGO_O4_low_projected_psd`. The same names
+work for `psd_file` on the glitch models, which matters when coloring a
+LIGO-derived glitch (DeepExtractor reconstructions and gengli blips are both
+LIGO glitches) against the instrument that produced it rather than against an ET
+curve.
+
+The `O3_actual` curves are measured O3 spectra and still carry instrumental
+lines; the `O4_projected` curves are pre-run sensitivity forecasts, not
+measurements. `src/gwmock_noise/data/psd/PROVENANCE.md` records the source
+document, the ASD-to-PSD conversion, and a BNS-range cross-check for every
+Advanced LIGO curve.
 
 The upstream `gwmock` package is expected to import and compose
 `gwmock_noise.NoiseConfig` into its own configuration model and to drive a noise
