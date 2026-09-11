@@ -149,6 +149,22 @@ def prepare_coloring(
     return load_psd_table(psd_file)
 
 
+class ScaledWaveform(NamedTuple):
+    """A colored, scaled waveform and the optimal SNR it actually carries.
+
+    Attributes:
+        waveform: The colored, scaled time-domain strain.
+        realized_snr: The optimal SNR of ``waveform`` against the PSD it was
+            colored with, over the same analysis band. This is what the strain
+            actually holds, as opposed to the target that was asked for: the two
+            differ by the amplitude multiplier, and for an uncalibrated model
+            (no ``target_snr``) there is no target at all.
+    """
+
+    waveform: np.ndarray
+    realized_snr: float
+
+
 def color_and_scale(  # noqa: PLR0913
     base_waveform: np.ndarray,
     *,
@@ -159,7 +175,7 @@ def color_and_scale(  # noqa: PLR0913
     high_frequency_cutoff: float | None,
     amplitude: float,
     target_snr: float | None,
-) -> np.ndarray:
+) -> ScaledWaveform:
     """Color ``base_waveform`` against a PSD and scale it to a target amplitude/SNR.
 
     The waveform's spectrum is shaped by ``sqrt(PSD)`` inside the analysis band.
@@ -167,6 +183,11 @@ def color_and_scale(  # noqa: PLR0913
     the PSD equals ``target_snr`` (times ``amplitude``); otherwise it is scaled by
     ``amplitude`` alone. Shared by every PSD-colored glitch model so the coloring
     and SNR-calibration physics live in one place.
+
+    The realized SNR is returned alongside the strain rather than left for a
+    caller to recompute: it is the quantity a truth catalogue has to record, and
+    the scaling that determines it happens here. Computing it a second time from
+    the returned samples would be the same physics encoded twice.
     """
     colored = color_whitened_waveform(
         base_waveform,
@@ -176,12 +197,16 @@ def color_and_scale(  # noqa: PLR0913
         low_frequency_cutoff=low_frequency_cutoff,
         high_frequency_cutoff=high_frequency_cutoff,
     )
-    if target_snr is None:
-        return amplitude * colored.time_series
     achieved_snr = optimal_snr(colored, sampling_frequency=sampling_frequency)
+    if target_snr is None:
+        # No calibration was asked for, so whatever the coloring produced is the
+        # answer -- including a waveform with no in-band power, which is not an
+        # error here (there is no target it fails to meet).
+        return ScaledWaveform(waveform=amplitude * colored.time_series, realized_snr=amplitude * achieved_snr)
     if achieved_snr <= 0.0:
         raise ValueError("The drawn glitch has no power in the requested frequency band.")
-    return amplitude * (target_snr / achieved_snr) * colored.time_series
+    scale = amplitude * (target_snr / achieved_snr)
+    return ScaledWaveform(waveform=scale * colored.time_series, realized_snr=scale * achieved_snr)
 
 
 def optimal_snr(colored: ColoredWaveform, *, sampling_frequency: float) -> float:

@@ -13,6 +13,7 @@ from gwmock_noise.naming import (
     reject_unsafe,
 )
 from gwmock_noise.output.gwpy import GWpyAdapter
+from gwmock_noise.simulators.glitches import apply_segment_gps_start
 from gwmock_noise.simulators.protocol import NoiseSimulator
 
 _FRAME_IMPORT_ERROR = (
@@ -205,6 +206,11 @@ class FrameWriter:
         self._check_frame_name_lengths(detectors=detectors, gps_start=self.gps_start, duration=duration)
         _require_gwf_backend()
         segment_start = self.gps_start
+        # One epoch for this segment, handed to everything that needs it rather than left
+        # for each consumer to derive. A glitch injector anywhere beneath this writer
+        # stamps its truth catalogue with it, so a run that jumps epochs between segments
+        # keeps the catalogue and the frame name describing the same instant.
+        apply_segment_gps_start(self.base, segment_start)
         adapter = GWpyAdapter(self.base, gps_start=segment_start)
         series_by_detector = adapter.generate(
             duration=duration,

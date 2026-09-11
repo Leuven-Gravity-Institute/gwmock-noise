@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 import numpy as np
 
@@ -40,6 +40,49 @@ class LogNormalAmplitudeDistribution:
         return float(rng.lognormal(mean=mu, sigma=sigma))
 
 
+class GlitchDraw(NamedTuple):
+    """One drawn glitch waveform and the parameters that produced it.
+
+    What :meth:`GlitchModel.draw` returns so an injector can record *what it
+    injected*, not merely that it injected something. Every field but the
+    waveform is optional because not every model has the quantity: a parametric
+    blip with no PSD has no SNR to report, and only the dataset-backed models
+    draw a Gravity Spy class.
+
+    Attributes:
+        waveform: The glitch strain, sampled at the requested rate. Its first
+            sample lands at the injection time -- the waveform *starts* there,
+            it does not peak there.
+        amplitude: The amplitude multiplier drawn from the model's amplitude
+            distribution, or ``None`` when the model does not draw one.
+        glitch_class: The drawn morphological class (e.g. a Gravity Spy class
+            name), or ``None`` for a model with a single morphology.
+        target_snr: The optimal SNR the draw was calibrated to *before* the
+            amplitude multiplier, or ``None`` when the model does not calibrate
+            SNR. This is the configured target, not what the strain holds.
+        realized_snr: The optimal SNR of the whole of ``waveform`` against the
+            PSD it was colored with, or ``None`` for an uncolored model. Only the
+            end of the generated data can leave the strain holding less than
+            this; a waveform crossing a segment boundary has its remainder
+            injected into the next segment.
+
+            **How it relates to ``target_snr`` is model-specific, so do not
+            assume one from the other.** A model that calibrates against its own
+            coloring PSD -- ``BlipGlitch``, ``ScatteredLightGlitch``,
+            ``DeepExtractorGlitch`` -- realizes ``amplitude * target_snr``.
+            ``GengliBlipGlitch`` does not: its target is sampled from a
+            population and imposed by gengli on the *whitened* waveform, while
+            the realized figure is measured on the colored, amplitude-scaled
+            result, so the two are independent numbers rather than one restated.
+    """
+
+    waveform: np.ndarray
+    amplitude: float | None = None
+    glitch_class: str | None = None
+    target_snr: float | None = None
+    realized_snr: float | None = None
+
+
 @dataclass(slots=True)
 class GlitchModel:
     """Base dataclass for transient glitch generators."""
@@ -60,6 +103,55 @@ class GlitchModel:
     ) -> np.ndarray:
         """Generate a single glitch waveform."""
         raise NotImplementedError
+
+    def _draw(
+        self,
+        sampling_frequency: float,
+        rng: np.random.Generator | None = None,
+    ) -> GlitchDraw:
+        """Draw one waveform together with the parameters that produced it.
+
+        Where each built-in model's generation logic lives, so the waveform and
+        its catalogue row come from one draw rather than two. ``draw`` dispatches
+        here and ``generate_waveform`` returns just the waveform, so there is one
+        implementation per model rather than one per entry point.
+        """
+        raise NotImplementedError
+
+    def draw(
+        self,
+        sampling_frequency: float,
+        rng: np.random.Generator | None = None,
+    ) -> GlitchDraw:
+        """Generate one waveform together with the parameters that produced it.
+
+        What the injector calls, so every event can be recorded rather than
+        merely tallied.
+
+        ``generate_waveform`` remains the extension point it has always been: a
+        model that overrides it -- including a subclass of a built-in model --
+        governs what is injected, and its draw is reported with the parameters
+        blank rather than filled in from the superclass's draw, which produced a
+        different waveform. Reversing that precedence would let an override
+        change the strain while the catalogue described the code it replaced.
+        """
+        if self._waveform_override_supersedes_draw():
+            return GlitchDraw(waveform=self.generate_waveform(sampling_frequency, rng=rng))
+        return self._draw(sampling_frequency, rng=rng)
+
+    def _waveform_override_supersedes_draw(self) -> bool:
+        """Whether ``generate_waveform`` was overridden below the class defining ``_draw``.
+
+        Compares the two methods' owning classes in the MRO rather than testing
+        either against a fixed class, so it answers the question for a subclass
+        of any model, built-in or not: an override sitting *under* the class that
+        supplies the draw is a replacement of it, while one sitting at or above
+        that class is the delegation the built-in models themselves install.
+        """
+        cls = type(self)
+        waveform_owner = next(base for base in cls.__mro__ if "generate_waveform" in base.__dict__)
+        draw_owner = next(base for base in cls.__mro__ if "_draw" in base.__dict__)
+        return waveform_owner is not draw_owner and issubclass(waveform_owner, draw_owner)
 
     def resolve(self) -> str | None:
         """Pin any external, mutable dependency to an immutable version.
@@ -116,6 +208,14 @@ class BlipGlitch(GlitchModel):
         rng: np.random.Generator | None = None,
     ) -> np.ndarray:
         """Generate a Gaussian-windowed white-noise burst."""
+        return self._draw(sampling_frequency, rng=rng).waveform
+
+    def _draw(
+        self,
+        sampling_frequency: float,
+        rng: np.random.Generator | None = None,
+    ) -> GlitchDraw:
+        """Draw a Gaussian-windowed white-noise burst and its parameters."""
         if sampling_frequency <= 0.0:
             raise ValueError("sampling_frequency must be greater than zero.")
 
@@ -136,7 +236,7 @@ class BlipGlitch(GlitchModel):
         if self._psd_values is not None:
             from gwmock_noise.glitches._coloring import color_and_scale  # noqa: PLC0415
 
-            return color_and_scale(
+            scaled = color_and_scale(
                 base_waveform,
                 sampling_frequency=sampling_frequency,
                 psd_frequencies=self._psd_frequencies,
@@ -146,7 +246,13 @@ class BlipGlitch(GlitchModel):
                 amplitude=amplitude,
                 target_snr=self.snr,
             )
-        return amplitude * base_waveform
+            return GlitchDraw(
+                waveform=scaled.waveform,
+                amplitude=amplitude,
+                target_snr=self.snr,
+                realized_snr=scaled.realized_snr,
+            )
+        return GlitchDraw(waveform=amplitude * base_waveform, amplitude=amplitude)
 
     def serialize(self) -> dict[str, Any]:
         """Return metadata-friendly model parameters."""
@@ -196,6 +302,14 @@ class ScatteredLightGlitch(GlitchModel):
         rng: np.random.Generator | None = None,
     ) -> np.ndarray:
         """Generate a chirping scattered-light glitch."""
+        return self._draw(sampling_frequency, rng=rng).waveform
+
+    def _draw(
+        self,
+        sampling_frequency: float,
+        rng: np.random.Generator | None = None,
+    ) -> GlitchDraw:
+        """Draw a chirping scattered-light glitch and its parameters."""
         if sampling_frequency <= 0.0:
             raise ValueError("sampling_frequency must be greater than zero.")
 
@@ -216,7 +330,7 @@ class ScatteredLightGlitch(GlitchModel):
         if self._psd_values is not None:
             from gwmock_noise.glitches._coloring import color_and_scale  # noqa: PLC0415
 
-            return color_and_scale(
+            scaled = color_and_scale(
                 base_waveform,
                 sampling_frequency=sampling_frequency,
                 psd_frequencies=self._psd_frequencies,
@@ -226,7 +340,13 @@ class ScatteredLightGlitch(GlitchModel):
                 amplitude=amplitude,
                 target_snr=self.snr,
             )
-        return amplitude * base_waveform
+            return GlitchDraw(
+                waveform=scaled.waveform,
+                amplitude=amplitude,
+                target_snr=self.snr,
+                realized_snr=scaled.realized_snr,
+            )
+        return GlitchDraw(waveform=amplitude * base_waveform, amplitude=amplitude)
 
     def serialize(self) -> dict[str, Any]:
         """Return metadata-friendly model parameters."""

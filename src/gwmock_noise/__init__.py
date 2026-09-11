@@ -11,12 +11,16 @@ from gwmock_noise.glitches import (
     BlipGlitch,
     DeepExtractorGlitch,
     GengliBlipGlitch,
+    GlitchDraw,
     GlitchModel,
     LogNormalAmplitudeDistribution,
     ScatteredLightGlitch,
 )
 from gwmock_noise.parallel import ParallelAdapter
 from gwmock_noise.simulators import (
+    GLITCH_CATALOGUE_COLUMNS,
+    GLITCH_CATALOGUE_SCHEMA_VERSION,
+    GLITCH_CATALOGUE_TIME_CONVENTION,
     AddLines,
     ARNoiseSimulator,
     BaseNoiseSimulator,
@@ -35,6 +39,7 @@ from gwmock_noise.simulators import (
     SpectralLineSimulator,
     TimeVaryingColoredNoiseSimulator,
     WhiteNoiseSimulator,
+    apply_segment_gps_start,
     open_stream,
     take,
 )
@@ -79,6 +84,9 @@ _OPTIONAL_EXPORTS = {
 }
 
 __all__ = [
+    "GLITCH_CATALOGUE_COLUMNS",
+    "GLITCH_CATALOGUE_SCHEMA_VERSION",
+    "GLITCH_CATALOGUE_TIME_CONVENTION",
     "ARNoiseSimulator",
     "AddLines",
     "BaseNoiseSimulator",
@@ -95,6 +103,7 @@ __all__ = [
     "FrameWriter",
     "GWpyAdapter",
     "GengliBlipGlitch",
+    "GlitchDraw",
     "GlitchModel",
     "GlitchNoiseSimulator",
     "GwoscFilterConfig",
@@ -119,6 +128,7 @@ __all__ = [
     "TimeVaryingColoredNoiseSimulator",
     "WhiteNoiseSimulator",
     "__version__",
+    "apply_segment_gps_start",
     "assemble_hermitian_spectral_matrices",
     "build_spectral_covariance_from_files",
     "cholesky_factors_from_spectral_matrices",

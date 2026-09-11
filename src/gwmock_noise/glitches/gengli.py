@@ -10,8 +10,8 @@ from typing import Any, Literal
 import h5py
 import numpy as np
 
-from gwmock_noise.glitches._coloring import color_whitened_waveform
-from gwmock_noise.glitches.models import GlitchModel
+from gwmock_noise.glitches._coloring import ColoredWaveform, color_whitened_waveform, optimal_snr
+from gwmock_noise.glitches.models import GlitchDraw, GlitchModel
 from gwmock_noise.simulators._spectral import load_spectral_series
 
 POPULATION_SNR_DATASET = "snr"
@@ -135,7 +135,7 @@ class GengliBlipGlitch(GlitchModel):
         index = int(rng.integers(0, self._population_snrs.size))
         return float(self._population_snrs[index])
 
-    def _color_glitch(self, white_glitch: np.ndarray, *, sampling_frequency: float) -> np.ndarray:
+    def _color_glitch(self, white_glitch: np.ndarray, *, sampling_frequency: float) -> ColoredWaveform:
         """Color a whitened gengli waveform using the configured PSD."""
         return color_whitened_waveform(
             white_glitch,
@@ -144,7 +144,7 @@ class GengliBlipGlitch(GlitchModel):
             psd_values=self._psd_values,
             low_frequency_cutoff=self.low_frequency_cutoff,
             high_frequency_cutoff=self.high_frequency_cutoff,
-        ).time_series
+        )
 
     def generate_waveform(
         self,
@@ -152,23 +152,50 @@ class GengliBlipGlitch(GlitchModel):
         rng: np.random.Generator | None = None,
     ) -> np.ndarray:
         """Generate one colored gengli blip waveform."""
+        return self._draw(sampling_frequency, rng=rng).waveform
+
+    def _draw(
+        self,
+        sampling_frequency: float,
+        rng: np.random.Generator | None = None,
+    ) -> GlitchDraw:
+        """Draw one colored gengli blip and the parameters that produced it.
+
+        The target SNR is the value sampled from the population file and handed
+        to gengli, which imposes it on the *whitened* waveform; the realized SNR
+        is measured on the colored, amplitude-scaled result against the
+        configured PSD, so the two are independent numbers rather than one
+        restated.
+        """
         if sampling_frequency <= 0.0:
             raise ValueError("sampling_frequency must be greater than zero.")
 
         generator = np.random.default_rng() if rng is None else rng
+        # Drawn in this order because it is the order the stream was already in: the
+        # gengli seed first, then the population SNR. Naming `target_snr` before the
+        # call would read better and would permute the two draws, changing every
+        # realization this model has ever produced.
+        gengli_seed = int(generator.integers(0, UINT32_EXCLUSIVE_MAX))
+        target_snr = self._draw_snr(generator)
         raw_glitch = self._get_generator().get_glitch(
-            seed=int(generator.integers(0, UINT32_EXCLUSIVE_MAX)),
-            snr=self._draw_snr(generator),
+            seed=gengli_seed,
+            snr=target_snr,
             srate=sampling_frequency,
             glitch_type="Blip",
         )
         white_glitch = np.asarray(raw_glitch, dtype=float).reshape(-1)
         if white_glitch.size == 0:
-            return white_glitch
+            return GlitchDraw(waveform=white_glitch, glitch_class="Blip", target_snr=target_snr)
 
         amplitude = self.amplitude_distribution.sample(generator)
-        colored_glitch = self._color_glitch(white_glitch, sampling_frequency=sampling_frequency)
-        return amplitude * colored_glitch
+        colored = self._color_glitch(white_glitch, sampling_frequency=sampling_frequency)
+        return GlitchDraw(
+            waveform=amplitude * colored.time_series,
+            amplitude=amplitude,
+            glitch_class="Blip",
+            target_snr=target_snr,
+            realized_snr=amplitude * optimal_snr(colored, sampling_frequency=sampling_frequency),
+        )
 
     def serialize(self) -> dict[str, Any]:
         """Return metadata-friendly model parameters."""
