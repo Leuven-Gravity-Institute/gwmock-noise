@@ -477,3 +477,35 @@ def test_run_writes_the_catalogue_into_the_metadata_sidecar(tmp_path: Path) -> N
         assert event["gps_start_time"] >= O3_EPOCH
         assert event["gps_start_time"] < O3_EPOCH + config.duration
         assert event["gps_start_time"] == O3_EPOCH + (event["sample_index"] / config.sampling_frequency)
+
+
+def test_the_run_catalogue_stays_in_time_order_for_out_of_order_segments() -> None:
+    """`glitch_events` promises time order, and segments need not arrive in it.
+
+    `FrameWriter.write_segments` accepts its segments in whatever order it is handed, so a
+    caller can assign a decreasing epoch. Appending each segment's rows then relies on the
+    epochs advancing, which is true of an ordinary run and not guaranteed.
+    """
+    sampling_frequency = 256.0
+    duration = 4.0
+    later, earlier = O3_EPOCH + 1000.0, O3_EPOCH
+    model = BlipGlitch(
+        rate=2.0,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        width=0.01,
+    )
+    simulator = InjectGlitches(_zero_base(["H1"]), [model])
+
+    # The later segment first, then the earlier one.
+    apply_segment_gps_start(simulator, later)
+    simulator.generate(duration, sampling_frequency, ["H1"], seed=5)
+    assert simulator.segment_glitch_events, "test is vacuous: the first segment injected nothing"
+    apply_segment_gps_start(simulator, earlier)
+    simulator.generate(duration, sampling_frequency, ["H1"], seed=None)
+    assert simulator.segment_glitch_events, "test is vacuous: the second segment injected nothing"
+
+    times = [event["gps_start_time"] for event in simulator.glitch_events]
+    assert times == sorted(times)
+    # Both segments are represented, so the ordering is over two blocks rather than one.
+    assert min(times) < earlier + duration
+    assert max(times) >= later

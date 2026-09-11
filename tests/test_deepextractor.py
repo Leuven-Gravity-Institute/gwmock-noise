@@ -692,11 +692,11 @@ def test_injection_records_the_drawn_glitch_class(tmp_path: Path, hf_stub: list[
 
     events = simulator.glitch_events
     assert events, "test is vacuous: no glitch was injected"
-    drawn_classes = {event["glitch_class"] for event in events}
-    assert drawn_classes <= {"Blip", "Koi_Fish"}
-    # Both classes are configured with a nonzero rate and the higher-rate one dominates,
-    # so a catalogue reporting a single class for every event would be wrong.
-    assert "Blip" in drawn_classes
+    # The exact set, not a subset: both classes are configured with a nonzero rate, and at
+    # this seed and duration both are drawn (32 events). A subset assertion passed if every
+    # event reported "Blip", so it agreed with a catalogue that had lost the Koi_Fish label
+    # entirely -- which is the failure the assertion exists to catch.
+    assert {event["glitch_class"] for event in events} == {"Blip", "Koi_Fish"}
     for event in events:
         assert event["kind"] == "deepextractor"
         # The per-class target follows the class that was actually drawn, so the two

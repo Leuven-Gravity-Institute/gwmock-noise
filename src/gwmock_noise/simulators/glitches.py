@@ -57,8 +57,11 @@ GLITCH_CATALOGUE_COLUMNS: dict[str, str] = {
         "a model that does not calibrate SNR."
     ),
     "realized_snr": (
-        "Optimal SNR the injected waveform actually carries against the PSD it was colored "
-        "with, or null for an uncolored model."
+        "Optimal SNR of the waveform as drawn, against the PSD it was colored with, or null "
+        "for an uncolored model. The strain normally carries all of it, because a waveform "
+        "crossing a segment boundary has its remainder injected into the next segment. The "
+        "exception is the end of the generated data, where a still-running waveform is cut "
+        "and the strain then holds less than this figure."
     ),
     "amplitude": "Amplitude multiplier drawn from the model's amplitude distribution.",
 }
@@ -280,6 +283,15 @@ class InjectGlitches:
         own centre, and a DeepExtractor sample wherever that reconstruction
         happens to peak -- one rule per model would be three chances to get a
         column wrong, and the drawn samples answer it directly for all three.
+
+        ``realized_snr`` is likewise the drawn waveform's, and deliberately not the
+        SNR of the samples this segment happens to receive. Only part of a
+        boundary-crossing waveform lands here, but the remainder is injected into the
+        next segment rather than lost, so an SNR computed over this segment's prefix
+        would understate a glitch the data holds in full -- and would differ between a
+        streamed run and a single call over the same span, which nothing else about the
+        catalogue does. A waveform is genuinely cut only where the generated data ends,
+        which is the caveat the column's own description carries.
         """
         waveform = draw.waveform
         gps_start_time = segment_gps_start + (sample_index / sampling_frequency)
@@ -304,6 +316,40 @@ class InjectGlitches:
         # cumulative catalogue with it, so both are in time order rather than in the
         # model-then-detector order the injection loop happens to run in.
         self._segment_events.append(record)
+
+    @staticmethod
+    def _event_order(record: dict[str, Any]) -> tuple[float, str]:
+        """Return the sort key that puts catalogue rows in time order.
+
+        The id breaks a tie, so two glitches landing on the same sample in different
+        detectors order deterministically rather than by whichever the injection loop
+        reached first.
+        """
+        return (record["gps_start_time"], record["event_id"])
+
+    def _commit_segment_events(self) -> None:
+        """Close out the segment's rows and fold them into the run's catalogue.
+
+        Sorted here, once, rather than on every read: a consumer of a truth catalogue
+        expects time order, and this is the only place that can establish it without a
+        second pass over the run.
+
+        The cumulative list is extended rather than merged, because segments normally
+        advance in time and it is then already ordered by construction. A caller may
+        assign a *decreasing* epoch, though -- ``FrameWriter.write_segments`` accepts
+        segments in any order -- and ``glitch_events`` promises time order, so that case
+        is re-sorted. The check is O(1), so an ordinary run does not pay O(n log n) per
+        segment for a case it never hits.
+        """
+        self._segment_events.sort(key=self._event_order)
+        out_of_order = bool(
+            self._events
+            and self._segment_events
+            and self._segment_events[0]["gps_start_time"] < self._events[-1]["gps_start_time"]
+        )
+        self._events.extend(self._segment_events)
+        if out_of_order:
+            self._events.sort(key=self._event_order)
 
     @property
     def glitch_events(self) -> list[dict[str, Any]]:
@@ -428,8 +474,7 @@ class InjectGlitches:
         # In injection order across models and detectors, then by time within a pair. A
         # consumer reading a catalogue expects it in time order, and sorting here is the
         # one place it can be done without a second pass over the run.
-        self._segment_events.sort(key=lambda record: (record["gps_start_time"], record["event_id"]))
-        self._events.extend(self._segment_events)
+        self._commit_segment_events()
         return combined
 
     def generate_stream(
