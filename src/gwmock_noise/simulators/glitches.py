@@ -154,13 +154,13 @@ class InjectGlitches:
     second row. ``GLITCH_CATALOGUE_COLUMNS`` documents the columns and
     ``GLITCH_CATALOGUE_TIME_CONVENTION`` which instant each time column names.
 
-    ``gps_start`` is the GPS time of the first sample of the next segment. It
-    advances by each generated segment's duration, so a stream's catalogue reads
-    in real GPS time; a caller writing non-contiguous segments (e.g. through
-    ``FrameWriter.write_segments``) assigns it before each generate call, exactly
-    as the frame writer does with its own epoch. Re-seeding rewinds it to the
-    epoch the wrapper was constructed with, since re-seeding restarts the
-    realization.
+    ``gps_start`` is the GPS time of the first sample of the next segment, and it
+    belongs to the caller. It advances by each generated segment's duration, so a
+    stream's catalogue reads in real GPS time on its own; a caller that knows
+    better -- a writer placing non-contiguous segments, or one driving the stream
+    batch by batch -- assigns it before each generate call and that assignment is
+    honoured, including on a call that also carries a seed. Only ``reset``, the
+    explicit start-over, rewinds it to the epoch the wrapper was constructed with.
     """
 
     def __init__(
@@ -193,9 +193,18 @@ class InjectGlitches:
         self._segment_events: list[dict[str, Any]] = []
 
     def _initialize_process(self, seed: int | None) -> None:
-        """Reset the per-model, per-detector Poisson-process state."""
+        """Reset the per-model, per-detector Poisson-process state.
+
+        Deliberately does **not** touch ``gps_start``. This runs from inside
+        ``generate`` whenever a seed is passed, which is after a segment writer has
+        already said where the segment sits in GPS time -- so rewinding the epoch here
+        overwrote that statement. It timed the first seeded segment against the
+        constructor's epoch and then auto-advanced from there, so on the streaming path
+        (a seed on the first chunk and none after) *every* chunk of a run was timed from
+        the constructor's epoch rather than the writer's. Measured: a stream told to
+        start at GPS 1256655618 recorded its first glitch at 0.03 s.
+        """
         self.seed = seed
-        self.gps_start = self._epoch
         self._elapsed_time = 0.0
         self._segment_index = 0
         self._seed_sequence = np.random.SeedSequence(seed)
@@ -316,7 +325,15 @@ class InjectGlitches:
         return [dict(record) for record in self._segment_events]
 
     def reset(self) -> None:
-        """Reset the additive wrapper and any resettable base state."""
+        """Reset the additive wrapper and any resettable base state.
+
+        Rewinds the epoch to the one the wrapper was constructed with, which
+        ``_initialize_process`` does not: this is the caller saying "start over", where a
+        seed passed to ``generate`` is the caller saying "this segment, whose epoch I have
+        just told you, begins a new realization". The two need different answers, and
+        conflating them is what put every streamed segment on the wrong epoch.
+        """
+        self.gps_start = self._epoch
         self._initialize_process(self.seed)
         if hasattr(self.base, "reset"):
             self.base.reset()

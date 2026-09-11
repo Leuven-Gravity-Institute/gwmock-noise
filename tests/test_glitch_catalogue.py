@@ -17,7 +17,7 @@ import pytest
 
 from gwmock_noise.config import NoiseComponentConfig, NoiseConfig, OutputConfig
 from gwmock_noise.glitches import BlipGlitch, LogNormalAmplitudeDistribution, ScatteredLightGlitch
-from gwmock_noise.simulators import DefaultNoiseSimulator, InjectGlitches
+from gwmock_noise.simulators import DefaultNoiseSimulator, InjectGlitches, apply_segment_gps_start
 from gwmock_noise.simulators.glitches import (
     GLITCH_CATALOGUE_COLUMNS,
     GLITCH_CATALOGUE_SCHEMA_VERSION,
@@ -229,8 +229,64 @@ def test_catalogue_is_reproducible_for_a_fixed_seed() -> None:
     assert {event["detector"] for event in first.glitch_events} == {"H1", "L1"}
 
 
-def test_reseeding_restarts_the_catalogue_and_the_epoch() -> None:
-    """A re-seeded run is a new realization, and its record starts over with it."""
+def test_a_seeded_segment_keeps_the_epoch_its_caller_assigned() -> None:
+    """The bug that shipped nothing: a seed must not rewind the caller's epoch.
+
+    A segment writer states where the segment sits in GPS time and *then* generates,
+    and the first segment of a run is the one that carries the seed. Re-initialising the
+    Poisson process used to reset the epoch to the constructor's, so that segment was
+    timed from the wrong instant and the auto-advance carried the error into every later
+    segment. On the streaming path -- a seed on the first chunk and none after, which is
+    how a batch-by-batch consumer drives this -- that put the *whole run* on the wrong
+    epoch: a stream told to start at GPS 1256655618 recorded its first glitch at 0.03 s.
+    """
+    model = BlipGlitch(
+        rate=2.0,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        width=0.01,
+    )
+    # Constructed with the default epoch, so only the assignment can put the rows in the
+    # right place -- the constructor cannot be what makes this pass.
+    simulator = InjectGlitches(_zero_base(["H1"]), [model])
+    simulator.gps_start = O3_EPOCH
+
+    simulator.generate(4.0, 256.0, ["H1"], seed=5)
+
+    events = simulator.glitch_events
+    assert events, "test is vacuous: no glitch was injected"
+    for event in events:
+        assert event["gps_start_time"] >= O3_EPOCH
+        assert event["gps_start_time"] < O3_EPOCH + 4.0
+
+
+def test_every_streamed_segment_is_timed_from_the_epoch_it_was_given() -> None:
+    """Non-contiguous segments, each timed against its own epoch, seed on the first.
+
+    This is `FrameWriter.write_segments`' shape: the writer assigns each segment's epoch
+    and seeds only the first. A catalogue that ignored the assignment would put segment
+    two's glitches under segment one's frame name.
+    """
+    sampling_frequency = 256.0
+    duration = 4.0
+    epochs = [O3_EPOCH, O3_EPOCH + 1000.0]
+    model = BlipGlitch(
+        rate=2.0,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        width=0.01,
+    )
+    simulator = InjectGlitches(_zero_base(["H1"]), [model])
+
+    for index, epoch in enumerate(epochs):
+        apply_segment_gps_start(simulator, epoch)
+        simulator.generate(duration, sampling_frequency, ["H1"], seed=5 if index == 0 else None)
+        segment_events = simulator.segment_glitch_events
+        assert segment_events, f"test is vacuous: segment {index} injected nothing"
+        for event in segment_events:
+            assert epoch <= event["gps_start_time"] < epoch + duration
+
+
+def test_reset_rewinds_the_epoch_and_restarts_the_catalogue() -> None:
+    """`reset` is the explicit start-over, so it does rewind -- unlike a bare re-seed."""
     model = BlipGlitch(
         rate=1.0,
         amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
@@ -240,11 +296,13 @@ def test_reseeding_restarts_the_catalogue_and_the_epoch() -> None:
 
     simulator.generate(10.0, 256.0, ["H1"], seed=7)
     first = simulator.glitch_events
+    simulator.reset()
+    assert simulator.gps_start == O3_EPOCH
+    assert simulator.glitch_events == []
     simulator.generate(10.0, 256.0, ["H1"], seed=7)
-    second = simulator.glitch_events
 
     assert first, "test is vacuous: no glitch was injected"
-    assert second == first
+    assert simulator.glitch_events == first
 
 
 def test_catalogue_records_the_snr_it_calibrated_to_and_the_one_it_achieved(tmp_path: Path) -> None:
