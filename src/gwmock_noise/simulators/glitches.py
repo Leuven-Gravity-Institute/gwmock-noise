@@ -47,8 +47,9 @@ GLITCH_CATALOGUE_COLUMNS: dict[str, str] = {
     "gps_peak_time": "GPS time of the largest |strain| sample of the injected waveform.",
     "duration_seconds": "Length of the drawn waveform, n_samples / sampling_frequency.",
     "n_samples": (
-        "Samples in the drawn waveform. A waveform still running when the generated data ends "
-        "is truncated there, so the strain may hold fewer than this."
+        "Samples in the drawn waveform. A waveform still running where the generated data ends "
+        "-- past the last segment, or past a segment whose successor sits at a discontinuous "
+        "epoch -- is truncated there, so the strain may hold fewer than this."
     ),
     "segment_index": "Zero-based index of the generate() call that injected the event.",
     "sample_index": "Index of the waveform's first sample within that segment.",
@@ -145,8 +146,9 @@ class InjectGlitches:
     carried into the next chunk and replayed in event order, so the injected
     glitch series is identical, sample for sample, to a single generate call of
     the same total duration (the per-sample addition order is preserved exactly,
-    not merely up to rounding). A tail is dropped only when it overflows the last
-    generated chunk, where the data window genuinely ends.
+    not merely up to rounding). A tail is dropped where the data it would continue
+    into does not exist: past the last generated chunk, and past a segment whose
+    successor the caller places at a discontinuous epoch.
 
     Every event that lands in the strain is recorded as it fires, not merely
     tallied: see :attr:`glitch_events` for the cumulative truth catalogue and
@@ -194,6 +196,7 @@ class InjectGlitches:
         self._pending_tails: dict[tuple[int, str], list[np.ndarray]] = {}
         self._events: list[dict[str, Any]] = []
         self._segment_events: list[dict[str, Any]] = []
+        self._contiguous_gps_start: float | None = None
 
     def _initialize_process(self, seed: int | None) -> None:
         """Reset the per-model, per-detector Poisson-process state.
@@ -217,6 +220,7 @@ class InjectGlitches:
         self._pending_tails = {}
         self._events = []
         self._segment_events = []
+        self._contiguous_gps_start = None
 
     def _add_pending_tail(self, key: tuple[int, str], tail: np.ndarray) -> None:
         """Queue a waveform tail to inject at the start of the next chunk.
@@ -316,6 +320,30 @@ class InjectGlitches:
         # cumulative catalogue with it, so both are in time order rather than in the
         # model-then-detector order the injection loop happens to run in.
         self._segment_events.append(record)
+
+    def _drop_tails_across_a_gap(self, segment_gps_start: float) -> None:
+        """Discard carried-over tails when this segment does not adjoin the previous one.
+
+        A tail is the remainder of a waveform, replayed at sample zero of the next segment
+        because that is where the waveform continues. It only continues there if the next
+        segment *is* the next data: ``FrameWriter.write_segments`` permits gaps, so a caller
+        can place this segment a thousand seconds after the last, and the interval between
+        them holds no data for a waveform to run through.
+
+        Replaying the tail anyway put strain into the new segment that no row of its
+        catalogue accounted for, while the row that produced those samples carried a
+        timestamp from before the gap -- so the strain and the truth disagreed about when
+        the glitch was. Measured: a 112-sample tail from a segment at GPS 1256655618 was
+        written at the start of a segment at GPS 1256656618.
+
+        Dropping it is the same rule that already applies past the last generated chunk, and
+        for the same reason. Contiguity is judged against the epoch this wrapper advanced to
+        after the previous segment, so a caller that leaves ``gps_start`` alone, or assigns
+        exactly the value it already held, is contiguous and keeps its tails.
+        """
+        if self._contiguous_gps_start is None or segment_gps_start == self._contiguous_gps_start:
+            return
+        self._pending_tails = {}
 
     @staticmethod
     def _event_order(record: dict[str, Any]) -> tuple[float, str]:
@@ -421,6 +449,7 @@ class InjectGlitches:
         segment_gps_start = float(self.gps_start)
         if self._seed_sequence is None:
             raise RuntimeError("glitch RNG was not initialized.")
+        self._drop_tails_across_a_gap(segment_gps_start)
         self._segment_events = []
 
         for index, model in enumerate(self.glitch_models):
@@ -471,6 +500,10 @@ class InjectGlitches:
         self._elapsed_time = segment_end
         self._segment_index += 1
         self.gps_start = segment_gps_start + duration
+        # Remembered apart from `gps_start`, which the caller may overwrite: this is the
+        # epoch that would continue this segment without a gap, and comparing the next
+        # segment's epoch against it is what tells a contiguous stream from a jump.
+        self._contiguous_gps_start = self.gps_start
         # In injection order across models and detectors, then by time within a pair. A
         # consumer reading a catalogue expects it in time order, and sorting here is the
         # one place it can be done without a second pass over the run.

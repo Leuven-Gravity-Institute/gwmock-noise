@@ -555,3 +555,111 @@ def test_parallel_workers_are_placed_on_the_segment_epoch() -> None:
     assert second, "test is vacuous: the second segment injected nothing"
     for event in second:
         assert O3_EPOCH + 1000.0 <= event["gps_start_time"] < O3_EPOCH + 1000.0 + duration
+
+
+def _spans_clipped_to(events: list[dict[str, Any]], n_samples: int) -> list[tuple[int, int]]:
+    """Merge the catalogue's sample spans, clipped to one segment's length.
+
+    A row records the whole drawn waveform, so a span can run past the segment that holds its
+    start; comparing against that segment's samples has to clip.
+    """
+    spans = sorted(
+        (int(event["sample_index"]), min(n_samples, int(event["sample_index"]) + int(event["n_samples"])))
+        for event in events
+    )
+    merged: list[tuple[int, int]] = []
+    for start, stop in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], stop))
+        else:
+            merged.append((start, stop))
+    return merged
+
+
+def test_a_tail_is_not_replayed_across_a_gps_gap() -> None:
+    """A carried tail belongs to the next *data*, not merely the next call.
+
+    `FrameWriter.write_segments` permits gaps, so a caller can place the next segment a
+    thousand seconds later — and the interval between them holds no data for a waveform to
+    run through. Replaying the tail anyway wrote strain into the new segment that no row of
+    its catalogue accounted for, while the row that produced those samples was timestamped
+    from before the gap: the strain and the truth then disagreed about when the glitch was.
+    """
+    sampling_frequency = 256.0
+    duration = 2.0
+    n_samples = int(duration * sampling_frequency)
+    model = ScatteredLightGlitch(
+        rate=2.0,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        duration=1.0,
+        peak_frequency=20.0,
+    )
+    simulator = InjectGlitches(_zero_base(["H1"]), [model])
+
+    apply_segment_gps_start(simulator, O3_EPOCH)
+    simulator.generate(duration, sampling_frequency, ["H1"], seed=1)
+    first = simulator.segment_glitch_events
+    # Vacuity guards: this seed must actually leave a waveform running past the boundary.
+    assert any(event["sample_index"] + event["n_samples"] > n_samples for event in first), (
+        "test is vacuous: no waveform overran the first segment"
+    )
+    assert any(simulator._pending_tails.values()), "test is vacuous: no tail was queued"
+
+    # A genuine gap, not the contiguous continuation.
+    apply_segment_gps_start(simulator, O3_EPOCH + 1000.0)
+    strain = simulator.generate(duration, sampling_frequency, ["H1"], seed=None)["H1"]
+    second = simulator.segment_glitch_events
+
+    # Nothing before the segment's own first glitch: a replayed tail lands at sample zero,
+    # which is exactly what must not be there. Asserted as strain equal to zero rather than as
+    # span equality, because a scattered-light waveform's first sample *is* zero by
+    # construction (its phase starts at zero), so the non-zero run begins one sample after the
+    # row's `sample_index` and strict equality would fail on a correct catalogue.
+    assert second, "test is vacuous: the second segment injected nothing"
+    first_row = min(event["sample_index"] for event in second)
+    assert first_row > 0, "test is vacuous: a row starts at sample zero, so a tail there would hide"
+    np.testing.assert_array_equal(strain[:first_row], np.zeros(first_row))
+
+    # And every non-zero sample the segment does hold falls inside one of its own rows.
+    covered = np.zeros(n_samples, dtype=bool)
+    for start, stop in _spans_clipped_to(second, n_samples):
+        covered[start:stop] = True
+    assert not np.any((strain != 0.0) & ~covered)
+
+    for event in second:
+        assert O3_EPOCH + 1000.0 <= event["gps_start_time"] < O3_EPOCH + 1000.0 + duration
+
+
+def test_a_contiguous_segment_still_receives_its_tail() -> None:
+    """The gap rule must not cost a contiguous run its carry-over.
+
+    Assigning the epoch explicitly — which a writer does for every segment, gap or not — is
+    contiguous when it matches the continuation, so the tail is kept and the streamed series
+    still matches a single call of the same total duration.
+    """
+    sampling_frequency = 256.0
+    chunk = 2.0
+    n_chunks = 3
+    model = ScatteredLightGlitch(
+        rate=2.0,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        duration=1.0,
+        peak_frequency=20.0,
+    )
+
+    assigned = InjectGlitches(_zero_base(["H1"]), [model])
+    chunks = []
+    for index in range(n_chunks):
+        # Explicitly assigned each time, at the contiguous epoch.
+        apply_segment_gps_start(assigned, O3_EPOCH + (index * chunk))
+        chunks.append(assigned.generate(chunk, sampling_frequency, ["H1"], seed=1 if index == 0 else None)["H1"])
+    streamed = np.concatenate(chunks)
+
+    single = InjectGlitches(_zero_base(["H1"]), [model], gps_start=O3_EPOCH).generate(
+        chunk * n_chunks, sampling_frequency, ["H1"], seed=1
+    )["H1"]
+
+    boundary = int(chunk * sampling_frequency)
+    crossed = any(streamed[k * boundary - 1] != 0.0 and streamed[k * boundary] != 0.0 for k in range(1, n_chunks))
+    assert crossed, "test is vacuous: no glitch straddled a boundary"
+    np.testing.assert_array_equal(streamed, single)
