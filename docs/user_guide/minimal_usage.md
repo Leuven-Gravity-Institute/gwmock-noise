@@ -87,7 +87,9 @@ config = NoiseConfig(
 ```
 
 Available presets: `ET_D_psd`, `ET_10_HF_psd`, `ET_10_full_cryo_psd`,
-`ET_15_HF_psd`, `ET_15_full_cryo_psd`, `ET_20_HF_psd`, `ET_20_full_cryo_psd`.
+`ET_15_HF_psd`, `ET_15_full_cryo_psd`, `ET_20_HF_psd`, `ET_20_full_cryo_psd`,
+`aLIGO_O3_actual_H1_psd`, `aLIGO_O3_actual_L1_psd`,
+`aLIGO_O4_high_projected_psd`, `aLIGO_O4_low_projected_psd`.
 
 ---
 

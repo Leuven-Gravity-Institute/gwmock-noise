@@ -120,12 +120,17 @@ config = NoiseConfig(
 DefaultNoiseSimulator().run(config)
 ```
 
-`NoiseConfig.psd_file` also accepts bundled Einstein Telescope preset names, so
-you can use `psd_file="ET_10_full_cryo_psd"` without managing the PSD file
-yourself. Available presets are `ET_D_psd`, `ET_10_HF_psd`,
+`NoiseConfig.psd_file` also accepts bundled PSD preset names, so you can use
+`psd_file="ET_10_full_cryo_psd"` without managing the PSD file yourself.
+Einstein Telescope presets are `ET_D_psd`, `ET_10_HF_psd`,
 `ET_10_full_cryo_psd`, `ET_15_HF_psd`, `ET_15_full_cryo_psd`, `ET_20_HF_psd`,
-and `ET_20_full_cryo_psd`. Local paths and HTTP(S) URLs remain supported too
-(for remote sources, use `.txt` or `.csv`).
+and `ET_20_full_cryo_psd`. Advanced LIGO presets are `aLIGO_O3_actual_H1_psd`,
+`aLIGO_O3_actual_L1_psd`, `aLIGO_O4_high_projected_psd`, and
+`aLIGO_O4_low_projected_psd` — the O3 pair are measured representative spectra
+(lines included), the O4 pair are pre-run projections.
+`src/gwmock_noise/data/psd/PROVENANCE.md` records where each curve came from.
+Local paths and HTTP(S) URLs remain supported too (for remote sources, use
+`.txt` or `.csv`).
 
 ## Installation
 
