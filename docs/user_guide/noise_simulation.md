@@ -168,6 +168,60 @@ series is identical, sample for sample, to a single generate call of the same
 total duration; a tail is dropped only when it overflows the final chunk, where
 the data window ends.
 
+### The glitch truth catalogue
+
+Counts say how many glitches went in; the truth catalogue says which ones, and
+that is what a detection-efficiency curve, a classifier's training labels or a
+veto study needs. Every injected event is recorded as it fires, under
+`glitches.catalogue` in the metadata sidecar and on the simulator itself as
+`InjectGlitches.glitch_events` (the whole run) and
+`InjectGlitches.segment_glitch_events` (just the chunk generated last):
+
+```json
+{
+    "event_id": "H1-0-3",
+    "detector": "H1",
+    "model_index": 0,
+    "kind": "deepextractor",
+    "glitch_class": "Koi_Fish",
+    "gps_start_time": 1256655661.5,
+    "gps_peak_time": 1256655662.47,
+    "duration_seconds": 2.0,
+    "n_samples": 8192,
+    "segment_index": 10,
+    "sample_index": 1638,
+    "target_snr": 8.0,
+    "realized_snr": 8.0,
+    "amplitude": 1.0
+}
+```
+
+**`gps_start_time` is where the waveform starts, not where it peaks.** The
+Poisson process draws the time of the waveform's _first sample_, so for a 2 s
+DeepExtractor reconstruction the visible transient sits about a second later;
+`gps_peak_time` is the largest-|strain| sample of the same waveform. Cutting an
+analysis window around the wrong one of the two misses the glitch. The sidecar
+carries the same statement in `glitches.catalogue.time_convention`, and a
+one-line description of every column in `glitches.catalogue.columns`.
+
+`target_snr` is the optimal SNR the draw was calibrated to, before the amplitude
+multiplier; `realized_snr` is what the injected samples actually carry against
+the PSD they were colored with. They differ by `amplitude`, and both are `null`
+for a model with no PSD, which has no SNR to report.
+
+A row is written where a glitch _starts_, so a waveform straddling a chunk
+boundary appears once, at its true time, in the chunk holding its first sample —
+the carried-over tail adds samples to the next chunk but no second row. A
+streamed run and a single generate call of the same total duration therefore
+produce the same catalogue, and it replays exactly for a fixed (version, config,
+seed) just as the strain does.
+
+Times are GPS: `output.gps_start` is the epoch of the first sample, and each
+generated segment advances it by its own duration. A caller driving
+`InjectGlitches` directly can pass `gps_start=` or assign it per segment; it
+defaults to `0.0`, which makes the catalogue's times seconds from the start of
+the run.
+
 ### Parametric glitch models
 
 Two built-in models are described analytically rather than drawn from data:

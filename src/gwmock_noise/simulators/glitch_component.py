@@ -35,4 +35,8 @@ class GlitchNoiseSimulator(ConfigurableNoiseSimulator):
                 seed=config.seed,
             ),
             glitch_models,
+            # The run's epoch, so the truth catalogue reads in the same GPS time the
+            # artifact names and the HDF5 `x0` attribute carry. Without it the catalogue
+            # would time every event from zero while the strain sat at a real epoch.
+            gps_start=config.output.gps_start,
         )

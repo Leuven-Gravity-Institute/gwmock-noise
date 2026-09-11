@@ -669,3 +669,50 @@ def test_config_round_trip_and_injection(tmp_path: Path, hf_stub: list[str]) -> 
     counts = simulator.metadata["glitches"]["counts"]
     assert counts[0]["kind"] == "deepextractor"
     assert counts[0]["count"] > 0
+
+
+def test_injection_records_the_drawn_glitch_class(tmp_path: Path, hf_stub: list[str]) -> None:
+    """The drawn Gravity Spy class reaches the truth catalogue, per event.
+
+    The class is chosen inside the draw and nothing outside can recover it from the
+    strain, so a classifier's training labels exist only if the injector records it.
+    """
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    model = _make_model(
+        psd_file,
+        rate={"Blip": 3.0, "Koi_Fish": 1.0},
+        snr={"Blip": 8.0, "Koi_Fish": 12.0},
+        glitch_classes=["Blip", "Koi_Fish"],
+    )
+
+    base = _ZeroNoiseSimulator(detectors=["H1"], duration=8.0, sampling_frequency=4096.0, seed=1)
+    simulator = InjectGlitches(base, [model], gps_start=1256655618.0)
+    simulator.generate(8.0, 4096.0, ["H1"], seed=1)
+
+    events = simulator.glitch_events
+    assert events, "test is vacuous: no glitch was injected"
+    drawn_classes = {event["glitch_class"] for event in events}
+    assert drawn_classes <= {"Blip", "Koi_Fish"}
+    # Both classes are configured with a nonzero rate and the higher-rate one dominates,
+    # so a catalogue reporting a single class for every event would be wrong.
+    assert "Blip" in drawn_classes
+    for event in events:
+        assert event["kind"] == "deepextractor"
+        # The per-class target follows the class that was actually drawn, so the two
+        # columns cannot disagree about which event this was.
+        assert event["target_snr"] == {"Blip": 8.0, "Koi_Fish": 12.0}[event["glitch_class"]]
+        assert event["realized_snr"] == pytest.approx(event["target_snr"] * event["amplitude"], rel=1e-9)
+
+
+def test_realized_snr_matches_an_independent_measurement(tmp_path: Path, hf_stub: list[str]) -> None:
+    """The recorded realized SNR is the SNR of the samples, measured independently."""
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    model = _make_model(psd_file, rate=2.0, snr=9.0, glitch_classes=["Blip"])
+
+    draw = model._draw(4096.0, rng=np.random.default_rng(0))
+
+    assert draw.glitch_class == "Blip"
+    assert draw.target_snr == 9.0
+    assert _optimal_snr(draw.waveform, psd_file, 4096.0) == pytest.approx(draw.realized_snr, rel=1e-8)

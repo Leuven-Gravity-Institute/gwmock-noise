@@ -11,7 +11,7 @@ from typing import Any, Literal
 import numpy as np
 
 from gwmock_noise.glitches._coloring import color_and_scale, load_psd_table
-from gwmock_noise.glitches.models import GlitchModel
+from gwmock_noise.glitches.models import GlitchDraw, GlitchModel
 from gwmock_noise.utils.log import LOGGER_NAME
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -340,6 +340,20 @@ class DeepExtractorGlitch(GlitchModel):
         rng: np.random.Generator | None = None,
     ) -> np.ndarray:
         """Generate one colored, SNR-calibrated DeepExtractor glitch."""
+        return self._draw(sampling_frequency, rng=rng).waveform
+
+    def _draw(
+        self,
+        sampling_frequency: float,
+        rng: np.random.Generator | None = None,
+    ) -> GlitchDraw:
+        """Draw one DeepExtractor glitch and the parameters that produced it.
+
+        The drawn Gravity Spy class is returned rather than discarded: it is the
+        one parameter of this model a downstream classifier or veto study needs
+        as a label, and it is chosen here, inside the draw, so nothing outside
+        can recover it after the fact.
+        """
         if sampling_frequency <= 0.0:
             raise ValueError("sampling_frequency must be greater than zero.")
 
@@ -353,7 +367,8 @@ class DeepExtractorGlitch(GlitchModel):
 
         white_waveform = self._resample(white_waveform, sampling_frequency)
         amplitude = self.amplitude_distribution.sample(generator)
-        return color_and_scale(
+        target_snr = self._target_snr(glitch_class)
+        scaled = color_and_scale(
             white_waveform,
             sampling_frequency=sampling_frequency,
             psd_frequencies=self._psd_frequencies,
@@ -361,7 +376,14 @@ class DeepExtractorGlitch(GlitchModel):
             low_frequency_cutoff=self.low_frequency_cutoff,
             high_frequency_cutoff=self.high_frequency_cutoff,
             amplitude=amplitude,
-            target_snr=self._target_snr(glitch_class),
+            target_snr=target_snr,
+        )
+        return GlitchDraw(
+            waveform=scaled.waveform,
+            amplitude=amplitude,
+            glitch_class=glitch_class,
+            target_snr=target_snr,
+            realized_snr=scaled.realized_snr,
         )
 
     def serialize(self) -> dict[str, Any]:
