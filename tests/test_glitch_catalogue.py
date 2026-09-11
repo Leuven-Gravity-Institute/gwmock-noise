@@ -663,3 +663,84 @@ def test_a_contiguous_segment_still_receives_its_tail() -> None:
     crossed = any(streamed[k * boundary - 1] != 0.0 and streamed[k * boundary] != 0.0 for k in range(1, n_chunks))
     assert crossed, "test is vacuous: no glitch straddled a boundary"
     np.testing.assert_array_equal(streamed, single)
+
+
+def test_fractional_segments_keep_their_tails_despite_float_rounding() -> None:
+    """A one-ULP epoch difference is the same instant, and must not read as a gap.
+
+    A writer computes each epoch as `start + index * duration` while the injector advances by
+    adding `duration` once per segment. For a duration binary floating point cannot hold
+    exactly the two rounding paths diverge by an ULP -- ~2.4e-7 s at GPS magnitudes, four
+    orders of magnitude below a sample period -- and an exact comparison read that as a gap
+    and discarded valid tails. Measured before the fix: 38 samples of waveform lost from this
+    run, on the segments where the rounding diverged.
+
+    `0.1` is the point: `2.0` is exact, which is why every whole-second test passed.
+    """
+    sampling_frequency = 250.0
+    duration = 0.1  # 25 samples exactly, and not representable in binary
+    n_segments = 8
+    model = ScatteredLightGlitch(
+        rate=30.0,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        duration=0.25,
+        peak_frequency=20.0,
+    )
+
+    # Guard the guard: the epochs must actually diverge, or the test proves nothing.
+    accumulated = O3_EPOCH
+    diverged = False
+    for index in range(1, n_segments):
+        if O3_EPOCH + (index * duration) != accumulated + duration:
+            diverged = True
+        accumulated = O3_EPOCH + (index * duration)
+    assert diverged, "test is vacuous: the two epoch computations never diverged"
+
+    streamed_simulator = InjectGlitches(_zero_base(["H1"]), [model])
+    parts = []
+    for index in range(n_segments):
+        apply_segment_gps_start(streamed_simulator, O3_EPOCH + (index * duration))
+        parts.append(
+            streamed_simulator.generate(duration, sampling_frequency, ["H1"], seed=7 if index == 0 else None)["H1"]
+        )
+    streamed = np.concatenate(parts)
+
+    single = InjectGlitches(_zero_base(["H1"]), [model], gps_start=O3_EPOCH).generate(
+        duration * n_segments, sampling_frequency, ["H1"], seed=7
+    )["H1"]
+
+    assert np.count_nonzero(single) > 0, "test is vacuous: no glitch was injected"
+    np.testing.assert_array_equal(streamed, single)
+
+
+def test_a_one_sample_offset_is_still_treated_as_a_gap() -> None:
+    """The tolerance must not swallow a real discontinuity.
+
+    Half a sample period is the threshold because below it two epochs name the same sample.
+    A whole sample of offset is data that does not line up, so the tail does not continue
+    there -- and a tolerance loose enough to miss that would have replaced one defect with
+    its opposite.
+    """
+    sampling_frequency = 256.0
+    duration = 2.0
+    model = ScatteredLightGlitch(
+        rate=2.0,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        duration=1.0,
+        peak_frequency=20.0,
+    )
+    simulator = InjectGlitches(_zero_base(["H1"]), [model])
+
+    apply_segment_gps_start(simulator, O3_EPOCH)
+    simulator.generate(duration, sampling_frequency, ["H1"], seed=1)
+    assert any(simulator._pending_tails.values()), "test is vacuous: no tail was queued"
+
+    # One sample later than the contiguous continuation.
+    apply_segment_gps_start(simulator, O3_EPOCH + duration + (1.0 / sampling_frequency))
+    strain = simulator.generate(duration, sampling_frequency, ["H1"], seed=None)["H1"]
+    events = simulator.segment_glitch_events
+
+    assert events, "test is vacuous: the second segment injected nothing"
+    first_row = min(event["sample_index"] for event in events)
+    assert first_row > 0, "test is vacuous: a row at sample zero would hide a replayed tail"
+    np.testing.assert_array_equal(strain[:first_row], np.zeros(first_row))

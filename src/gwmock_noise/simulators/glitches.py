@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import zlib
 from collections.abc import Iterator
 from typing import Any
@@ -321,7 +322,7 @@ class InjectGlitches:
         # model-then-detector order the injection loop happens to run in.
         self._segment_events.append(record)
 
-    def _drop_tails_across_a_gap(self, segment_gps_start: float) -> None:
+    def _drop_tails_across_a_gap(self, segment_gps_start: float, sampling_frequency: float) -> None:
         """Discard carried-over tails when this segment does not adjoin the previous one.
 
         A tail is the remainder of a waveform, replayed at sample zero of the next segment
@@ -338,10 +339,31 @@ class InjectGlitches:
 
         Dropping it is the same rule that already applies past the last generated chunk, and
         for the same reason. Contiguity is judged against the epoch this wrapper advanced to
-        after the previous segment, so a caller that leaves ``gps_start`` alone, or assigns
-        exactly the value it already held, is contiguous and keeps its tails.
+        after the previous segment, so a caller that leaves ``gps_start`` alone keeps its
+        tails.
+
+        **Judged on the sample grid, not by exact equality.** A writer computes each epoch
+        as ``start + index * duration`` while this wrapper advances by adding ``duration``
+        once per segment; the two take different rounding paths, so for a duration that
+        binary floating point cannot hold exactly they differ by an ULP. At GPS magnitudes
+        that is ~2.4e-7 s, four orders of magnitude below a sample period at any realistic
+        rate -- unmistakably the same instant -- and an exact comparison read it as a gap
+        and discarded valid tails. Measured with ``duration=0.1``: 38 samples of waveform
+        lost from an eight-segment run, on segments 2 and 4 where the rounding diverged.
+
+        Half a sample period is the meaningful threshold: below it the two epochs name the
+        same sample, and at or beyond it the data is offset by a whole sample or more, which
+        is a real discontinuity. The ULP floor keeps that comparison honest above about
+        2 MHz, where half a sample falls below what a GPS-magnitude double can represent at
+        all -- rather than resting on the assumption that nobody samples that fast.
         """
-        if self._contiguous_gps_start is None or segment_gps_start == self._contiguous_gps_start:
+        if self._contiguous_gps_start is None:
+            return
+        tolerance = max(
+            0.5 / sampling_frequency,
+            4.0 * math.ulp(max(abs(segment_gps_start), abs(self._contiguous_gps_start))),
+        )
+        if abs(segment_gps_start - self._contiguous_gps_start) < tolerance:
             return
         self._pending_tails = {}
 
@@ -449,7 +471,7 @@ class InjectGlitches:
         segment_gps_start = float(self.gps_start)
         if self._seed_sequence is None:
             raise RuntimeError("glitch RNG was not initialized.")
-        self._drop_tails_across_a_gap(segment_gps_start)
+        self._drop_tails_across_a_gap(segment_gps_start, sampling_frequency)
         self._segment_events = []
 
         for index, model in enumerate(self.glitch_models):
