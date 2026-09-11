@@ -17,6 +17,7 @@ import pytest
 
 from gwmock_noise.config import NoiseComponentConfig, NoiseConfig, OutputConfig
 from gwmock_noise.glitches import BlipGlitch, LogNormalAmplitudeDistribution, ScatteredLightGlitch
+from gwmock_noise.parallel import ParallelAdapter
 from gwmock_noise.simulators import DefaultNoiseSimulator, InjectGlitches, apply_segment_gps_start
 from gwmock_noise.simulators.glitches import (
     GLITCH_CATALOGUE_COLUMNS,
@@ -509,3 +510,48 @@ def test_the_run_catalogue_stays_in_time_order_for_out_of_order_segments() -> No
     # Both segments are represented, so the ordering is over two blocks rather than one.
     assert min(times) < earlier + duration
     assert max(times) >= later
+
+
+def test_parallel_workers_are_placed_on_the_segment_epoch() -> None:
+    """A parallel run's per-detector workers must carry the writer's epoch, not the factory's.
+
+    `ParallelAdapter` builds one simulator per detector from a factory and caches it, so an
+    epoch set on the adapter reached none of them by attribute walking: each worker went on
+    stamping its catalogue with the factory's default while the frame carried the writer's
+    epoch. Measured before the fix -- a run told to start at GPS 1256655618 recorded its
+    glitches at 0.17 s.
+    """
+    sampling_frequency = 64.0
+    duration = 4.0
+    detectors = ["H1", "L1"]
+
+    def factory() -> InjectGlitches:
+        base = _ZeroNoiseSimulator(
+            detectors=detectors, duration=duration, sampling_frequency=sampling_frequency, seed=None
+        )
+        model = BlipGlitch(
+            rate=3.0,
+            amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+            width=0.01,
+        )
+        return InjectGlitches(base, [model])
+
+    adapter = ParallelAdapter(factory, max_workers=2, backend="thread")
+    # Exactly what FrameWriter.write does before generating a segment, and before any
+    # worker exists -- so the epoch has to survive until they are built.
+    apply_segment_gps_start(adapter, O3_EPOCH)
+    adapter.generate(duration, sampling_frequency, detectors, seed=5)
+
+    events = [event for worker in adapter._worker_simulators.values() for event in worker.glitch_events]
+    assert events, "test is vacuous: no glitch was injected"
+    assert len(adapter._worker_simulators) == len(detectors), "test is vacuous: workers were not built per detector"
+    for event in events:
+        assert O3_EPOCH <= event["gps_start_time"] < O3_EPOCH + duration
+
+    # A second segment at a new epoch reaches the workers that now exist.
+    apply_segment_gps_start(adapter, O3_EPOCH + 1000.0)
+    adapter.generate(duration, sampling_frequency, detectors, seed=None)
+    second = [event for worker in adapter._worker_simulators.values() for event in worker.segment_glitch_events]
+    assert second, "test is vacuous: the second segment injected nothing"
+    for event in second:
+        assert O3_EPOCH + 1000.0 <= event["gps_start_time"] < O3_EPOCH + 1000.0 + duration

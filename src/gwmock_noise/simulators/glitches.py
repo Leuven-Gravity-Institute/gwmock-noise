@@ -541,9 +541,18 @@ def apply_segment_gps_start(simulator: Any, gps_start: float) -> None:
     injector is rarely the outermost simulator: a glitch component sits inside
     ``CompositeNoiseSimulator``, which sits inside whatever adapter the writer holds.
     A simulator with no injector anywhere beneath it is left alone.
+
+    A wrapper that *builds* its simulators rather than holding one -- ``ParallelAdapter``,
+    which constructs and caches one per detector from a factory -- cannot be reached by
+    walking attributes, and an epoch set on such a wrapper alone reached none of its
+    workers. Those declare a writable ``segment_gps_start`` and own the fan-out, so this
+    hands the epoch over and lets them place both the workers they already hold and any
+    they build later in the same segment.
     """
     if isinstance(simulator, InjectGlitches):
         simulator.gps_start = float(gps_start)
+    if hasattr(type(simulator), "segment_gps_start"):
+        simulator.segment_gps_start = float(gps_start)
     base = getattr(simulator, "base", None)
     if base is not None and base is not simulator:
         apply_segment_gps_start(base, gps_start)

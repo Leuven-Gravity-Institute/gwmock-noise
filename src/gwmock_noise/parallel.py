@@ -100,6 +100,32 @@ class ParallelAdapter:
         self._resolved_backend: ExecutorBackend | None = None
         self._resolved_max_workers: int | None = None
         self._worker_simulators: dict[str, NoiseSimulator] = {}
+        self._segment_gps_start: float | None = None
+
+    @property
+    def segment_gps_start(self) -> float | None:
+        """Return the GPS epoch assigned for the next segment, or ``None`` if never set."""
+        return self._segment_gps_start
+
+    @segment_gps_start.setter
+    def segment_gps_start(self, gps_start: float) -> None:
+        """Place this adapter's per-detector simulators on one segment epoch.
+
+        This adapter builds one simulator per detector and caches it, so an epoch set on
+        the adapter alone reached none of them: a glitch-wrapping worker went on stamping
+        its truth catalogue with the factory's default while the frame carried the
+        writer's epoch. Measured before this existed -- a parallel run told to start at
+        GPS 1256655618 recorded its glitches at 0.17 s.
+
+        Assignment therefore fans out to the workers that exist, and the value is kept so
+        a worker built later in the same segment starts on the same epoch rather than the
+        factory's. A simulator with nothing to place is unaffected.
+        """
+        from gwmock_noise.simulators.glitches import apply_segment_gps_start  # noqa: PLC0415
+
+        self._segment_gps_start = float(gps_start)
+        for simulator in self._worker_simulators.values():
+            apply_segment_gps_start(simulator, self._segment_gps_start)
 
     def _preview_simulator(self) -> NoiseSimulator:
         """Instantiate one simulator for validation and metadata inspection."""
@@ -181,6 +207,12 @@ class ParallelAdapter:
         simulator = self.base_factory()
         if not isinstance(simulator, NoiseSimulator):
             raise TypeError("base_factory must construct a NoiseSimulator-compatible object.")
+        if self._segment_gps_start is not None:
+            # Built after the caller assigned the segment epoch, so it has to be placed on
+            # it here; the factory knows only its own default.
+            from gwmock_noise.simulators.glitches import apply_segment_gps_start  # noqa: PLC0415
+
+            apply_segment_gps_start(simulator, self._segment_gps_start)
         self._worker_simulators[detector] = simulator
         return simulator
 

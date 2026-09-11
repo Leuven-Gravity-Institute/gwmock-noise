@@ -60,9 +60,20 @@ class GlitchDraw(NamedTuple):
         target_snr: The optimal SNR the draw was calibrated to *before* the
             amplitude multiplier, or ``None`` when the model does not calibrate
             SNR. This is the configured target, not what the strain holds.
-        realized_snr: The optimal SNR ``waveform`` actually carries against the
-            PSD it was colored with, or ``None`` for an uncolored model. Equal
-            to ``amplitude * target_snr`` for a calibrated draw.
+        realized_snr: The optimal SNR of the whole of ``waveform`` against the
+            PSD it was colored with, or ``None`` for an uncolored model. Only the
+            end of the generated data can leave the strain holding less than
+            this; a waveform crossing a segment boundary has its remainder
+            injected into the next segment.
+
+            **How it relates to ``target_snr`` is model-specific, so do not
+            assume one from the other.** A model that calibrates against its own
+            coloring PSD -- ``BlipGlitch``, ``ScatteredLightGlitch``,
+            ``DeepExtractorGlitch`` -- realizes ``amplitude * target_snr``.
+            ``GengliBlipGlitch`` does not: its target is sampled from a
+            population and imposed by gengli on the *whitened* waveform, while
+            the realized figure is measured on the colored, amplitude-scaled
+            result, so the two are independent numbers rather than one restated.
     """
 
     waveform: np.ndarray
