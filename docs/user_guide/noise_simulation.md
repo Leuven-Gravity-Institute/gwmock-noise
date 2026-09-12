@@ -168,6 +168,53 @@ series is identical, sample for sample, to a single generate call of the same
 total duration; a tail is dropped only when it overflows the final chunk, where
 the data window ends.
 
+### Scoping a model to some interferometers
+
+A model applies to every interferometer in the run unless it says otherwise.
+`detectors` says otherwise: one name or a list of them, and the model then
+injects only there. That is what lets a single configuration describe a network
+whose instruments differ — a 10 km triangle and a 15 km 2L do not share a noise
+curve, so they cannot share a `psd_file` — and what lets rates differ per
+interferometer, which is what the instruments actually do: in O3,
+`Fast_Scattering` fired about 29 times more often in L1 than in H1.
+
+```toml
+detectors = ["ET1_SARD", "ET2_SARD", "ET3_SARD", "ET1_2L_ALIGNED_SARD", "ET2_2L_ALIGNED_EMR"]
+
+[[components]]
+simulator = "glitches"
+models = [
+  { kind = "blip", rate = 0.2, width = 0.01, psd_file = "ET_10_full_cryo_psd", snr = 20.0, detectors = ["ET1_SARD", "ET2_SARD", "ET3_SARD"], amplitude_distribution = { distribution = "lognormal", mean = 1.0, std = 0.0 } },
+  { kind = "blip", rate = 0.2, width = 0.01, psd_file = "ET_15_full_cryo_psd", snr = 20.0, detectors = ["ET1_2L_ALIGNED_SARD", "ET2_2L_ALIGNED_EMR"], amplitude_distribution = { distribution = "lognormal", mean = 1.0, std = 0.0 } },
+]
+```
+
+The sidecar records each model's `detectors`, `null` meaning all of them, so a
+run says which interferometers a model applied to rather than leaving it to be
+inferred from the configuration that produced it.
+
+**A configuration that does not say what every interferometer gets is refused,
+not run.** Before selectors existed a single `psd_file` colored the whole
+network, so the configuration above — written with one model — applied the 10 km
+curve to the 15 km instruments as well, and the run succeeded silently: SNRs
+23–44% away from the 20 that was asked for, varying with glitch morphology, with
+nothing in the output or the logs to say so. Three cases now raise a
+`ValueError` naming the interferometers involved:
+
+- **An interferometer no model claims.** Its strain would be written without
+  glitches while the rest of the network carries them. Where that is the intent,
+  say it in the configuration: give it a model with `rate = 0.0`.
+- **Two coloring PSDs claiming one interferometer.** An interferometer has one
+  noise floor; two models coloring it against different curves disagree about
+  what instrument it is. Models with no `psd_file` impose no floor and are not
+  part of this.
+- **A selector naming an interferometer the run does not have** — a typo or a
+  leftover from another network, whose model would never fire.
+
+A model written without `detectors` still applies to every interferometer, so an
+existing configuration keeps its meaning exactly, and a run whose models are all
+unscoped covers the network by construction.
+
 ### The glitch truth catalogue
 
 Counts say how many glitches went in; the truth catalogue says which ones, and

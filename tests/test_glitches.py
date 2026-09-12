@@ -498,6 +498,7 @@ def test_default_simulator_reports_glitch_metadata(tmp_path: Path) -> None:
         {
             "kind": "blip",
             "rate": 0.25,
+            "detectors": None,
             "width": 0.01,
             "psd_file": None,
             "snr": None,
