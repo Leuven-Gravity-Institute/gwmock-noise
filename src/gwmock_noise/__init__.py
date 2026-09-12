@@ -10,11 +10,14 @@ from gwmock_noise.gaussian import SpectralLine
 from gwmock_noise.glitches import (
     BlipGlitch,
     DeepExtractorGlitch,
+    EmpiricalSNRDistribution,
     GengliBlipGlitch,
     GlitchDraw,
     GlitchModel,
     LogNormalAmplitudeDistribution,
+    PowerLawSNRDistribution,
     ScatteredLightGlitch,
+    SNRDistribution,
 )
 from gwmock_noise.parallel import ParallelAdapter
 from gwmock_noise.simulators import (
@@ -99,6 +102,7 @@ __all__ = [
     "DeepExtractorGlitch",
     "DefaultNoiseSimulator",
     "DiagnosticResult",
+    "EmpiricalSNRDistribution",
     "FilterType",
     "FrameWriter",
     "GWpyAdapter",
@@ -118,6 +122,8 @@ __all__ = [
     "NoiseSimulator",
     "OutputConfig",
     "ParallelAdapter",
+    "PowerLawSNRDistribution",
+    "SNRDistribution",
     "ScatteredLightGlitch",
     "SchumannNoiseSimulator",
     "SchumannParams",

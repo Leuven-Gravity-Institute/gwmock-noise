@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from test_snr_distribution import MEASURED_THRESHOLD, tail_index
 
 from gwmock_noise import DeepExtractorGlitch, LogNormalAmplitudeDistribution
 from gwmock_noise.glitches import deepextractor as deepextractor_module
@@ -716,3 +717,180 @@ def test_realized_snr_matches_an_independent_measurement(tmp_path: Path, hf_stub
     assert draw.glitch_class == "Blip"
     assert draw.target_snr == 9.0
     assert _optimal_snr(draw.waveform, psd_file, 4096.0) == pytest.approx(draw.realized_snr, rel=1e-8)
+
+
+def test_per_class_sampled_snr_reproduces_the_measured_tail_indices(tmp_path: Path, hf_stub: list[str]) -> None:
+    """Generated glitches carry the per-class tail index they were configured with.
+
+    The acceptance check for sampled SNR, and it is deliberately made on the
+    *strain*: each waveform's optimal SNR is recomputed against the PSD by an
+    independent inner product and the tail index is estimated from those
+    recovered values, so the sampler's own inputs are never consulted. The three
+    indices are the measured O3 Omicron values for the classes at the extremes
+    and the middle of the range, which is the point -- one shape cannot serve all
+    seven, and a per-class configuration has to keep them apart rather than
+    average them.
+    """
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    measured_index = {"Koi_Fish": 0.40, "Blip": 1.34, "Fast_Scattering": 3.11}
+    model = _make_model(
+        psd_file,
+        glitch_classes=list(measured_index),
+        snr={
+            name: {"distribution": "power_law", "minimum": MEASURED_THRESHOLD, "alpha": alpha}
+            for name, alpha in measured_index.items()
+        },
+    )
+
+    rng = np.random.default_rng(2026)
+    recovered: dict[str, list[float]] = {name: [] for name in measured_index}
+    for _ in range(6000):
+        draw = model._draw(4096.0, rng=rng)
+        recovered[draw.glitch_class].append(_optimal_snr(draw.waveform, psd_file, 4096.0))
+
+    for name, alpha in measured_index.items():
+        snrs = np.array(recovered[name])
+        assert snrs.size > 1500, f"too few {name} draws for a tail-index estimate"
+        assert snrs.min() >= MEASURED_THRESHOLD
+        assert tail_index(snrs, MEASURED_THRESHOLD) == pytest.approx(alpha, rel=0.1)
+
+    # A second, estimator-independent reading of the same strain: the fraction of
+    # Koi_Fish above ten times the threshold is the survival function evaluated
+    # there, and at alpha = 0.40 that is 40 % of the class rather than the 4e-14
+    # a Gaussian-tailed population would put there.
+    koi_fish = np.array(recovered["Koi_Fish"])
+    assert np.mean(koi_fish >= 10.0 * MEASURED_THRESHOLD) == pytest.approx(10.0**-0.40, rel=0.1)
+
+
+def test_sampled_and_fixed_targets_mix_across_classes(tmp_path: Path, hf_stub: list[str]) -> None:
+    """One class can be sampled while another stays pinned to a fixed target."""
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    model = _make_model(
+        psd_file,
+        glitch_classes=["Blip", "Tomte"],
+        snr={"Blip": {"distribution": "empirical", "samples": [4.0, 400.0]}, "Tomte": 9.0},
+    )
+
+    rng = np.random.default_rng(3)
+    by_class: dict[str, set[float]] = {"Blip": set(), "Tomte": set()}
+    for _ in range(60):
+        draw = model._draw(4096.0, rng=rng)
+        assert _optimal_snr(draw.waveform, psd_file, 4096.0) == pytest.approx(draw.target_snr, rel=1e-8)
+        by_class[draw.glitch_class].add(draw.target_snr)
+
+    assert by_class["Blip"] == {4.0, 400.0}
+    assert by_class["Tomte"] == {9.0}
+
+
+def test_scalar_and_per_class_scalar_snr_are_unchanged(tmp_path: Path, hf_stub: list[str]) -> None:
+    """The two fixed-target forms still mean exactly what they meant before.
+
+    The pinned numbers were produced before sampled targets existed, and the
+    generator's state after the draws is pinned with them: a fixed target must
+    consume no randomness, or every later draw in the run would shift. The
+    per-class-scalar form is checked against the same pins, since a mapping of
+    one number per class is the scalar form written out.
+    """
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    amplitude = LogNormalAmplitudeDistribution(mean=1.0, std=0.25)
+
+    for snr in (10.0, dict.fromkeys(GLITCH_CLASS_NAMES, 10.0)):
+        model = _make_model(psd_file, snr=snr, amplitude_distribution=amplitude)
+        rng = np.random.default_rng(20260912)
+        draws = [model._draw(4096.0, rng=rng) for _ in range(3)]
+
+        assert [draw.glitch_class for draw in draws] == ["Whistle", "Koi_Fish", "Whistle"]
+        assert [draw.target_snr for draw in draws] == [10.0, 10.0, 10.0]
+        assert [draw.amplitude for draw in draws] == pytest.approx(
+            [1.082313918009737, 1.5284412114577641, 0.8661177671591301], rel=1e-12
+        )
+        assert [draw.waveform[0] for draw in draws] == pytest.approx(
+            [-48.89839057561755, 15.787978879002129, -39.13075879215286], rel=1e-12
+        )
+        assert [draw.realized_snr for draw in draws] == pytest.approx(
+            [10.82313918009737, 15.284412114577641, 8.6611776715913], rel=1e-12
+        )
+        assert rng.random() == pytest.approx(0.03160795437541741, rel=1e-12)
+
+
+def test_sampled_snr_serializes_and_replays(tmp_path: Path, hf_stub: list[str]) -> None:
+    """A sampled configuration round-trips through metadata and replays exactly."""
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    model = _make_model(
+        psd_file,
+        glitch_classes=["Blip", "Koi_Fish"],
+        snr={
+            "Blip": {"distribution": "power_law", "minimum": 10.0, "alpha": 1.34, "maximum": 621.2},
+            "Koi_Fish": {"distribution": "empirical", "samples": [113.9, 1309.5]},
+        },
+    )
+
+    serialized = model.serialize()
+    assert serialized["snr"] == {
+        "Blip": {"distribution": "power_law", "minimum": 10.0, "alpha": 1.34, "maximum": 621.2},
+        "Koi_Fish": {"distribution": "empirical", "samples": [113.9, 1309.5]},
+    }
+
+    replayed = normalize_glitch_models([serialized | {"kind": "deepextractor"}])[0]
+    original_draws = [model._draw(4096.0, rng=rng) for rng in [np.random.default_rng(8)] for _ in range(20)]
+    replayed_draws = [replayed._draw(4096.0, rng=rng) for rng in [np.random.default_rng(8)] for _ in range(20)]
+
+    assert len({draw.target_snr for draw in original_draws}) > 1, "test is vacuous: every target was the same"
+    for one, other in zip(original_draws, replayed_draws, strict=True):
+        assert one.target_snr == other.target_snr
+        np.testing.assert_array_equal(one.waveform, other.waveform)
+
+
+def test_sampled_snr_reaches_the_truth_catalogue(tmp_path: Path, hf_stub: list[str]) -> None:
+    """Each event records the target it was actually drawn with, not the shape."""
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    model = _make_model(
+        psd_file,
+        rate=4.0,
+        glitch_classes=["Blip"],
+        snr={"Blip": {"distribution": "empirical", "samples": [12.0, 120.0]}},
+    )
+
+    base = _ZeroNoiseSimulator(detectors=["H1"], duration=8.0, sampling_frequency=4096.0, seed=1)
+    simulator = InjectGlitches(base, [model], gps_start=1256655618.0)
+    result = simulator.generate(8.0, 4096.0, ["H1"], seed=1)
+
+    events = simulator.glitch_events
+    assert events, "test is vacuous: no glitch was injected"
+    assert {event["target_snr"] for event in events} == {12.0, 120.0}
+    for event in events:
+        assert event["realized_snr"] == pytest.approx(event["target_snr"] * event["amplitude"], rel=1e-9)
+
+    # Reproducible for a fixed (config, seed) exactly as the fixed-SNR path is:
+    # the sampled targets come from the same per-detector stream as the rest of
+    # the draw, so a replay reproduces the strain and the catalogue together.
+    replay_base = _ZeroNoiseSimulator(detectors=["H1"], duration=8.0, sampling_frequency=4096.0, seed=1)
+    replay = InjectGlitches(replay_base, [model], gps_start=1256655618.0)
+    replay_result = replay.generate(8.0, 4096.0, ["H1"], seed=1)
+
+    np.testing.assert_array_equal(replay_result["H1"], result["H1"])
+    assert [event["target_snr"] for event in replay.glitch_events] == [event["target_snr"] for event in events]
+
+
+def test_rejects_invalid_sampled_snr_configuration(tmp_path: Path) -> None:
+    """A malformed distribution is refused with the same reach as a bad scalar."""
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+
+    with pytest.raises(ValueError, match="distribution must be one of"):
+        _make_model(psd_file, snr={"distribution": "gaussian", "mean": 10.0})
+    with pytest.raises(ValueError, match="alpha must be finite and greater than zero"):
+        _make_model(psd_file, snr={"distribution": "power_law", "minimum": 10.0, "alpha": 0.0})
+    with pytest.raises(ValueError, match="missing glitch classes"):
+        _make_model(
+            psd_file,
+            glitch_classes=["Blip", "Tomte"],
+            snr={"Blip": {"distribution": "power_law", "minimum": 10.0, "alpha": 1.3}},
+        )
+    with pytest.raises(TypeError, match=r"snr\['Blip'\] values must be numbers or a distribution mapping"):
+        _make_model(psd_file, glitch_classes=["Blip"], snr={"Blip": "loud"})

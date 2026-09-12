@@ -9,6 +9,8 @@ from typing import Any, Literal, NamedTuple
 
 import numpy as np
 
+from gwmock_noise.glitches.snr import SNRDistribution, draw_target_snr, normalize_snr, serialize_snr
+
 TWO_PI = 2.0 * np.pi
 
 
@@ -184,7 +186,7 @@ class BlipGlitch(GlitchModel):
 
     width: float = 0.01
     psd_file: str | Path | None = None
-    snr: float | None = None
+    snr: float | SNRDistribution | dict[str, Any] | None = None
     low_frequency_cutoff: float = 2.0
     high_frequency_cutoff: float | None = None
     kind: Literal["blip"] = field(init=False, default="blip")
@@ -196,6 +198,8 @@ class BlipGlitch(GlitchModel):
         GlitchModel.__post_init__(self)
         if self.width <= 0.0:
             raise ValueError("blip width must be greater than zero.")
+        if self.snr is not None:
+            self.snr = normalize_snr(self.snr)
         from gwmock_noise.glitches._coloring import prepare_coloring  # noqa: PLC0415
 
         self._psd_frequencies, self._psd_values = prepare_coloring(
@@ -236,6 +240,10 @@ class BlipGlitch(GlitchModel):
         if self._psd_values is not None:
             from gwmock_noise.glitches._coloring import color_and_scale  # noqa: PLC0415
 
+            # Drawn after the amplitude so a scalar target leaves the stream where it
+            # has always been: a number consumes nothing from the generator, and only a
+            # configured distribution advances it.
+            target_snr = None if self.snr is None else draw_target_snr(self.snr, generator)
             scaled = color_and_scale(
                 base_waveform,
                 sampling_frequency=sampling_frequency,
@@ -244,12 +252,12 @@ class BlipGlitch(GlitchModel):
                 low_frequency_cutoff=self.low_frequency_cutoff,
                 high_frequency_cutoff=self.high_frequency_cutoff,
                 amplitude=amplitude,
-                target_snr=self.snr,
+                target_snr=target_snr,
             )
             return GlitchDraw(
                 waveform=scaled.waveform,
                 amplitude=amplitude,
-                target_snr=self.snr,
+                target_snr=target_snr,
                 realized_snr=scaled.realized_snr,
             )
         return GlitchDraw(waveform=amplitude * base_waveform, amplitude=amplitude)
@@ -259,7 +267,7 @@ class BlipGlitch(GlitchModel):
         return GlitchModel.serialize(self) | {
             "width": self.width,
             "psd_file": None if self.psd_file is None else str(self.psd_file),
-            "snr": self.snr,
+            "snr": serialize_snr(self.snr),
             "low_frequency_cutoff": self.low_frequency_cutoff,
             "high_frequency_cutoff": self.high_frequency_cutoff,
         }
@@ -274,7 +282,7 @@ class ScatteredLightGlitch(GlitchModel):
     arch_exponent: float = 1.0
     phase: float = 0.0
     psd_file: str | Path | None = None
-    snr: float | None = None
+    snr: float | SNRDistribution | dict[str, Any] | None = None
     low_frequency_cutoff: float = 2.0
     high_frequency_cutoff: float | None = None
     kind: Literal["scattered_light"] = field(init=False, default="scattered_light")
@@ -290,6 +298,8 @@ class ScatteredLightGlitch(GlitchModel):
             raise ValueError("scattered-light peak_frequency must be greater than zero.")
         if self.arch_exponent <= 0.0:
             raise ValueError("scattered-light arch_exponent must be greater than zero.")
+        if self.snr is not None:
+            self.snr = normalize_snr(self.snr)
         from gwmock_noise.glitches._coloring import prepare_coloring  # noqa: PLC0415
 
         self._psd_frequencies, self._psd_values = prepare_coloring(
@@ -330,6 +340,10 @@ class ScatteredLightGlitch(GlitchModel):
         if self._psd_values is not None:
             from gwmock_noise.glitches._coloring import color_and_scale  # noqa: PLC0415
 
+            # Drawn after the amplitude so a scalar target leaves the stream where it
+            # has always been: a number consumes nothing from the generator, and only a
+            # configured distribution advances it.
+            target_snr = None if self.snr is None else draw_target_snr(self.snr, generator)
             scaled = color_and_scale(
                 base_waveform,
                 sampling_frequency=sampling_frequency,
@@ -338,12 +352,12 @@ class ScatteredLightGlitch(GlitchModel):
                 low_frequency_cutoff=self.low_frequency_cutoff,
                 high_frequency_cutoff=self.high_frequency_cutoff,
                 amplitude=amplitude,
-                target_snr=self.snr,
+                target_snr=target_snr,
             )
             return GlitchDraw(
                 waveform=scaled.waveform,
                 amplitude=amplitude,
-                target_snr=self.snr,
+                target_snr=target_snr,
                 realized_snr=scaled.realized_snr,
             )
         return GlitchDraw(waveform=amplitude * base_waveform, amplitude=amplitude)
@@ -356,7 +370,7 @@ class ScatteredLightGlitch(GlitchModel):
             "arch_exponent": self.arch_exponent,
             "phase": self.phase,
             "psd_file": None if self.psd_file is None else str(self.psd_file),
-            "snr": self.snr,
+            "snr": serialize_snr(self.snr),
             "low_frequency_cutoff": self.low_frequency_cutoff,
             "high_frequency_cutoff": self.high_frequency_cutoff,
         }

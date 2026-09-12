@@ -260,6 +260,77 @@ models = [
 ]
 ```
 
+### Sampled SNR distributions
+
+A number for `snr` calibrates every event of a model — or, for a per-class
+mapping, every event of a class — to exactly the same loudness. Measured glitch
+populations are not like that: they are heavy-tailed, and for the heaviest
+classes the tail is where most of the class's effect on a search or a classifier
+sits. The `amplitude_distribution` multiplier cannot stand in for it, because a
+log-normal has every moment finite while a power law with an index below one has
+no finite mean at all.
+
+So `snr` also accepts a **distribution**, and the target is then drawn per event
+from the same random stream as the rest of the model — which keeps a run
+reproducible for a fixed (version, config, seed) exactly as the fixed-SNR path
+is. Two shapes are supported, and both work for `blip`, `scattered_light` and
+`deepextractor`:
+
+```toml
+# Power law above a threshold: survival S(s) = (s / minimum) ** -alpha.
+snr = { distribution = "power_law", minimum = 10.0, alpha = 1.34, maximum = 621.2 }
+
+# Draw with replacement from observed SNRs, given inline ...
+snr = { distribution = "empirical", samples = [11.4, 42.0, 92.2, 621.2] }
+# ... or from a file: one SNR per line, or an HDF5 file with an `snr` dataset
+# (the schema `gwmock-noise build-blip-glitch-table` writes).
+snr = { distribution = "empirical", file = "observed_snrs.txt" }
+```
+
+`alpha` is the exponent of the **survival** function, which is the convention a
+Hill or maximum-likelihood tail index is quoted in — one less than the density's
+exponent. A tail index measured above some threshold therefore goes in as it was
+measured, with `minimum` set to the threshold it was measured above.
+
+Two things are worth being deliberate about:
+
+- **`minimum` is a threshold, not a fit to the whole population.** A measured
+  index describes the tail above the threshold and says nothing about the bulk
+  below it, so the model reproduces the tail and replaces the bulk with the same
+  power law continued down to `minimum`.
+- **`maximum` is optional but matters for a heavy tail.** Left unset the power
+  law is unbounded, and with `alpha` below 1 a long enough run will eventually
+  draw an SNR no detector could produce — at `alpha = 0.4` and `minimum = 10`,
+  one draw in a hundred lands above SNR 10⁶. The largest SNR observed for the
+  class is the natural cap.
+
+For `deepextractor` the two forms compose per class, and can be mixed freely —
+one class sampled, another pinned:
+
+```toml
+[[components]]
+simulator = "glitches"
+models = [
+  { kind = "deepextractor", rate = { Blip = 3.5e-4, Koi_Fish = 6.2e-4 }, psd_file = "noise_psd.txt", glitch_classes = ["Blip", "Koi_Fish"], amplitude_distribution = { distribution = "lognormal", mean = 1.0, std = 0.0 }, snr = { Blip = { distribution = "power_law", minimum = 10.0, alpha = 1.34, maximum = 621.2 }, Koi_Fish = { distribution = "power_law", minimum = 10.0, alpha = 0.40, maximum = 11841.5 } } }
+]
+```
+
+Per-event targets are recorded in the glitch truth catalogue, so `target_snr`
+reports the value the event was actually drawn with rather than the shape it
+came from, and the sampled population can be read back off a finished run.
+
+**What the target means is yours to decide.** Tail indices and SNR tables
+usually come from a trigger generator — Omicron, say — whose SNR is defined
+against _that pipeline's_ PSD over the band it searched, while this model
+calibrates against `psd_file` from `low_frequency_cutoff` upward. Feeding one
+into the other equates two SNRs defined against different noise curves over
+different bands, which is a statement about the population you are asking for,
+not about the sampler: the sampler reproduces whatever distribution it is given
+and cannot tell whether that identification is the one you meant. If the two
+noise curves differ materially, rescale the measured SNRs before configuring
+them, or read the resulting population as "the same loudness distribution,
+expressed in this detector's band".
+
 ## Gengli blip glitches
 
 `gwmock-noise[gengli]` adds a file-backed `GengliBlipGlitch` model that plugs
@@ -322,11 +393,13 @@ and cached by `huggingface_hub`.
 Each injected event draws a reconstruction from the configured classes,
 resamples it to the simulation rate, colors it against `psd_file`, and rescales
 it so its optimal SNR `sqrt(4 df sum(|h(f)|^2 / S(f)))` against that PSD equals
-the configured target. `snr` accepts either a single number for all classes or a
-per-class mapping. `rate` likewise accepts either a single number — the total
-Poisson rate shared by all configured classes, drawn uniformly — or a per-class
-mapping, in which case each class occurs at its own rate (the total rate is
-their sum):
+the configured target. `snr` accepts a single number for all classes, a
+per-class mapping, or a sampled distribution per class (see
+[Sampled SNR distributions](#sampled-snr-distributions), which is what a
+heavy-tailed class needs). `rate` likewise accepts either a single number — the
+total Poisson rate shared by all configured classes, drawn uniformly — or a
+per-class mapping, in which case each class occurs at its own rate (the total
+rate is their sum):
 
 ```toml
 [[components]]

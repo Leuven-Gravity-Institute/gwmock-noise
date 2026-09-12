@@ -7,6 +7,7 @@ from typing import NamedTuple
 
 import numpy as np
 
+from gwmock_noise.glitches.snr import SNRDistribution
 from gwmock_noise.simulators._spectral import load_spectral_series
 from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
 
@@ -121,7 +122,7 @@ def load_psd_table(psd_file: str | Path) -> tuple[np.ndarray, np.ndarray]:
 
 def prepare_coloring(
     psd_file: str | Path | None,
-    snr: float | None,
+    snr: float | SNRDistribution | None,
     low_frequency_cutoff: float,
     high_frequency_cutoff: float | None,
 ) -> tuple[np.ndarray | None, np.ndarray | None]:
@@ -130,14 +131,18 @@ def prepare_coloring(
     Returns the loaded ``(frequencies, values)`` when ``psd_file`` is set, or
     ``(None, None)`` when coloring is disabled. Raises ``ValueError`` for an
     invalid configuration: a target ``snr`` without a ``psd_file`` (SNR
-    calibration needs a PSD), a non-positive ``snr``, or a frequency band that is
-    negative or inverted.
+    calibration needs a PSD), or a frequency band that is negative or inverted.
+
+    ``snr`` arrives already normalized by
+    :func:`~gwmock_noise.glitches.snr.normalize_snr` -- a number or an
+    :class:`~gwmock_noise.glitches.snr.SNRDistribution`, either one validated
+    where it was built rather than re-checked here, so the two forms cannot drift
+    apart into two different notions of a valid target. What is left is the one
+    thing only this function can see: a target of any shape needs a PSD to be
+    calibrated against.
     """
-    if snr is not None:
-        if psd_file is None:
-            raise ValueError("snr requires psd_file to calibrate the SNR against a PSD.")
-        if isinstance(snr, bool) or not isinstance(snr, (int, float)) or not np.isfinite(snr) or snr <= 0.0:
-            raise ValueError("snr must be finite and greater than zero.")
+    if snr is not None and psd_file is None:
+        raise ValueError("snr requires psd_file to calibrate the SNR against a PSD.")
     if psd_file is None:
         return None, None
     if not np.isfinite(low_frequency_cutoff) or low_frequency_cutoff < 0.0:
