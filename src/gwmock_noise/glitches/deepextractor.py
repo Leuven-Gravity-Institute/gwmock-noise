@@ -12,6 +12,13 @@ import numpy as np
 
 from gwmock_noise.glitches._coloring import color_and_scale, load_psd_table
 from gwmock_noise.glitches.models import GlitchDraw, GlitchModel
+from gwmock_noise.glitches.snr import (
+    SNRDistribution,
+    draw_target_snr,
+    is_snr_distribution_mapping,
+    normalize_snr,
+    serialize_snr,
+)
 from gwmock_noise.utils.log import LOGGER_NAME
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -108,6 +115,23 @@ class DeepExtractorGlitch(GlitchModel):
     per-class Poisson rate, in which case the total rate is their sum and each
     event's class is drawn proportionally to its rate.
 
+    ``snr`` accepts a number, a mapping from class name to number, a distribution,
+    or a mapping from class name to distribution — freely mixed, so one class can
+    be sampled while another stays fixed. A number calibrates every event of that
+    class to exactly that loudness; a distribution draws a target per event from
+    the model's own random stream, which is what a measured glitch population
+    needs, since each Gravity Spy class is heavy-tailed and the tail indices
+    differ by close to an order of magnitude between classes. See
+    :mod:`gwmock_noise.glitches.snr` for the supported shapes.
+
+    **What the target means is the caller's to decide.** A tail index measured
+    from a trigger generator's SNR — Omicron's, say — is defined against that
+    pipeline's PSD over the band it searched, while this model calibrates against
+    ``psd_file`` from ``low_frequency_cutoff`` upward. Configuring one from the
+    other equates two SNRs defined against different noise curves over different
+    bands. The sampler reproduces whatever distribution it is given and cannot
+    tell whether that identification is the one you meant.
+
     Resampling uses linear interpolation without an anti-aliasing filter, so
     sampling frequencies below 4096 Hz alias high-frequency content; the SNR
     calibration itself is unaffected because it is computed after resampling.
@@ -115,7 +139,7 @@ class DeepExtractorGlitch(GlitchModel):
 
     rate: float | dict[str, float]
     psd_file: str | Path
-    snr: float | dict[str, float]
+    snr: float | SNRDistribution | dict[str, Any]
     glitch_classes: list[str] | None = None
     low_frequency_cutoff: float = 2.0
     high_frequency_cutoff: float | None = None
@@ -149,7 +173,7 @@ class DeepExtractorGlitch(GlitchModel):
 
         self._normalize_rate()
         GlitchModel.__post_init__(self)
-        self._validate_snr()
+        self._normalize_snr()
 
         if not self.repo_id:
             raise ValueError("repo_id must be a non-empty string.")
@@ -188,24 +212,28 @@ class DeepExtractorGlitch(GlitchModel):
         self._class_rates = {name: float(value) for name, value in self.rate.items()}
         self.rate = float(sum(self._class_rates.values()))
 
-    def _validate_snr(self) -> None:
-        """Validate the scalar or per-class target-SNR configuration."""
-        if isinstance(self.snr, dict):
-            self._check_mapping_covers_classes(self.snr, "snr")
-            values = list(self.snr.values())
-        else:
-            values = [self.snr]
-        for value in values:
-            if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise TypeError("snr values must be numbers.")
-            if not np.isfinite(value) or value <= 0.0:
-                raise ValueError("snr values must be finite and greater than zero.")
+    def _normalize_snr(self) -> None:
+        """Normalize the scalar, per-class, or sampled target-SNR configuration.
 
-    def _target_snr(self, glitch_class: str) -> float:
-        """Return the target optimal SNR for one glitch class."""
+        A mapping is read as a distribution when it carries a ``distribution``
+        key and as a per-class table otherwise — no glitch class is named
+        ``distribution``, so the two cannot be confused.
+        """
+        if isinstance(self.snr, dict) and not is_snr_distribution_mapping(self.snr):
+            self._check_mapping_covers_classes(self.snr, "snr")
+            self.snr = {name: normalize_snr(value, f"snr['{name}']") for name, value in self.snr.items()}
+            return
+        self.snr = normalize_snr(self.snr)
+
+    def _target_snr(self, glitch_class: str, rng: np.random.Generator) -> float:
+        """Draw the target optimal SNR for one glitch class.
+
+        A fixed target consumes nothing from ``rng``, so a configuration that
+        names a number reproduces exactly the events it always has.
+        """
         if isinstance(self.snr, dict):
-            return float(self.snr[glitch_class])
-        return float(self.snr)
+            return draw_target_snr(self.snr[glitch_class], rng)
+        return draw_target_snr(self.snr, rng)
 
     def _draw_class(self, rng: np.random.Generator) -> str:
         """Draw one glitch class, weighted by per-class rates when configured.
@@ -367,7 +395,7 @@ class DeepExtractorGlitch(GlitchModel):
 
         white_waveform = self._resample(white_waveform, sampling_frequency)
         amplitude = self.amplitude_distribution.sample(generator)
-        target_snr = self._target_snr(glitch_class)
+        target_snr = self._target_snr(glitch_class, generator)
         scaled = color_and_scale(
             white_waveform,
             sampling_frequency=sampling_frequency,
@@ -393,7 +421,11 @@ class DeepExtractorGlitch(GlitchModel):
             serialized["rate"] = dict(self._class_rates)
         return serialized | {
             "psd_file": str(self.psd_file),
-            "snr": dict(self.snr) if isinstance(self.snr, dict) else self.snr,
+            "snr": (
+                {name: serialize_snr(value) for name, value in self.snr.items()}
+                if isinstance(self.snr, dict)
+                else serialize_snr(self.snr)
+            ),
             "glitch_classes": list(self.glitch_classes or ()),
             "low_frequency_cutoff": self.low_frequency_cutoff,
             "high_frequency_cutoff": self.high_frequency_cutoff,

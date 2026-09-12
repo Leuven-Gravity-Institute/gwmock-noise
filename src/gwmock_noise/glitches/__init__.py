@@ -14,16 +14,28 @@ from gwmock_noise.glitches.models import (
     supported_glitch_kinds,
     validate_glitch_detector_coverage,
 )
+from gwmock_noise.glitches.snr import (
+    EmpiricalSNRDistribution,
+    PowerLawSNRDistribution,
+    SNRDistribution,
+    load_snr_samples,
+    normalize_snr,
+)
 
 __all__ = [
     "BlipGlitch",
     "DeepExtractorGlitch",
+    "EmpiricalSNRDistribution",
     "GengliBlipGlitch",
     "GlitchDraw",
     "GlitchModel",
     "LogNormalAmplitudeDistribution",
+    "PowerLawSNRDistribution",
+    "SNRDistribution",
     "ScatteredLightGlitch",
+    "load_snr_samples",
     "normalize_glitch_models",
+    "normalize_snr",
     "supported_glitch_kinds",
     "validate_glitch_detector_coverage",
 ]
