@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.resources
 import json
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,7 @@ import pytest
 from gwmock_noise.config import NoiseConfig, OutputConfig
 from gwmock_noise.glitches import BlipGlitch, LogNormalAmplitudeDistribution
 from gwmock_noise.glitches._coloring import load_psd_table
-from gwmock_noise.glitches.models import normalize_glitch_models
+from gwmock_noise.glitches.models import normalize_glitch_models, validate_glitch_detector_coverage
 from gwmock_noise.simulators import DefaultNoiseSimulator, InjectGlitches
 from gwmock_noise.simulators.glitches import _ZeroNoiseSimulator
 
@@ -24,6 +25,11 @@ TRIANGLE_PSD = "ET_10_full_cryo_psd"
 TWO_L_PSD = "ET_15_full_cryo_psd"
 
 TARGET_SNR = 20.0
+#: The unscoped baseline the regression story rests on, measured from the written
+#: strain: one model with no selector colors the whole network against the 10 km
+#: curve, so a glitch calibrated to SNR 20 realizes 20.0 against that curve and
+#: ~24.2 against the 15 km curve the 2L interferometer actually has.
+UNSCOPED_BASELINE_SNR = (20.0, 24.2)
 SAMPLING_FREQUENCY = 4096.0
 DURATION = 8.0
 AMPLITUDE = {"distribution": "lognormal", "mean": 1.0, "std": 0.0}
@@ -43,6 +49,29 @@ def _optimal_snr(waveform: np.ndarray, psd_file: str | Path, *, low_frequency_cu
     waveform_fd = np.fft.rfft(waveform) / SAMPLING_FREQUENCY
     delta_frequency = SAMPLING_FREQUENCY / waveform.size
     return float(np.sqrt(4.0 * delta_frequency * np.sum(np.abs(waveform_fd[band]) ** 2 / psd[band])))
+
+
+def _psd_table_snr_ratio(
+    coloring_psd: str | Path,
+    evaluated_psd: str | Path,
+    *,
+    n_samples: int,
+    low_frequency_cutoff: float = 2.0,
+) -> float:
+    """Predict an SNR ratio from the two PSD tables alone.
+
+    A blip is white noise under a Gaussian envelope, so a waveform colored against
+    one curve has spectrum ``|W(f)|^2 S_coloring(f)`` with ``E|W(f)|^2`` flat across
+    the band. The ratio of the SNRs it realizes against two curves is then
+    ``sqrt(mean(S_coloring / S_evaluated))`` over the band. Nothing of the coloring
+    code enters it, which is the point: it says the pinned ~24.2 is what these two
+    noise curves imply, not merely what this implementation currently emits.
+    """
+    grid = np.fft.rfftfreq(n_samples, d=1.0 / SAMPLING_FREQUENCY)
+    coloring = np.interp(grid, *load_psd_table(coloring_psd), left=0.0, right=0.0)
+    evaluated = np.interp(grid, *load_psd_table(evaluated_psd), left=0.0, right=0.0)
+    band = (grid >= low_frequency_cutoff) & (grid < SAMPLING_FREQUENCY / 2.0) & (coloring > 0.0) & (evaluated > 0.0)
+    return float(np.sqrt(np.mean(coloring[band] / evaluated[band])))
 
 
 def _blip(
@@ -172,6 +201,54 @@ def test_unscoped_model_still_applies_to_every_interferometer(tmp_path: Path) ->
         assert np.any(np.load(out_dir / f"scoped_{detector}.npy") != 0.0)
 
 
+def test_unscoped_model_colors_the_whole_network_against_the_one_configured_curve(tmp_path: Path) -> None:
+    """The unscoped baseline, pinned: SNR 20.0 against the configured curve, ~24.2 against the other.
+
+    A model with no selector means all of them, so one ``psd_file`` colors
+    interferometers of both arm lengths -- and the 2L interferometer's strain is
+    calibrated against the 10 km curve rather than the 15 km curve it has. The
+    scoped case above is read against this pair, so it is measured here too, from
+    the written strain against both candidate PSDs: without it a later change that
+    silently re-colored the unscoped path would leave the suite green.
+    """
+    configured_snr, other_curve_snr = UNSCOPED_BASELINE_SNR
+    out_dir = _run(
+        tmp_path,
+        detectors=[TRIANGLE, TWO_L],
+        models=[_blip(rate=1.0, psd_file=TRIANGLE_PSD, snr=configured_snr)],
+    )
+
+    strain = {detector: np.load(out_dir / f"scoped_{detector}.npy") for detector in (TRIANGLE, TWO_L)}
+    n_samples = round(DURATION * SAMPLING_FREQUENCY)
+    isolated = _isolated_events(_catalogue(out_dir, TRIANGLE), n_samples=n_samples)
+
+    realized: dict[str, list[float]] = {TRIANGLE: [], TWO_L: []}
+    for event in isolated:
+        detector = event["detector"]
+        start = event["sample_index"]
+        waveform = strain[detector][start : start + event["n_samples"]]
+        # The one configured curve reaches every interferometer, so every glitch
+        # carries exactly the SNR it was calibrated to against that curve.
+        assert _optimal_snr(waveform, TRIANGLE_PSD) == pytest.approx(configured_snr, rel=1e-6)
+        against_other = _optimal_snr(waveform, TWO_L_PSD)
+        # Against the 15 km curve -- the one the 2L interferometer actually has --
+        # the same strain reads high, because it was never calibrated against it.
+        assert against_other == pytest.approx(other_curve_snr, rel=0.05)
+        realized[detector].append(against_other)
+
+    assert all(realized.values()), realized
+
+    # A blip's length is fixed by its width, so every event shares one FFT grid.
+    widths = {event["n_samples"] for event in isolated}
+    assert len(widths) == 1
+    # Anchored: the mean ratio the strain shows is the ratio the two PSD tables give
+    # on their own, so ~24.2 is a property of these noise curves and not only of the
+    # code that wrote the strain.
+    measured = [snr for values in realized.values() for snr in values]
+    anchor = _psd_table_snr_ratio(TRIANGLE_PSD, TWO_L_PSD, n_samples=widths.pop())
+    assert float(np.mean(measured)) / configured_snr == pytest.approx(anchor, rel=0.01)
+
+
 def test_unscoped_model_matches_a_selector_naming_every_interferometer() -> None:
     """Naming every interferometer explicitly is the same run, sample for sample."""
     amplitude = LogNormalAmplitudeDistribution(mean=1.0, std=0.0)
@@ -223,6 +300,31 @@ def test_conflicting_coloring_for_one_interferometer_refuses(tmp_path: Path) -> 
     assert TRIANGLE in message
     assert TRIANGLE_PSD in message
     assert TWO_L_PSD in message
+
+
+def test_a_preset_name_and_its_bundled_path_are_one_curve() -> None:
+    """Naming one curve two ways over one interferometer is not a coloring conflict.
+
+    ``ET_15_full_cryo_psd`` and the file it resolves to are the same noise curve,
+    so two models spelling it differently do not disagree about what instrument the
+    interferometer is. Compared as written they would: a configuration that names
+    the preset in one model and an installed path in another -- the spelling a
+    reader reaches for when they have the file in front of them -- would be refused
+    for a contradiction it does not contain.
+    """
+    bundled = Path(str(importlib.resources.files("gwmock_noise.data.psd").joinpath(f"{TWO_L_PSD}.txt")))
+    assert bundled.is_file()
+
+    models = normalize_glitch_models(
+        [
+            _blip(rate=1.0, psd_file=TWO_L_PSD, snr=TARGET_SNR, detectors=[TWO_L]),
+            _blip(rate=1.0, psd_file=str(bundled), snr=TARGET_SNR, detectors=[TWO_L]),
+        ]
+    )
+
+    assert models[0].coloring_reference() == models[1].coloring_reference()
+    # Raises if the two spellings are read as two curves claiming one interferometer.
+    validate_glitch_detector_coverage(models, [TWO_L])
 
 
 def test_selector_naming_an_absent_interferometer_refuses(tmp_path: Path) -> None:
