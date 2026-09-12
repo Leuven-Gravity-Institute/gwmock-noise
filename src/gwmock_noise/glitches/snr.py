@@ -32,6 +32,11 @@ import numpy as np
 
 HDF5_SUFFIXES = (".h5", ".hdf5")
 SNR_DATASET = "snr"
+# Any double below 1.0 is at most ``1 - 2**-53`` -- the spacing below 1.0 is
+# ``2**-53`` -- so ``1 - u`` is never smaller than ``2**-53`` for a uniform drawn on
+# [0, 1). That is a property of IEEE-754 doubles rather than of one generator, which
+# is what makes the largest untruncated draw a bound rather than an observation.
+UNIFORM_MANTISSA_BITS = 53
 
 
 def _check_positive_number(value: Any, parameter: str) -> float:
@@ -41,6 +46,24 @@ def _check_positive_number(value: Any, parameter: str) -> float:
     if not np.isfinite(value) or value <= 0.0:
         raise ValueError(f"{parameter} must be finite and greater than zero.")
     return float(value)
+
+
+def _untruncated_headroom_bits(minimum: float) -> float:
+    """Bits of exponent range an untruncated power-law draw has to fit into.
+
+    Both halves of ``minimum * (1 - u) ** (-1 / alpha)`` have to stay representable,
+    and they fail differently: the power is evaluated first and raises
+    ``OverflowError`` on its own, while the multiplication that follows overflows
+    silently to infinity. The binding constraint is therefore whichever is larger --
+    the product when ``minimum`` is above 1, the power alone when it is below -- so
+    the headroom is measured against that one.
+    """
+    return float(np.log2(np.finfo(float).max) - max(np.log2(minimum), 0.0))
+
+
+def _smallest_representable_alpha(minimum: float) -> float:
+    """The smallest ``alpha`` whose untruncated draws are all representable."""
+    return UNIFORM_MANTISSA_BITS / _untruncated_headroom_bits(minimum)
 
 
 def _validate_snr_samples(values: np.ndarray, source: str) -> np.ndarray:
@@ -106,12 +129,15 @@ class SNRDistribution:
 class PowerLawSNRDistribution(SNRDistribution):
     """Power-law target SNR above a threshold.
 
-    The survival function above ``minimum`` goes as ``(s / minimum) ** -alpha``,
-    which is the convention a Hill or maximum-likelihood tail index is quoted
-    in: a class measured to have a tail index of 1.34 above SNR 10 is configured
-    as ``{distribution = "power_law", minimum = 10.0, alpha = 1.34}`` with no
+    With ``maximum`` unset the survival function above ``minimum`` goes as
+    ``S(s) = (s / minimum) ** -alpha``, which is the convention a Hill or
+    maximum-likelihood tail index is quoted in: a class measured to have a tail
+    index of 1.34 above SNR 10 is configured as
+    ``{distribution = "power_law", minimum = 10.0, alpha = 1.34}`` with no
     conversion. Note that ``alpha`` is the *survival* exponent, one less than the
-    density's.
+    density's. Setting ``maximum`` renormalizes that survival onto
+    ``[minimum, maximum]`` as ``(S(s) - S(maximum)) / (1 - S(maximum))``, which
+    reaches zero at the cap rather than continuing past it.
 
     ``minimum`` is a threshold, not a fit to the whole population: the measured
     index describes the tail above it and says nothing about the bulk below, so
@@ -123,6 +149,14 @@ class PowerLawSNRDistribution(SNRDistribution):
     distribution has no finite mean, and a long enough run will eventually draw
     an SNR no detector could produce. The largest SNR observed for the class is
     the natural choice.
+
+    Below ``alpha`` of about 0.052 it stops being optional and is required: the
+    untruncated draw then runs off the top of the float range (see
+    :func:`_untruncated_headroom_bits`), which a configuration cannot express and
+    a run cannot use, so such a configuration is refused at construction rather
+    than left to fail partway through a run. Every index in the measured
+    range -- 0.40 for the heaviest Gravity Spy class, 3.11 for the lightest --
+    is far above that, and is unaffected.
 
     Attributes:
         minimum: Threshold SNR; every draw is at or above it.
@@ -146,6 +180,12 @@ class PowerLawSNRDistribution(SNRDistribution):
             self.maximum = _check_positive_number(self.maximum, "snr distribution maximum")
             if self.maximum <= self.minimum:
                 raise ValueError("snr distribution maximum must be greater than minimum.")
+            # A truncated draw is bounded above by ``maximum`` itself, which is finite
+            # by the check just made, so only the untruncated branch can run off the
+            # top of the float range.
+            return
+        if UNIFORM_MANTISSA_BITS / self.alpha > _untruncated_headroom_bits(self.minimum):
+            raise ValueError(self._unrepresentable_draw_message("can draw"))
 
     def sample(self, rng: np.random.Generator) -> float:
         """Draw one target SNR by inverting the survival function.
@@ -154,12 +194,49 @@ class PowerLawSNRDistribution(SNRDistribution):
         survival ``minimum * (1 - u) ** (-1 / alpha)`` covers ``[minimum, inf)``
         and never divides by zero. Truncation rescales the same inversion onto
         ``[minimum, maximum]``.
+
+        The untruncated branch is guarded rather than trusted. ``__post_init__``
+        already refuses a configuration whose draws can leave the float range, so
+        nothing built through it reaches the guard; what the guard covers is a
+        value that got past that check anyway -- an instance mutated after
+        construction, or a configuration sitting on the boundary where the bound
+        is computed in logarithms and can be a rounding hair out. An unusable
+        target has to stop here either way, because past this point it is a scale
+        factor on a waveform and a number in a truth catalogue, where infinity is
+        indistinguishable from a very loud glitch.
         """
         uniform = rng.random()
         if self.maximum is None:
-            return float(self.minimum * (1.0 - uniform) ** (-1.0 / self.alpha))
+            try:
+                draw = float(self.minimum * (1.0 - uniform) ** (-1.0 / self.alpha))
+            except OverflowError as exc:
+                raise ValueError(self._unrepresentable_draw_message("drew")) from exc
+            if not np.isfinite(draw):
+                raise ValueError(self._unrepresentable_draw_message("drew"))
+            return draw
         survival_at_maximum = (self.maximum / self.minimum) ** (-self.alpha)
         return float(self.minimum * (1.0 - uniform * (1.0 - survival_at_maximum)) ** (-1.0 / self.alpha))
+
+    def _unrepresentable_draw_message(self, verb: str) -> str:
+        """Explain a draw that runs off the top of the float range.
+
+        One message for both the configuration that can produce such a draw and
+        the draw itself, so the remedy it recommends cannot drift between the two
+        places that recommend it.
+
+        Args:
+            verb: How the overflow is being reported -- ``"can draw"`` when a
+                configuration is refused, ``"drew"`` when a sample is.
+
+        Returns:
+            The error message.
+        """
+        return (
+            f"An untruncated power-law snr distribution with minimum={self.minimum} and "
+            f"alpha={self.alpha} {verb} an SNR too large to represent as a float: the largest "
+            f"draw is minimum * 2 ** (53 / alpha). Set a maximum to truncate the tail, or raise "
+            f"alpha above {_smallest_representable_alpha(self.minimum):.4g}."
+        )
 
     def serialize(self) -> dict[str, Any]:
         """Return the mapping that reconstructs this distribution."""

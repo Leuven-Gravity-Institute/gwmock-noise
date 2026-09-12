@@ -404,3 +404,149 @@ def test_scalar_snr_realizations_are_bit_for_bit_unchanged(tmp_path: Path) -> No
         [9.014425851434668, 7.576197426068159, 8.653078586946055], rel=1e-12
     )
     assert rng.random() == pytest.approx(0.9820447395788969, rel=1e-12)
+
+
+class _ExtremeUniform:
+    """A stand-in generator returning the largest uniform a double can hold below 1.
+
+    The worst case for the untruncated inversion, and the one random sampling
+    essentially never reaches: ``1 - u`` is then ``2**-53``, the smallest value it
+    can take, so the draw is the largest the sampler is able to produce. Testing
+    the bound against this rather than against a few million random draws is what
+    makes the check deterministic instead of merely probable.
+    """
+
+    @staticmethod
+    def random() -> float:
+        """Return the largest double strictly below 1.0."""
+        return float(np.nextafter(1.0, 0.0))
+
+
+def test_largest_possible_untruncated_draw_is_representable() -> None:
+    """Every accepted untruncated configuration is finite even at its worst draw.
+
+    ``1 - u`` bottoms out at ``2**-53`` for any double below 1, so the largest
+    draw the sampler can return is ``minimum * 2 ** (53 / alpha)``. Feeding that
+    exact worst case in tests the bound where it actually binds.
+    """
+    for minimum, alpha in ((10.0, 0.40), (10.0, 0.06), (1.0, 0.055), (113.9, 3.11)):
+        draw = PowerLawSNRDistribution(minimum=minimum, alpha=alpha).sample(_ExtremeUniform())
+
+        assert np.isfinite(draw)
+        assert draw == pytest.approx(minimum * 2.0 ** (53.0 / alpha), rel=1e-12)
+
+
+def test_untruncated_power_law_refuses_an_unrepresentable_configuration() -> None:
+    """An uncapped tail that runs off the float range is refused at construction.
+
+    ``alpha`` was validated only as a positive number, so a configuration like
+    ``alpha = 0.001`` was accepted and then failed partway through a run — about
+    half its draws raised ``OverflowError`` out of the power, and a narrow slice
+    of the rest overflowed silently to infinity in the multiplication that
+    follows, which would have reached waveform scaling and the truth catalogue as
+    a number. Both are refused up front instead.
+    """
+    for alpha in (0.001, 0.01, 0.05):
+        with pytest.raises(ValueError, match="too large to represent as a float"):
+            PowerLawSNRDistribution(minimum=10.0, alpha=alpha)
+
+    # The message says what to do about it, and names the threshold it is against.
+    with pytest.raises(ValueError, match=r"Set a maximum to truncate the tail, or raise alpha above 0\.0519"):
+        PowerLawSNRDistribution(minimum=10.0, alpha=0.001)
+
+    # A tiny `minimum` is caught too: the product would be representable, but the
+    # power is evaluated first and overflows on its own.
+    with pytest.raises(ValueError, match="too large to represent as a float"):
+        PowerLawSNRDistribution(minimum=1e-300, alpha=0.03)
+
+    # Capping the tail is the documented remedy, and it lifts the restriction
+    # because a truncated draw cannot exceed `maximum`.
+    capped = PowerLawSNRDistribution(minimum=10.0, alpha=0.001, maximum=1.0e4)
+    draws = np.array([capped.sample(rng) for rng in [np.random.default_rng(0)] for _ in range(5000)])
+    assert np.all(np.isfinite(draws))
+    assert draws.min() >= 10.0
+    assert draws.max() <= 1.0e4
+
+
+def test_measured_tail_indices_remain_constructible_without_a_cap() -> None:
+    """The overflow check does not touch any index in the measured range.
+
+    The whole span of measured Gravity Spy tail indices, 0.40 to 3.11, sits three
+    orders of magnitude clear of the bound; this pins that the guard cannot creep
+    up into the range the feature exists to serve.
+    """
+    measured_indices = (0.40, 1.34, 1.40, 1.48, 1.65, 1.71, 3.11)
+    rng = np.random.default_rng(0)
+
+    for alpha in measured_indices:
+        distribution = PowerLawSNRDistribution(minimum=MEASURED_THRESHOLD, alpha=alpha)
+        draws = np.array([distribution.sample(rng) for _ in range(2000)])
+
+        assert np.all(np.isfinite(draws))
+        assert draws.min() >= MEASURED_THRESHOLD
+
+
+def test_small_but_safe_alpha_still_samples_finite_values() -> None:
+    """An index just above the bound is accepted and draws finite targets."""
+    distribution = PowerLawSNRDistribution(minimum=10.0, alpha=0.052)
+    rng = np.random.default_rng(3)
+
+    draws = np.array([distribution.sample(rng) for _ in range(20000)])
+
+    assert np.all(np.isfinite(draws))
+    assert draws.min() >= 10.0
+
+
+def test_non_finite_draw_is_refused_before_it_reaches_calibration() -> None:
+    """A target that escaped the construction check still cannot leave `sample`.
+
+    Defence in depth for the one place it matters: past this point the target is a
+    scale factor on a waveform and a column in the truth catalogue, where an
+    infinity is indistinguishable from a very loud glitch. Both instances here are
+    built from valid configurations and then mutated, which is the only way to get
+    a value past `__post_init__` — and is also what a configuration sitting exactly
+    on the boundary would look like, since the bound is computed in logarithms.
+    """
+    # Route one: the power overflows and CPython raises OverflowError out of `**`.
+    overflowing_power = PowerLawSNRDistribution(minimum=10.0, alpha=0.06)
+    overflowing_power.alpha = 0.001
+    with pytest.raises(ValueError, match="too large to represent as a float"):
+        overflowing_power.sample(_ExtremeUniform())
+
+    # Route two: the power stays finite and the multiplication overflows silently
+    # to infinity, which is the one that would otherwise have been injected.
+    overflowing_product = PowerLawSNRDistribution(minimum=10.0, alpha=0.06)
+    overflowing_product.minimum = 1e300
+    with pytest.raises(ValueError, match="too large to represent as a float"):
+        overflowing_product.sample(_ExtremeUniform())
+
+
+def test_truncated_draws_follow_the_documented_normalized_survival() -> None:
+    """A capped tail follows `(S(s) - S(max)) / (1 - S(max))`, not the plain `S(s)`.
+
+    The distinction is the whole point of documenting the two forms separately: at
+    the cap the plain survival still predicts 40 % of the class above it, while the
+    sampler puts essentially nothing there. Checked across the range rather than at
+    one point, so a formula that happened to agree somewhere cannot pass.
+    """
+    minimum, alpha, maximum = 10.0, 0.4, 100.0
+    distribution = PowerLawSNRDistribution(minimum=minimum, alpha=alpha, maximum=maximum)
+    rng = np.random.default_rng(7)
+    draws = np.array([distribution.sample(rng) for _ in range(60000)])
+
+    assert draws.min() >= minimum
+    assert draws.max() <= maximum
+
+    survival_at_maximum = (maximum / minimum) ** -alpha
+    for threshold in (12.0, 20.0, 35.0, 50.0, 75.0, 99.0):
+        plain_survival = (threshold / minimum) ** -alpha
+        expected = (plain_survival - survival_at_maximum) / (1.0 - survival_at_maximum)
+        measured = float(np.mean(draws >= threshold))
+
+        assert measured == pytest.approx(expected, abs=4.0 * _binomial_standard_error(expected, draws.size))
+
+    # The untruncated formula is not merely less precise here, it is a different
+    # curve: at the cap it claims 40 % of the class sits above a value the sampler
+    # can never return.
+    assert (maximum / minimum) ** -alpha == pytest.approx(0.398, abs=0.001)
+    assert np.mean(draws >= maximum) == 0.0

@@ -324,7 +324,8 @@ is. Two shapes are supported, and both work for `blip`, `scattered_light` and
 `deepextractor`:
 
 ```toml
-# Power law above a threshold: survival S(s) = (s / minimum) ** -alpha.
+# Power law above a threshold, truncated at `maximum` (see below for the
+# survival function in each case).
 snr = { distribution = "power_law", minimum = 10.0, alpha = 1.34, maximum = 621.2 }
 
 # Draw with replacement from observed SNRs, given inline ...
@@ -339,6 +340,24 @@ Hill or maximum-likelihood tail index is quoted in — one less than the density
 exponent. A tail index measured above some threshold therefore goes in as it was
 measured, with `minimum` set to the threshold it was measured above.
 
+The survival function itself depends on whether the tail is capped. With
+`maximum` unset it is the plain power law,
+
+```text
+S(s) = (s / minimum) ** -alpha,          s >= minimum
+```
+
+and setting `maximum` renormalizes that onto `[minimum, maximum]`,
+
+```text
+(S(s) - S(maximum)) / (1 - S(maximum)),  minimum <= s <= maximum
+```
+
+which reaches zero at the cap instead of carrying probability past it. The
+truncated form is what the sampler inverts whenever `maximum` is set, so a
+capped configuration is not the uncapped one with its tail discarded — the
+probability the cap removes is spread back over the range below it.
+
 Two things are worth being deliberate about:
 
 - **`minimum` is a threshold, not a fit to the whole population.** A measured
@@ -349,7 +368,11 @@ Two things are worth being deliberate about:
   law is unbounded, and with `alpha` below 1 a long enough run will eventually
   draw an SNR no detector could produce — at `alpha = 0.4` and `minimum = 10`,
   one draw in a hundred lands above SNR 10⁶. The largest SNR observed for the
-  class is the natural cap.
+  class is the natural cap. Below `alpha` of about 0.052 the cap stops being
+  optional: the uncapped draw then runs off the top of the double-precision
+  range, so such a configuration is refused when the model is built rather than
+  left to fail partway through a run. Every index in the measured range is far
+  above that and is unaffected.
 
 For `deepextractor` the two forms compose per class, and can be mixed freely —
 one class sampled, another pinned:
