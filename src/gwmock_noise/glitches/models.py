@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
@@ -40,6 +41,49 @@ class LogNormalAmplitudeDistribution:
         sigma = float(np.sqrt(sigma_squared))
         mu = float(np.log(self.mean) - (0.5 * sigma_squared))
         return float(rng.lognormal(mean=mu, sigma=sigma))
+
+
+def _normalize_detector_selector(value: Any) -> tuple[str, ...] | None:
+    """Normalize a glitch model's interferometer selector.
+
+    ``None`` -- no selector -- means every interferometer in the run, which is what
+    every model meant before selectors existed, so a configuration written without
+    one keeps its meaning exactly.
+
+    A bare string is one interferometer rather than a sequence of characters.
+    ``detectors="H1"`` is the obvious way to write a single-interferometer model,
+    and reading it as a sequence would silently scope the model to interferometers
+    named ``H`` and ``1`` -- which then fails the coverage check with a message
+    about names nobody wrote.
+
+    Args:
+        value: The configured selector: ``None``, one name, or a list of names.
+
+    Returns:
+        The names as a tuple, or ``None`` for every interferometer.
+
+    Raises:
+        TypeError: If the selector is not a string or a list of strings.
+        ValueError: If it names nothing, names a blank, or repeats a name.
+    """
+    if value is None:
+        return None
+    names = [value] if isinstance(value, str) else list(value) if isinstance(value, (list, tuple)) else None
+    if names is None:
+        raise TypeError("glitch model detectors must be a string or a list of strings.")
+    for name in names:
+        if not isinstance(name, str):
+            raise TypeError("glitch model detectors must be a string or a list of strings.")
+        if not name.strip():
+            raise ValueError("glitch model detectors must be non-empty interferometer names.")
+    if not names:
+        raise ValueError(
+            "glitch model detectors must name at least one interferometer; omit it to apply to all of them."
+        )
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        raise ValueError(f"glitch model detectors names duplicate interferometers: {', '.join(repeated)}.")
+    return tuple(names)
 
 
 class GlitchDraw(NamedTuple):
@@ -87,16 +131,61 @@ class GlitchDraw(NamedTuple):
 
 @dataclass(slots=True)
 class GlitchModel:
-    """Base dataclass for transient glitch generators."""
+    """Base dataclass for transient glitch generators.
+
+    ``detectors`` scopes the model to a subset of the run's interferometers. It
+    accepts one name or a list of them, and defaults to ``None``, which is every
+    interferometer -- what a model without a selector has always meant. Scoping is
+    what lets one configuration carry a 10 km model for one set of interferometers
+    and a 15 km model for another, and per-interferometer rates for a network whose
+    instruments are not equally glitchy (in O3, Fast_Scattering fired about 29 times
+    more often in L1 than in H1).
+
+    A selector is only half of it. :func:`validate_glitch_detector_coverage` refuses
+    a run whose models do not between them account for every interferometer, or
+    whose models color one interferometer against two different PSDs -- see its
+    docstring for why proceeding was the defect.
+    """
 
     rate: float
     amplitude_distribution: LogNormalAmplitudeDistribution
+    #: Interferometers this model injects into, or ``None`` for all of them. Given
+    #: as a name or a list of names; normalized to a tuple when the model is built.
+    detectors: tuple[str, ...] | None = field(default=None, kw_only=True)
     kind: str = field(init=False)
 
     def __post_init__(self) -> None:
         """Validate common glitch parameters."""
         if self.rate < 0.0:
             raise ValueError("glitch rate must be non-negative.")
+        self.detectors = _normalize_detector_selector(self.detectors)
+
+    def applies_to(self, detector: str) -> bool:
+        """Return whether this model injects glitches into ``detector``.
+
+        Args:
+            detector: The interferometer name.
+
+        Returns:
+            ``True`` when the model has no selector, or names this interferometer.
+        """
+        return self.detectors is None or detector in self.detectors
+
+    def coloring_reference(self) -> str | None:
+        """Return a stable identity for the PSD this model colors against.
+
+        ``None`` for a model that does no coloring, which therefore imposes no noise
+        floor on the interferometers it claims and cannot contradict another model
+        about one. Read from ``psd_file`` where the model has one, so a third-party
+        model gets the same treatment as the built-in ones without restating the
+        attribute name.
+
+        Returns:
+            The resolved PSD identity, or ``None`` when the model is uncolored.
+        """
+        from gwmock_noise.glitches._coloring import resolve_psd_reference  # noqa: PLC0415
+
+        return resolve_psd_reference(getattr(self, "psd_file", None))
 
     def generate_waveform(
         self,
@@ -172,6 +261,7 @@ class GlitchModel:
         return {
             "kind": self.kind,
             "rate": self.rate,
+            "detectors": None if self.detectors is None else list(self.detectors),
             "amplitude_distribution": {
                 "distribution": self.amplitude_distribution.distribution,
                 "mean": self.amplitude_distribution.mean,
@@ -395,8 +485,143 @@ def _parse_amplitude_distribution(value: Any) -> LogNormalAmplitudeDistribution:
     return LogNormalAmplitudeDistribution(**value)
 
 
+def _scoped_to_absent_interferometers(models: Sequence[GlitchModel], known: set[str]) -> list[tuple[int, list[str]]]:
+    """Return each model's selector entries naming an interferometer not in the run.
+
+    Args:
+        models: The run's glitch models.
+        known: The interferometers the run actually has.
+
+    Returns:
+        One ``(model index, names)`` pair per offending model, in configuration order.
+    """
+    offenders = []
+    for index, model in enumerate(models):
+        if model.detectors is None:
+            continue
+        absent = [name for name in model.detectors if name not in known]
+        if absent:
+            offenders.append((index, absent))
+    return offenders
+
+
+def _coloring_claims(models: Sequence[GlitchModel], detectors: Sequence[str]) -> dict[str, dict[str, str]]:
+    """Map each interferometer to the coloring PSDs claiming it, by resolved identity.
+
+    The value is keyed by the resolved identity -- what decides whether two models
+    name the same curve -- and holds the configured spelling, which is what a
+    message has to quote back: a reader recognizes ``ET_15_full_cryo_psd``, not the
+    installed path it resolves to.
+
+    Args:
+        models: The run's glitch models.
+        detectors: The interferometers the run will generate.
+
+    Returns:
+        For each interferometer any coloring model claims, its PSDs keyed by resolved
+        identity. An interferometer claimed only by uncolored models is absent.
+    """
+    claims: dict[str, dict[str, str]] = {}
+    for model in models:
+        reference = model.coloring_reference()
+        if reference is None:
+            continue
+        configured = str(getattr(model, "psd_file", reference))
+        for detector in detectors:
+            if model.applies_to(detector):
+                claims.setdefault(detector, {}).setdefault(reference, configured)
+    return claims
+
+
+def validate_glitch_detector_coverage(models: Sequence[GlitchModel], detectors: Sequence[str]) -> None:
+    """Refuse a glitch configuration that does not say what every interferometer gets.
+
+    A glitch model used to apply to every interferometer in the run because there
+    was no way to say otherwise, so one ``psd_file`` colored all of them. A run
+    naming both Einstein Telescope designs resolves to interferometers of two arm
+    lengths, and the 10 km curve was applied to the 15 km instruments as well: SNRs
+    23-44% away from what the configuration asked for, morphology-dependent, with
+    nothing in the output or the logs to say so. **The silence was the defect**, so
+    a configuration that cannot be read one way is refused here rather than run.
+
+    Three things are refused, in the order a reader can act on them:
+
+    1. **A selector naming an interferometer the run does not have.** Usually a typo
+       or a leftover from another network, and the model then never fires -- a
+       configured rate and PSD that inject nothing, which nothing in the output
+       distinguishes from a model that fired and drew no events.
+    2. **An interferometer no model claims.** Its strain is written with no glitches
+       while its neighbours carry them. Where that is the intent, say it: a model
+       scoped to it with ``rate = 0.0`` states "this interferometer carries no
+       glitches" in the configuration, where a reader can see it.
+    3. **Two coloring PSDs claiming one interferometer.** An interferometer has one
+       noise floor; two models coloring it against different curves disagree about
+       what instrument it is, and whichever ran second would not make that true.
+       Models that do no coloring impose no floor and are not part of this.
+
+    Args:
+        models: The run's glitch models, already normalized.
+        detectors: The interferometers the run will generate.
+
+    Raises:
+        ValueError: If any of the three cases above holds. The message names the
+            interferometers involved.
+    """
+    run_detectors = list(dict.fromkeys(detectors))
+
+    absent = _scoped_to_absent_interferometers(models, set(run_detectors))
+    if absent:
+        details = "; ".join(f"model {index} names {', '.join(names)}" for index, names in absent)
+        raise ValueError(
+            f"glitch models are scoped to interferometers this run does not have: {details}. "
+            f"The run's interferometers are {', '.join(run_detectors)}."
+        )
+
+    uncovered = [detector for detector in run_detectors if not any(model.applies_to(detector) for model in models)]
+    if uncovered:
+        raise ValueError(
+            f"no glitch model applies to {', '.join(uncovered)}, so this run would write their strain "
+            "without glitches while the rest of the network carries them. Cover every interferometer: "
+            "drop a model's detectors selector so it applies to all of them, extend a selector to name "
+            "them, or -- if they genuinely carry no glitches -- add a model scoped to them with "
+            "rate = 0.0, so the configuration says so."
+        )
+
+    conflicts = {
+        detector: sorted(claims.values())
+        for detector, claims in _coloring_claims(models, run_detectors).items()
+        if len(claims) > 1
+    }
+    if conflicts:
+        details = "; ".join(f"{detector} against {', '.join(files)}" for detector, files in sorted(conflicts.items()))
+        raise ValueError(
+            f"glitch models color one interferometer against more than one PSD: {details}. An "
+            "interferometer has a single noise floor, so scope each model with detectors to the "
+            "interferometers its psd_file describes."
+        )
+
+
 def normalize_glitch_models(value: Any) -> list[GlitchModel]:
-    """Normalize heterogeneous glitch-config inputs."""
+    """Normalize heterogeneous glitch-config inputs.
+
+    Entries carry an optional ``detectors`` selector -- one interferometer name or a
+    list of them -- which scopes the model to those interferometers; an entry
+    without one applies to every interferometer in the run, as it always has.
+    Whether the resulting list accounts for the run is
+    :func:`validate_glitch_detector_coverage`'s question, because it is the run that
+    supplies the interferometers.
+
+    Args:
+        value: The configured list of models or model mappings.
+
+    Returns:
+        The normalized glitch models.
+
+    Raises:
+        TypeError: If the value is not a list, or an entry is not a mapping.
+        ValueError: If an entry names an unsupported kind or omits its amplitude
+            distribution.
+    """
     if not isinstance(value, list):
         raise TypeError("glitch component options must provide a list of models.")
 

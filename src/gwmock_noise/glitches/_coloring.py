@@ -8,8 +8,41 @@ from typing import NamedTuple
 import numpy as np
 
 from gwmock_noise.glitches.snr import SNRDistribution
-from gwmock_noise.simulators._spectral import load_spectral_series
+from gwmock_noise.simulators._spectral import (
+    _resolve_bundled_psd,
+    load_spectral_series,
+    normalize_spectral_reference,
+)
 from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
+
+
+def resolve_psd_reference(psd_file: str | Path | None) -> str | None:
+    """Return a stable identity for a PSD reference, or ``None`` for no coloring.
+
+    Two configurations naming the same curve have to compare equal, or a check on
+    whether two glitch models color one interferometer against the same PSD would
+    report a conflict that does not exist. A preset name, the bundled file it
+    resolves to, and a relative path to that file are all the same noise curve, so
+    each goes through the same resolution the loader itself performs before it is
+    compared. A remote URL is left as written -- fetching it to compare would cost a
+    download per model -- and so is a name that resolves to nothing, which the
+    loader raises on when the model is built.
+
+    Args:
+        psd_file: The configured PSD reference, or ``None``.
+
+    Returns:
+        The resolved identity, or ``None`` when there is no PSD.
+    """
+    if psd_file is None:
+        return None
+    source = normalize_spectral_reference(psd_file)
+    if isinstance(source, str):
+        return source
+    if source.exists():
+        return str(source.resolve())
+    bundled = _resolve_bundled_psd(str(source))
+    return str(source) if bundled is None else str(bundled.resolve())
 
 
 class ColoredWaveform(NamedTuple):

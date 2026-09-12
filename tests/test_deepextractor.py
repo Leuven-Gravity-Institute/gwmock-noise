@@ -628,6 +628,7 @@ def test_serialize_reports_full_configuration(tmp_path: Path) -> None:
     assert model.serialize() == {
         "kind": "deepextractor",
         "rate": 0.5,
+        "detectors": None,
         "amplitude_distribution": {"distribution": "lognormal", "mean": 1.0, "std": 0.0},
         "psd_file": str(psd_file),
         "snr": dict.fromkeys(GLITCH_CLASS_NAMES, 8.0),

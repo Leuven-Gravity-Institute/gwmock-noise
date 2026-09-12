@@ -12,6 +12,7 @@ from gwmock_noise.glitches.models import (
     ScatteredLightGlitch,
     normalize_glitch_models,
     supported_glitch_kinds,
+    validate_glitch_detector_coverage,
 )
 from gwmock_noise.glitches.snr import (
     EmpiricalSNRDistribution,
@@ -36,4 +37,5 @@ __all__ = [
     "normalize_glitch_models",
     "normalize_snr",
     "supported_glitch_kinds",
+    "validate_glitch_detector_coverage",
 ]
