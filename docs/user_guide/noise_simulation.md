@@ -772,6 +772,55 @@ other bounded-state simulators; the reported `state_size` is the delay-line
 length the filter actually carries, including the two taps each placed conjugate
 pole pair adds.
 
+## Multichannel generation from a PSD/CSD matrix
+
+`MultichannelNoiseSimulator` generates correlated multichannel noise from a
+tabulated PSD/CSD matrix. It fits a causal minimum-phase matrix spectral factor
+with the **Whittle block Levinson-Durbin recursion** -- the multivariate form of
+the AR recursion above -- and drives the resulting vector autoregression
+
+```text
+x_t = -A_1 x_{t-1} - ... - A_p x_{t-p} + V^{1/2} w_t
+```
+
+with white innovations. Stability is guaranteed by construction: the recursion
+keeps the prediction-error covariance positive definite, so every zero of
+`det A(z)` lies strictly inside the unit circle and the filter and its inverse
+are both causal. The continuation state is the `order` samples of history per
+channel, independent of the generated span.
+
+The cross-spectral matrix may be given as files (`psd_files` plus `csd_files`,
+in the same form as `CorrelatedNoiseSimulator`) or directly as an array
+(`target_matrices` with `target_frequencies`). A pair without a CSD file means
+zero coherence. The metadata records the fit method, the order, the per-band
+relative Frobenius residual of the modelled cross-spectral matrix against the
+target, the conditioning diagnostics and the state size. A target that is not
+positive definite raises `FitError` rather than being silently changed, unless a
+relative ridge is requested through `regularization_epsilon`.
+
+```python
+from gwmock_noise import MultichannelNoiseSimulator
+
+simulator = MultichannelNoiseSimulator(
+    psd_files={"E1": "E1_psd.txt", "E2": "E2_psd.txt"},
+    csd_files={("E1", "E2"): "E1_E2_csd.txt"},
+    order=256,
+    detectors=["E1", "E2"],
+    sampling_frequency=4096.0,
+    low_frequency_cutoff=5.0,
+)
+strain = simulator.generate(4.0, 4096.0, ["E1", "E2"], seed=42)
+print(simulator.metadata["multichannel_noise"]["fit_residual"])
+```
+
+**Relationship to `CorrelatedARNoiseSimulator`.** The incumbent multichannel
+generator takes the per-frequency Cholesky factor of the same target and
+truncates it to a VMA, so its filter is causal only through truncation; the
+Whittle factor is causal by construction, and its state is a bounded recursion
+history of the same order. The two are compared on a shared target in the test
+suite, where the Whittle generator's band-integrated PSD and CSD errors are
+smaller at equal order.
+
 ## Resuming a stopped stream
 
 The colored and overlap-save FIR simulators can persist the small state a

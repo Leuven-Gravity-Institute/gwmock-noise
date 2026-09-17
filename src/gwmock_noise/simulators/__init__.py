@@ -26,6 +26,8 @@ from gwmock_noise.simulators.glitches import (
     InjectGlitches,
     apply_segment_gps_start,
 )
+from gwmock_noise.simulators.matrix_factorization import whittle_levinson_factorization
+from gwmock_noise.simulators.multichannel import MultichannelNoiseSimulator
 from gwmock_noise.simulators.overlap_save import OverlapSaveFirSimulator
 from gwmock_noise.simulators.protocol import NoiseSimulator
 from gwmock_noise.simulators.real_noise import GwoscNoiseSimulator
@@ -56,6 +58,7 @@ __all__ = [
     "GwoscNoiseSimulator",
     "InjectGlitches",
     "LogNormalAmplitudeDistribution",
+    "MultichannelNoiseSimulator",
     "NoiseSimulator",
     "OverlapSaveFirSimulator",
     "ScatteredLightGlitch",
@@ -68,4 +71,5 @@ __all__ = [
     "apply_segment_gps_start",
     "open_stream",
     "take",
+    "whittle_levinson_factorization",
 ]
