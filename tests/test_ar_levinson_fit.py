@@ -365,3 +365,38 @@ def test_export_state_rejects_mismatched_orders() -> None:
     )
     with pytest.raises(ValueError, match="order"):
         other.import_state(snapshot)
+
+
+def test_ar_simulator_rejects_a_negative_psd_sample(tmp_path: Path) -> None:
+    """A negative PSD sample is a fit failure, not silently clamped to zero."""
+    psd_path = tmp_path / "negative_psd.txt"
+    frequencies = np.linspace(0.0, 128.0, 513)
+    values = np.full_like(frequencies, 2.0e-3)
+    values[256] = -1.0e-3
+    np.savetxt(psd_path, np.column_stack((frequencies, values)))
+    with pytest.raises(FitError, match="non-negative"):
+        ARNoiseSimulator(
+            psd_file=psd_path,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            order=16,
+            low_frequency_cutoff=8.0,
+            high_frequency_cutoff=96.0,
+        )
+
+
+def test_ar_simulator_reports_zero_variance_as_a_fit_error(tmp_path: Path) -> None:
+    """The zero-variance target is reported through the documented fit exception."""
+    psd_path = tmp_path / "zero_variance.txt"
+    frequencies = np.linspace(0.0, 128.0, 513)
+    values = np.zeros_like(frequencies)
+    np.savetxt(psd_path, np.column_stack((frequencies, values)))
+    with pytest.raises(FitError, match="zero variance"):
+        ARNoiseSimulator(
+            psd_file=psd_path,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            order=16,
+            low_frequency_cutoff=8.0,
+            high_frequency_cutoff=96.0,
+        )

@@ -28,6 +28,7 @@ __all__ = [
     "band_fit_residual",
     "geometric_band_edges",
     "levinson_durbin",
+    "require_nonnegative_spectrum",
     "toeplitz_condition_number",
 ]
 
@@ -126,6 +127,28 @@ def levinson_durbin(autocovariance: np.ndarray, order: int) -> LevinsonFit:
         reflection_coefficients=reflection_coefficients,
         prediction_errors=prediction_errors,
     )
+
+
+def require_nonnegative_spectrum(values: np.ndarray, *, label: str) -> None:
+    """Reject a spectral density that is not a valid, finite, non-negative curve.
+
+    A negative or non-finite sample cannot be turned into a bandwidth-limited
+    process by clamping it: the clamp would return a filter for a *different*
+    target than the caller asked for, which is exactly the silent degradation
+    the fit contract forbids.
+
+    Args:
+        values: Interpolated spectral samples inside the fitted band.
+        label: Human-readable name of the spectrum, used in the message.
+
+    Raises:
+        FitError: If any sample is negative or not finite.
+    """
+    values = np.asarray(values, dtype=float)
+    if not np.all(np.isfinite(values)):
+        raise FitError(f"The interpolated {label} is not finite inside the fitted band.")
+    if np.any(values < 0.0):
+        raise FitError(f"The {label} must be non-negative inside the fitted band; a negative value is not valid.")
 
 
 def toeplitz_condition_number(autocovariance: np.ndarray, order: int) -> float:

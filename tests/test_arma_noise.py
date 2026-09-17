@@ -10,6 +10,7 @@ done raises instead of degrading.
 from __future__ import annotations
 
 import json
+import pickle
 from itertools import pairwise
 from pathlib import Path
 
@@ -506,3 +507,141 @@ def test_arma_resume_metadata_describes_the_filter() -> None:
     assert resume["ma_order"] == 8
     assert set(resume["rng_state"]) == {"H1", "L1"}
     assert simulator.resume_metadata_nbytes > 0
+
+
+def _line_simulator() -> ARMANoiseSimulator:
+    """Return a small ARMA simulator that places one explicit line pole."""
+    frequencies, values = _synthetic_line_target()
+    return ARMANoiseSimulator(
+        target_psd=values,
+        target_frequencies=frequencies,
+        detectors=["H1"],
+        sampling_frequency=512.0,
+        ar_order=48,
+        ma_order=16,
+        low_frequency_cutoff=5.0,
+        high_frequency_cutoff=200.0,
+        line_frequencies=[100.0],
+        line_widths=[2.0],
+    )
+
+
+def test_state_size_matches_the_carried_delay_line_with_placed_poles() -> None:
+    """The reported state size is the delay line SciPy actually carries.
+
+    Each placed conjugate pole pair adds two denominator taps, so the carried
+    state is longer than the AR order alone.
+    """
+    simulator = _line_simulator()
+    numerator = simulator.numerator_coefficients
+    denominator = np.concatenate(([1.0], simulator.denominator_coefficients))
+    expected = max(numerator.size, denominator.size) - 1
+    described = simulator.metadata["autoregressive_moving_average"]
+    assert described["state_size"] == expected
+    carried = simulator.continuation_state()["filter_state"]["H1"]
+    assert carried.shape == (expected,)
+    assert described["state_bytes"] == len(pickle.dumps(simulator.continuation_state()))
+
+
+def test_generate_with_explicit_line_poles() -> None:
+    """A line-placed model generates the requested shape instead of raising a zi error."""
+    simulator = _line_simulator()
+    strain = simulator.generate(1.0, 512.0, ["H1"], seed=1)["H1"]
+    assert strain.shape == (512,)
+    assert np.all(np.isfinite(strain))
+    assert simulator.state_nbytes > 0
+
+
+def test_generate_with_detected_lines() -> None:
+    """The documented detect_lines path generates output."""
+    simulator = ARMANoiseSimulator(
+        psd_file="ET_D_psd",
+        detectors=["H1"],
+        sampling_frequency=1024.0,
+        ar_order=128,
+        ma_order=32,
+        low_frequency_cutoff=5.0,
+        high_frequency_cutoff=400.0,
+        detect_lines=True,
+    )
+    placed = simulator.metadata["autoregressive_moving_average"]["placed_lines"]
+    assert placed, "detection should place at least one line on the ET-D curve"
+    strain = simulator.generate(1.0, 1024.0, ["H1"], seed=3)["H1"]
+    assert strain.shape == (1024,)
+    assert np.all(np.isfinite(strain))
+
+
+def test_chunked_generation_is_bit_identical_with_placed_lines() -> None:
+    """Chunked equality holds on a configuration that actually places a pole."""
+    single = _line_simulator()
+    chunked = _line_simulator()
+    one_shot = single.generate(2.0, 512.0, ["H1"], seed=9)["H1"]
+    pieces = [chunked.generate(0.5, 512.0, ["H1"], seed=9 if index == 0 else None)["H1"] for index in range(4)]
+    np.testing.assert_array_equal(one_shot, np.concatenate(pieces))
+
+
+def test_resume_is_bit_identical_with_placed_lines() -> None:
+    """Resume equality holds on a configuration that actually places a pole."""
+    uninterrupted = _line_simulator()
+    full = [uninterrupted.generate(0.5, 512.0, ["H1"], seed=21 if index == 0 else None)["H1"] for index in range(5)]
+
+    stopped = _line_simulator()
+    head = [stopped.generate(0.5, 512.0, ["H1"], seed=21 if index == 0 else None)["H1"] for index in range(3)]
+    snapshot = stopped.export_state()
+
+    resumed = _line_simulator()
+    resumed.import_state(snapshot)
+    tail = [resumed.generate(0.5, 512.0, ["H1"])["H1"] for _ in range(2)]
+
+    for expected, actual in zip(full, head + tail, strict=True):
+        np.testing.assert_array_equal(actual, expected)
+
+
+def test_arma_rejects_a_negative_in_memory_target() -> None:
+    """A negative PSD sample is a fit failure, not silently clamped."""
+    frequencies, values = _synthetic_line_target()
+    values[1000] = -1.0
+    with pytest.raises(FitError, match="non-negative"):
+        ARMANoiseSimulator(
+            target_psd=values,
+            target_frequencies=frequencies,
+            detectors=["H1"],
+            sampling_frequency=512.0,
+            ar_order=16,
+            ma_order=8,
+            low_frequency_cutoff=5.0,
+            high_frequency_cutoff=200.0,
+        )
+
+
+def test_arma_rejects_a_non_finite_target() -> None:
+    """A non-finite PSD sample is a fit failure."""
+    frequencies, values = _synthetic_line_target()
+    values[1000] = np.nan
+    with pytest.raises(FitError, match="finite"):
+        ARMANoiseSimulator(
+            target_psd=values,
+            target_frequencies=frequencies,
+            detectors=["H1"],
+            sampling_frequency=512.0,
+            ar_order=16,
+            ma_order=8,
+            low_frequency_cutoff=5.0,
+            high_frequency_cutoff=200.0,
+        )
+
+
+def test_ma_dominant_model_generates_and_reports_the_delay_line() -> None:
+    """An MA-dominant order pair carries ``ma_order`` delays, not ``ma_order + 1``."""
+    simulator = ARMANoiseSimulator(
+        target_psd=np.full(64, 1.0e-3),
+        detectors=["H1"],
+        sampling_frequency=256.0,
+        ar_order=2,
+        ma_order=8,
+        low_frequency_cutoff=5.0,
+        high_frequency_cutoff=100.0,
+    )
+    expected = max(simulator.numerator_coefficients.size, simulator.denominator_coefficients.size + 1) - 1
+    assert simulator.metadata["autoregressive_moving_average"]["state_size"] == expected
+    assert simulator.generate(0.5, 256.0, ["H1"], seed=1)["H1"].shape == (128,)

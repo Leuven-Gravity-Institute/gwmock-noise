@@ -25,6 +25,7 @@ from gwmock_noise.simulators._fit import (
     FitError,
     band_fit_residual,
     levinson_durbin,
+    require_nonnegative_spectrum,
     toeplitz_condition_number,
 )
 from gwmock_noise.simulators._spectral import load_spectral_series
@@ -178,17 +179,15 @@ class ARNoiseSimulator(ConfigurableNoiseSimulator):
         if not np.any(frequency_mask):
             raise ValueError("The requested frequency range contains no simulation bins.")
 
+        interpolated = np.interp(frequency_grid[frequency_mask], psd_frequencies, psd_values, left=0.0, right=0.0)
+        require_nonnegative_spectrum(interpolated, label="target PSD")
         target_psd = np.zeros_like(frequency_grid, dtype=float)
-        target_psd[frequency_mask] = np.clip(
-            np.interp(frequency_grid[frequency_mask], psd_frequencies, psd_values, left=0.0, right=0.0),
-            a_min=0.0,
-            a_max=None,
-        )
+        target_psd[frequency_mask] = interpolated
 
         autocovariance = np.fft.irfft(target_psd * self.sampling_frequency / 2.0, n=self._fit_grid_size)
         autocovariance = np.asarray(autocovariance[: self.order + 1], dtype=float)
         if autocovariance[0] <= 0.0:
-            raise ValueError("Target PSD integrates to zero variance in the requested band.")
+            raise FitError("Target PSD integrates to zero variance in the requested band.")
         if self.regularization > 0.0:
             autocovariance[0] *= 1.0 + self.regularization
 

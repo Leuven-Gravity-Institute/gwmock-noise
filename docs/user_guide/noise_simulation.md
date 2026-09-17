@@ -765,10 +765,12 @@ strain = simulator.generate(4.0, 4096.0, ["H1"], seed=42)
 print(simulator.metadata["autoregressive_moving_average"]["placed_lines"])
 ```
 
-Both simulators accept an in-memory `target_psd` (with an optional
-`target_frequencies` grid) instead of a file, expose `state_nbytes`, and support
-`export_state()` / `import_state()` exactly like the other bounded-state
-simulators.
+`ARMANoiseSimulator` also accepts an in-memory `target_psd` (with an optional
+`target_frequencies` grid) instead of a file. Both simulators expose
+`state_nbytes` and support `export_state()` / `import_state()` exactly like the
+other bounded-state simulators; the reported `state_size` is the delay-line
+length the filter actually carries, including the two taps each placed conjugate
+pole pair adds.
 
 ## Resuming a stopped stream
 

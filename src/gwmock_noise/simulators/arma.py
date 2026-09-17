@@ -36,6 +36,7 @@ from gwmock_noise.simulators._fit import (
     FitError,
     band_fit_residual,
     levinson_durbin,
+    require_nonnegative_spectrum,
     toeplitz_condition_number,
 )
 from gwmock_noise.simulators._spectral import load_spectral_series
@@ -325,7 +326,7 @@ class ARMANoiseSimulator(ConfigurableNoiseSimulator):
         if values.ndim != 1 or values.size < MIN_INTERPOLATION_POINTS:
             raise ValueError("target_psd must be a one-dimensional array with at least two samples.")
         if not np.all(np.isfinite(values)):
-            raise ValueError("target_psd must be finite.")
+            raise FitError("target_psd must be finite.")
         if target_frequencies is None:
             frequencies = np.fft.rfftfreq(2 * (values.size - 1), d=1.0 / self.sampling_frequency)
             return frequencies, values
@@ -407,12 +408,10 @@ class ARMANoiseSimulator(ConfigurableNoiseSimulator):
         if not np.any(frequency_mask):
             raise ValueError("The requested frequency range contains no simulation bins.")
 
+        interpolated = np.interp(frequency_grid[frequency_mask], source_frequencies, source_values, left=0.0, right=0.0)
+        require_nonnegative_spectrum(interpolated, label="target PSD")
         target_psd = np.zeros_like(frequency_grid, dtype=float)
-        target_psd[frequency_mask] = np.clip(
-            np.interp(frequency_grid[frequency_mask], source_frequencies, source_values, left=0.0, right=0.0),
-            a_min=0.0,
-            a_max=None,
-        )
+        target_psd[frequency_mask] = interpolated
         self._target_frequencies = frequency_grid
         self._target_psd = target_psd
         self._band_mask = frequency_mask
@@ -437,7 +436,7 @@ class ARMANoiseSimulator(ConfigurableNoiseSimulator):
         autocovariance = np.fft.irfft(prewhitened * self.sampling_frequency / 2.0, n=self._fit_grid_size)
         autocovariance = np.asarray(autocovariance[: self.ar_order + 1], dtype=float)
         if autocovariance[0] <= 0.0:
-            raise ValueError("Target PSD integrates to zero variance in the requested band.")
+            raise FitError("Target PSD integrates to zero variance in the requested band.")
         if self.regularization > 0.0:
             autocovariance[0] *= 1.0 + self.regularization
 
@@ -458,7 +457,10 @@ class ARMANoiseSimulator(ConfigurableNoiseSimulator):
             self.ma_order,
         )
 
-        self._state_size = int(max(self.ar_order, self.ma_order + 1))
+        # SciPy's direct-form II filter carries ``max(len(b), len(a)) - 1`` delay
+        # elements, which grows by two per placed conjugate pole pair. That is
+        # the continuation state this simulator records and serialises.
+        self._state_size = int(max(self._numerator_coefficients.size, self._denominator_coefficients.size) - 1)
         base_spectrum = self._evaluate_model_spectrum()
         positive = target_psd > 0.0
         log_ratio = np.log(target_psd[positive]) - np.log(base_spectrum[positive])
