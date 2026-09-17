@@ -120,6 +120,7 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
 
         self._rngs: dict[str, np.random.Generator] = {}
         self._generated_samples = 0
+        self._last_chunk_midpoint: float | None = None
         self._psd_anchors: list[tuple[float, np.ndarray]] = []
 
         self._validate_runtime(duration=duration, sampling_frequency=sampling_frequency, detectors=self.detectors)
@@ -254,6 +255,7 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         def chunk_generator() -> dict[str, np.ndarray]:
             nonlocal next_frame_midpoint
             self._psd = self._interpolate_psd(next_frame_midpoint / self.sampling_frequency)
+            self._last_chunk_midpoint = next_frame_midpoint
             next_frame_midpoint += frame_step
             return self._generate_realization_chunk()
 
@@ -262,16 +264,14 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
             self._stitcher._validate_chunk_map(history)
             current_raw = {detector: history[detector].copy() for detector in self.detectors}
         else:
-            warmup = chunk_generator()
-            self._stitcher._validate_chunk_map(warmup)
+            warmup = self._stitcher.draw_chunk(chunk_generator)
             current_raw = {detector: warmup[detector].copy() for detector in self.detectors}
 
         emitted_segments = {detector: [] for detector in self.detectors}
         produced_samples = 0
 
         while produced_samples < n_samples:
-            next_raw = chunk_generator()
-            self._stitcher._validate_chunk_map(next_raw)
+            next_raw = self._stitcher.draw_chunk(chunk_generator)
 
             for detector in self.detectors:
                 blended_overlap = (
@@ -298,6 +298,7 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
             detector: np.random.default_rng(child_sequence)
             for detector, child_sequence in zip(self.detectors, child_sequences, strict=True)
         }
+        self._stitcher.bind_rngs(self._rngs)
 
     def _generate_single_realization(self, detector: str) -> np.ndarray:
         """Generate one colored-noise chunk for a single detector."""
@@ -320,8 +321,43 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         self._stitcher.reset()
         self._rngs = {}
         self._generated_samples = 0
+        self._last_chunk_midpoint = None
         if self._psd_anchors:
             self._psd = self._psd_anchors[0][1].copy()
+
+    def export_state(self) -> dict[str, Any]:
+        """Return a picklable snapshot of the running crossfade stream.
+
+        The snapshot persists the bit-generator state and the chunk counter of
+        the stitcher plus the bookkeeping needed to interpolate the PSD schedule
+        on resume. It contains no cached strain: the previous window is
+        regenerated from the bit-generator state.
+        """
+        return {
+            "generated_samples": self._generated_samples,
+            "last_chunk_midpoint": self._last_chunk_midpoint,
+            "stitcher": self._stitcher.export_state(),
+        }
+
+    def import_state(self, state: dict[str, Any]) -> None:
+        """Resume the crossfade stream from an :meth:`export_state` snapshot.
+
+        Args:
+            state: A snapshot from another simulator with the same settings.
+
+        Raises:
+            ValueError: If the snapshot does not match this simulator.
+        """
+        if self._psd_anchors is None or not self._psd_anchors:
+            raise ValueError("The simulator must be configured before importing state.")
+        if not self._rngs:
+            self._initialize_generators(self.seed)
+
+        self._generated_samples = int(state["generated_samples"])
+        self._last_chunk_midpoint = state["last_chunk_midpoint"]
+        if self._last_chunk_midpoint is not None:
+            self._psd = self._interpolate_psd(self._last_chunk_midpoint / self.sampling_frequency)
+        self._stitcher.import_state(state["stitcher"], self._generate_realization_chunk)
 
     def generate(
         self,
