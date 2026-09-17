@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from gwmock_noise.simulators import ARNoiseSimulator
+from gwmock_noise.simulators import ARNoiseSimulator, FitError
 
 
 def _write_psd_file(path: Path, *, sampling_frequency: float = 256.0, n_points: int = 1025) -> Path:
@@ -295,51 +295,28 @@ def test_ar_simulator_rejects_tiny_duration_rounding_to_zero_samples(tmp_path: P
         simulator.generate(duration=1.0e-6, sampling_frequency=256.0, detectors=["H1"])
 
 
-def test_ar_simulator_rejects_nonpositive_innovation_variance(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Fit rejects nonpositive innovation variance."""
-    psd_path = _write_psd_file(tmp_path / "innovation_psd.txt")
-    monkeypatch.setattr(
-        "gwmock_noise.simulators.autoregressive.np.linalg.solve",
-        lambda a, b: np.array([-2.0]),
-    )
-    monkeypatch.setattr(
-        "gwmock_noise.simulators.autoregressive.np.roots",
-        lambda a: np.array([]),
-    )
-    monkeypatch.setattr(
-        "gwmock_noise.simulators.autoregressive.np.dot",
-        lambda a, b: -10.0,
-    )
-    with pytest.raises(ValueError, match="Innovation variance must be positive"):
+def test_ar_simulator_rejects_a_non_positive_definite_target(tmp_path: Path) -> None:
+    """A target whose autocovariance is not positive definite is a fit failure.
+
+    A spectrum concentrated in a single bin has a rank-two autocovariance
+    sequence, so the recursion's reflection coefficient reaches the unit circle
+    and the fit must raise rather than clamp it.
+    """
+    psd_path = _write_psd_file(tmp_path / "single_bin_psd.txt")
+    data = np.loadtxt(psd_path)
+    data[:, 1] = 0.0
+    data[np.argmin(np.abs(data[:, 0] - 64.0)), 1] = 1.0
+    np.savetxt(psd_path, data)
+    with pytest.raises(FitError, match="reflection coefficient"):
         ARNoiseSimulator(
             psd_file=psd_path,
             detectors=["H1"],
             sampling_frequency=256.0,
-            order=1,
-            low_frequency_cutoff=0.0,
-            high_frequency_cutoff=128.0,
+            order=64,
+            low_frequency_cutoff=2.0,
+            high_frequency_cutoff=120.0,
+            regularization=0.0,
         )
-
-
-def test_ar_simulator_rejects_unstable_roots(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Fit rejects unstable AR roots."""
-    psd_path = _write_psd_file(tmp_path / "unstable_psd.txt")
-    monkeypatch.setattr(
-        "gwmock_noise.simulators.autoregressive.np.linalg.solve",
-        lambda a, b: np.array([0.0]),
-    )
-    monkeypatch.setattr(
-        "gwmock_noise.simulators.autoregressive.np.roots",
-        lambda a: np.array([1.1]),
-    )
-    with pytest.raises(ValueError, match="Fitted AR model is unstable"):
-        ARNoiseSimulator(psd_file=psd_path, detectors=["H1"], sampling_frequency=256.0, order=1)
 
 
 def test_ar_generate_reconfigures_state_for_detector_reordering(tmp_path: Path) -> None:
