@@ -137,6 +137,42 @@ def test_stitcher_bind_rngs_validates_detectors() -> None:
         stitcher.bind_rngs({"L1": np.random.default_rng(1)})
 
 
+def test_stitcher_import_state_of_an_empty_stream_resets() -> None:
+    """A zero-counter payload with no generator state resets the stitcher."""
+    rng, _, generator = _make_driven_stream(11)
+    stitcher = _make_stitcher()
+    stitcher.bind_rngs({"H1": rng})
+    stitcher.stitch(n_samples=STRIDE, chunk_generator=generator)
+
+    stitcher.import_state(
+        {
+            "format_version": RESUME_STATE_FORMAT_VERSION,
+            "detectors": ["H1"],
+            "chunk_counter": 0,
+            "rng_state": None,
+        },
+        generator,
+    )
+
+    assert stitcher.chunk_counter == 0
+    assert stitcher.previous_strain == {}
+
+
+def test_stitcher_import_state_requires_a_state_for_every_detector() -> None:
+    """A non-empty payload without a generator state for each detector is refused."""
+    rng, _, generator = _make_driven_stream(12)
+    stitcher = _make_stitcher()
+    stitcher.bind_rngs({"H1": rng})
+    state = {
+        "format_version": RESUME_STATE_FORMAT_VERSION,
+        "detectors": ["H1"],
+        "chunk_counter": 2,
+        "rng_state": {"L1": np.random.default_rng(1).bit_generator.state},
+    }
+    with pytest.raises(ValueError, match="per detector"):
+        stitcher.import_state(state, generator)
+
+
 def test_colored_stream_resume_is_bit_identical(tmp_path: Path) -> None:
     """A colored stream stopped mid-way and resumed matches an uninterrupted run.
 
@@ -168,10 +204,62 @@ def test_colored_stream_resume_is_bit_identical(tmp_path: Path) -> None:
 
     resumed = make()
     resumed.import_state(snapshot)
+    assert resumed.previous_strain["H1"].shape == (resumed._stitcher.window_size,)
     tail = [resumed.generate(0.5, SAMPLING_FREQUENCY, ["H1"])["H1"] for _ in range(2)]
 
     for expected, actual in zip(full, head + tail, strict=True):
         np.testing.assert_array_equal(actual, expected)
+
+
+def test_colored_scheduled_stream_resume_is_bit_identical(tmp_path: Path) -> None:
+    """Resuming across a schedule change regenerates the previous window with its own spectrum."""
+    first_anchor = _write_flat_psd(tmp_path / "schedule_a.txt", value=2.0e-3)
+    second_anchor = _write_flat_psd(tmp_path / "schedule_b.txt", value=8.0e-3)
+    schedule = [(0.0, first_anchor), (1.0, second_anchor)]
+
+    def make() -> ColoredNoiseSimulator:
+        return ColoredNoiseSimulator(
+            psd_schedule=schedule,
+            detectors=["H1"],
+            sampling_frequency=SAMPLING_FREQUENCY,
+            window_duration=1.0,
+            seed=101,
+        )
+
+    uninterrupted = make()
+    full = [
+        uninterrupted.generate(0.5, SAMPLING_FREQUENCY, ["H1"], seed=101 if index == 0 else None)["H1"]
+        for index in range(6)
+    ]
+
+    stopped = make()
+    head = [
+        stopped.generate(0.5, SAMPLING_FREQUENCY, ["H1"], seed=101 if index == 0 else None)["H1"] for index in range(4)
+    ]
+    snapshot = stopped.export_state()
+
+    resumed = make()
+    resumed.import_state(snapshot)
+    assert resumed.previous_strain["H1"].shape == (resumed._stitcher.window_size,)
+    tail = [resumed.generate(0.5, SAMPLING_FREQUENCY, ["H1"])["H1"] for _ in range(2)]
+
+    for expected, actual in zip(full, head + tail, strict=True):
+        np.testing.assert_array_equal(actual, expected)
+
+
+def test_colored_import_state_requires_a_configured_simulator(tmp_path: Path) -> None:
+    """Importing state into a simulator with no configured PSD anchors is refused."""
+    psd_path = _write_flat_psd(tmp_path / "guard_psd.txt")
+    simulator = ColoredNoiseSimulator(
+        psd_file=psd_path,
+        detectors=["H1"],
+        sampling_frequency=SAMPLING_FREQUENCY,
+        window_duration=1.0,
+        seed=3,
+    )
+    simulator._psd_anchors = []
+    with pytest.raises(ValueError, match="must be configured"):
+        simulator.import_state({})
 
 
 def test_colored_export_state_contains_no_cached_strain(tmp_path: Path) -> None:

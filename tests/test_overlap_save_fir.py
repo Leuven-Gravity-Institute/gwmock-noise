@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from gwmock_noise import OverlapSaveFirSimulator, open_stream
+from gwmock_noise.config import NoiseComponentConfig, NoiseConfig
 from gwmock_noise.simulators.overlap_save import (
     MAX_FILTER_LENGTH,
     MIN_FILTER_LENGTH,
@@ -526,3 +527,252 @@ def test_min_filter_length_and_max_filter_length_constants() -> None:
     """The documented sweep bounds are the fourth and sixteenth powers of two."""
     assert MIN_FILTER_LENGTH == 16
     assert MAX_FILTER_LENGTH == 65536
+
+
+def test_design_colouring_filter_validates_target_and_delta_frequency() -> None:
+    """The free function rejects a malformed target and a non-positive spacing."""
+    target, _ = _band_limited_target()
+    with pytest.raises(ValueError, match="one-dimensional"):
+        design_colouring_filter(np.ones((2, 3)), delta_frequency=0.125, filter_length=64)
+    with pytest.raises(ValueError, match="more than two"):
+        design_colouring_filter(np.ones(2), delta_frequency=0.125, filter_length=64)
+    with pytest.raises(ValueError, match="delta_frequency"):
+        design_colouring_filter(target, delta_frequency=0.0, filter_length=64)
+
+
+def test_overlap_save_filter_handles_a_single_tap() -> None:
+    """A one-tap filter scales the input and keeps an empty memory."""
+    convolver = OverlapSaveFilter(np.array([2.0]), block_size=4)
+    assert convolver.filter_memory.shape == (0,)
+    np.testing.assert_allclose(convolver.process(np.arange(4.0)), 2.0 * np.arange(4.0))
+
+
+def test_simulator_accepts_a_tabulated_psd_file(tmp_path: Path) -> None:
+    """A two-column PSD table is loaded, masked and used to design the filter."""
+    psd_path = _write_flat_psd(tmp_path / "flat_psd.txt")
+    simulator = OverlapSaveFirSimulator(
+        psd_file=psd_path,
+        filter_length=32,
+        detectors=["H1"],
+        sampling_frequency=SAMPLING_FREQUENCY,
+        block_size=128,
+        low_frequency_cutoff=1.0,
+    )
+    strain = simulator.generate(0.5, SAMPLING_FREQUENCY, ["H1"], seed=2)
+    assert strain["H1"].shape == (128,)
+    assert simulator.metadata["overlap_save_fir"]["psd_file"] == str(psd_path)
+
+
+def test_simulator_rejects_a_non_positive_block_size() -> None:
+    """The overlap-save block length must be positive."""
+    target, _ = _band_limited_target(design_size=256)
+    with pytest.raises(ValueError, match="block_size must be a positive integer"):
+        OverlapSaveFirSimulator(
+            target_psd=target,
+            filter_length=32,
+            detectors=["H1"],
+            sampling_frequency=SAMPLING_FREQUENCY,
+            block_size=0,
+        )
+
+
+def test_simulator_from_component_builds_from_psd_options(tmp_path: Path) -> None:
+    """A config-driven component constructs a working simulator from a PSD table."""
+    psd_path = _write_flat_psd(tmp_path / "component_psd.txt")
+    component = NoiseComponentConfig(
+        simulator="overlap_save_fir",
+        options={
+            "psd_file": str(psd_path),
+            "filter_length": 32,
+            "block_size": 128,
+            "low_frequency_cutoff": 1.0,
+        },
+    )
+    config = NoiseConfig(
+        detectors=["H1"],
+        duration=1.0,
+        sampling_frequency=SAMPLING_FREQUENCY,
+        seed=5,
+        components=[component],
+    )
+    simulator = OverlapSaveFirSimulator.from_component(component, config)
+    assert isinstance(simulator, OverlapSaveFirSimulator)
+    assert simulator.generate(0.5, SAMPLING_FREQUENCY, ["H1"])["H1"].shape == (128,)
+
+
+def test_simulator_from_component_requires_a_target() -> None:
+    """A component without a PSD file or array target is rejected."""
+    component = NoiseComponentConfig(simulator="overlap_save_fir", options={})
+    config = NoiseConfig(detectors=["H1"], duration=1.0, sampling_frequency=SAMPLING_FREQUENCY, components=[component])
+    with pytest.raises(ValueError, match="requires 'psd_file' or 'target_psd'"):
+        OverlapSaveFirSimulator.from_component(component, config)
+
+
+def test_simulator_validates_array_target_shape_and_frequencies() -> None:
+    """An array target needs at least three samples and a matching, increasing grid."""
+    target, grid = _band_limited_target(design_size=512)
+    with pytest.raises(ValueError, match="at least three"):
+        OverlapSaveFirSimulator(
+            target_psd=np.ones(2),
+            filter_length=32,
+            detectors=["H1"],
+            sampling_frequency=SAMPLING_FREQUENCY,
+        )
+    with pytest.raises(ValueError, match="same length"):
+        OverlapSaveFirSimulator(
+            target_psd=target,
+            target_frequencies=grid[:-1],
+            filter_length=32,
+            detectors=["H1"],
+            sampling_frequency=SAMPLING_FREQUENCY,
+        )
+    with pytest.raises(ValueError, match="strictly increasing"):
+        OverlapSaveFirSimulator(
+            target_psd=target,
+            target_frequencies=grid[::-1].copy(),
+            filter_length=32,
+            detectors=["H1"],
+            sampling_frequency=SAMPLING_FREQUENCY,
+        )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"duration": 0.0}, "duration must be greater than zero"),
+        ({"sampling_frequency": 0.0}, "sampling_frequency must be greater than zero"),
+        ({"detectors": []}, "at least one detector"),
+        ({"detectors": ["H1", "H1"]}, "duplicate"),
+        ({"low_frequency_cutoff": -1.0}, "non-negative"),
+        ({"low_frequency_cutoff": 10.0, "high_frequency_cutoff": 5.0}, "greater than low_frequency_cutoff"),
+        ({"high_frequency_cutoff": 1000.0}, "must not exceed the Nyquist"),
+    ],
+)
+def test_simulator_runtime_validation(overrides: dict[str, object], match: str) -> None:
+    """Runtime and band arguments are validated at construction."""
+    target, grid = _band_limited_target(design_size=512)
+    arguments: dict[str, object] = {
+        "target_psd": target,
+        "target_frequencies": grid,
+        "filter_length": 32,
+        "detectors": ["H1"],
+        "sampling_frequency": SAMPLING_FREQUENCY,
+    }
+    arguments.update(overrides)
+    with pytest.raises(ValueError, match=match):
+        OverlapSaveFirSimulator(**arguments)
+
+
+def test_simulator_rejects_a_band_with_no_design_bins() -> None:
+    """A band that falls between design-grid points is rejected."""
+    target, grid = _band_limited_target(design_size=256)
+    with pytest.raises(ValueError, match="no design bins"):
+        OverlapSaveFirSimulator(
+            target_psd=target,
+            target_frequencies=grid,
+            filter_length=16,
+            detectors=["H1"],
+            sampling_frequency=SAMPLING_FREQUENCY,
+            low_frequency_cutoff=127.2,
+            high_frequency_cutoff=127.8,
+        )
+
+
+def test_simulator_reconfigures_when_sampling_frequency_changes() -> None:
+    """A changed sampling frequency rebuilds the design grid and clears the stream."""
+    target, grid = _band_limited_target(design_size=512)
+    simulator = OverlapSaveFirSimulator(
+        target_psd=target,
+        target_frequencies=grid,
+        filter_length=32,
+        detectors=["H1"],
+        sampling_frequency=SAMPLING_FREQUENCY,
+        block_size=128,
+        low_frequency_cutoff=1.0,
+    )
+    assert simulator.generate(0.5, SAMPLING_FREQUENCY, ["H1"], seed=3)["H1"].shape == (128,)
+    resampled = simulator.generate(0.5, 2 * SAMPLING_FREQUENCY, ["H1"])["H1"]
+    assert resampled.shape == (256,)
+    assert simulator.sampling_frequency == 2 * SAMPLING_FREQUENCY
+
+
+def test_simulator_rejects_a_sub_sample_duration() -> None:
+    """A duration that rounds to zero samples is rejected."""
+    target, _ = _band_limited_target(design_size=256)
+    simulator = OverlapSaveFirSimulator(
+        target_psd=target,
+        filter_length=32,
+        detectors=["H1"],
+        sampling_frequency=SAMPLING_FREQUENCY,
+        block_size=128,
+        low_frequency_cutoff=1.0,
+    )
+    with pytest.raises(ValueError, match="at least one sample"):
+        simulator.generate(0.001, SAMPLING_FREQUENCY, ["H1"], seed=1)
+
+
+def test_simulator_import_state_rejects_detector_and_frequency_mismatch() -> None:
+    """A snapshot from a different detector set or sampling frequency is refused."""
+    target, _ = _band_limited_target(design_size=512)
+    exporter = OverlapSaveFirSimulator(
+        target_psd=target,
+        filter_length=32,
+        detectors=["H1"],
+        sampling_frequency=SAMPLING_FREQUENCY,
+        block_size=128,
+        low_frequency_cutoff=1.0,
+    )
+    exporter.generate(0.5, SAMPLING_FREQUENCY, ["H1"], seed=4)
+    snapshot = exporter.export_state()
+
+    other_detectors = OverlapSaveFirSimulator(
+        target_psd=target,
+        filter_length=32,
+        detectors=["L1"],
+        sampling_frequency=SAMPLING_FREQUENCY,
+        block_size=128,
+        low_frequency_cutoff=1.0,
+    )
+    with pytest.raises(ValueError, match="detectors do not match"):
+        other_detectors.import_state(snapshot)
+
+    other_frequency = OverlapSaveFirSimulator(
+        target_psd=target,
+        filter_length=32,
+        detectors=["H1"],
+        sampling_frequency=2 * SAMPLING_FREQUENCY,
+        block_size=128,
+        low_frequency_cutoff=1.0,
+    )
+    with pytest.raises(ValueError, match="sampling frequency does not match"):
+        other_frequency.import_state(snapshot)
+
+
+def test_simulator_state_bytes_include_bounded_pending_output() -> None:
+    """A non-block-multiple request leaves pending output that is counted in the state.
+
+    The pending samples are phase-of-block bookkeeping: bounded by one block and
+    present only between the block boundary and the request boundary, so they add
+    to the serialized state without making it grow with the generated span.
+    """
+    target, _ = _band_limited_target(design_size=512)
+    simulator = OverlapSaveFirSimulator(
+        target_psd=target,
+        filter_length=64,
+        detectors=["H1"],
+        sampling_frequency=SAMPLING_FREQUENCY,
+        block_size=128,
+        low_frequency_cutoff=1.0,
+    )
+    simulator.generate(0.5, SAMPLING_FREQUENCY, ["H1"], seed=6)
+    aligned_bytes = simulator.state_nbytes
+    assert simulator.continuation_state()["pending_samples"]["H1"].shape == (0,)
+
+    simulator.generate(0.25, SAMPLING_FREQUENCY, ["H1"])
+    pending = simulator.continuation_state()["pending_samples"]["H1"]
+    assert 0 < pending.shape[0] <= simulator.block_size
+    assert simulator.state_nbytes > aligned_bytes
+
+    for _ in range(64):
+        simulator.generate(0.5, SAMPLING_FREQUENCY, ["H1"])
+    assert abs(simulator.state_nbytes - aligned_bytes) <= simulator.block_size * np.dtype(float).itemsize + 32
