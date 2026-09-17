@@ -675,6 +675,65 @@ strain_h1 = np.concatenate([chunk["H1"] for chunk in first_three_chunks])
 their overlap-add state inside the iterator, so concatenating sequential chunks
 reproduces the same realization as one seeded single-shot `generate(...)` call.
 
+## Overlap-save FIR colouring
+
+`OverlapSaveFirSimulator` is a bounded-state alternative to the overlap-add
+simulators. It designs a single causal colouring filter from the target PSD and
+applies it to white noise with **overlap-save block convolution**, so the only
+continuation state is the filter memory: a running stream holds
+`filter_length - 1` input samples per detector no matter how long it runs.
+
+The filter is the inverse transform of the target's square root, truncated to
+`filter_length` samples around zero lag and tapered with a Hann design window.
+With `minimum_phase=True` (the default) a cepstral minimum-phase factorisation
+concentrates the filter energy at the front, so the truncation loses less of the
+target.
+
+`filter_length` (`L_f`) is the accuracy/state trade-off knob. It must be a power
+of two between `2**4` and `2**16` samples: a longer filter follows the target
+spectrum more closely and costs more state.
+
+```python
+from gwmock_noise import OverlapSaveFirSimulator
+
+simulator = OverlapSaveFirSimulator(
+    psd_file="example_psd.txt",
+    filter_length=512,
+    detectors=["H1"],
+    sampling_frequency=4096.0,
+)
+strain = simulator.generate(4.0, 4096.0, ["H1"], seed=42)
+print(simulator.state_nbytes, simulator.resume_metadata_nbytes)
+```
+
+The simulator also accepts an in-memory one-sided target as `target_psd` (with
+an optional `target_frequencies` grid) instead of a file, so an analytic target
+can bypass the tabulated-curve interpolation.
+
+## Resuming a stopped stream
+
+The colored and overlap-save FIR simulators can persist the small state a
+stopped stream needs to resume, without writing generated strain to disk.
+`export_state()` returns a picklable snapshot of the bit-generator state and the
+chunk counter (plus the filter memory for the FIR simulator), and
+`import_state(snapshot)` on an identically configured simulator restores it by
+regenerating the previous window from the bit-generator state:
+
+```python
+snapshot = simulator.export_state()
+# Write snapshot with pickle or JSON, then stop the process.
+resumed = ColoredNoiseSimulator(
+    psd_file="example_psd.txt",
+    detectors=["H1", "L1"],
+    sampling_frequency=4096.0,
+)
+resumed.import_state(snapshot)
+next_chunk = resumed.generate(4.0, 4096.0, ["H1"])
+```
+
+A stream stopped after any chunk and resumed this way is bit-identical to an
+uninterrupted run; the resume boundary is not restricted to the first chunk.
+
 ## See also
 
 - **`ParallelAdapter`** (`gwmock_noise.parallel`) — parallelize
