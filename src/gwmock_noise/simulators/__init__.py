@@ -9,6 +9,8 @@ from gwmock_noise.glitches.models import (
     LogNormalAmplitudeDistribution,
     ScatteredLightGlitch,
 )
+from gwmock_noise.simulators._fit import FitError
+from gwmock_noise.simulators.arma import ARMANoiseSimulator
 from gwmock_noise.simulators.autoregressive import ARNoiseSimulator
 from gwmock_noise.simulators.base import BaseNoiseSimulator, ConfigurableNoiseSimulator, SimulationResult
 from gwmock_noise.simulators.colored import ColoredNoiseSimulator, TimeVaryingColoredNoiseSimulator
@@ -36,6 +38,7 @@ __all__ = [
     "GLITCH_CATALOGUE_COLUMNS",
     "GLITCH_CATALOGUE_SCHEMA_VERSION",
     "GLITCH_CATALOGUE_TIME_CONVENTION",
+    "ARMANoiseSimulator",
     "ARNoiseSimulator",
     "AddLines",
     "BaseNoiseSimulator",
@@ -46,6 +49,7 @@ __all__ = [
     "CorrelatedARNoiseSimulator",
     "CorrelatedNoiseSimulator",
     "DefaultNoiseSimulator",
+    "FitError",
     "GlitchDraw",
     "GlitchModel",
     "GlitchNoiseSimulator",

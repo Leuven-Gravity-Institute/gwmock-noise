@@ -710,6 +710,66 @@ The simulator also accepts an in-memory one-sided target as `target_psd` (with
 an optional `target_frequencies` grid) instead of a file, so an analytic target
 can bypass the tabulated-curve interpolation.
 
+## AR (Levinson-Durbin) and ARMA / state-space simulators
+
+`ARNoiseSimulator` fits an all-pole model to the autocovariance implied by the
+tabulated PSD with the **Levinson-Durbin recursion**. Stability is guaranteed by
+construction: for a positive-definite autocovariance every reflection
+coefficient has magnitude below one, so every pole lies strictly inside the unit
+circle. The recursion enforces the pre-registered limits while it runs and
+raises `FitError` if a coefficient reaches the unit circle or the prediction
+error loses its sign, so a fit that cannot be trusted fails instead of
+degrading. The metadata records the conditioning diagnostics
+(`max_reflection_coefficient`, `min_prediction_error`,
+`toeplitz_condition_number`), the state size in bytes, and the relative PSD
+residual per geometric band (`fit_residual`).
+
+```python
+from gwmock_noise import ARNoiseSimulator
+
+simulator = ARNoiseSimulator(
+    psd_file="aLIGO_O4_high_projected_psd",
+    order=256,
+    detectors=["H1"],
+    sampling_frequency=4096.0,
+    low_frequency_cutoff=20.0,
+)
+strain = simulator.generate(4.0, 4096.0, ["H1"], seed=42)
+print(simulator.metadata["autoregressive_noise"]["conditioning"])
+print(simulator.metadata["autoregressive_noise"]["fit_residual"])
+```
+
+`ARMANoiseSimulator` adds a moving-average numerator on top, giving a
+bounded-state ARMA / state-space filter. Spectral lines are handled by **pole
+placement**: each requested (or detected) line contributes a conjugate pole pair
+whose radius is set by the line width. The target is pre-whitened by those
+poles, the smooth remainder is fitted with the same stable Levinson recursion,
+and the numerator is obtained by **log-spectrum matching** (fitting the log
+spectrum with a cosine series and factoring it with the cepstral method). The
+metadata reports both orders, the state size, the placed lines and the per-band
+residual.
+
+```python
+from gwmock_noise import ARMANoiseSimulator
+
+simulator = ARMANoiseSimulator(
+    psd_file="ET_D_psd",
+    ar_order=192,
+    ma_order=32,
+    detectors=["H1"],
+    sampling_frequency=4096.0,
+    low_frequency_cutoff=5.0,
+    detect_lines=True,
+)
+strain = simulator.generate(4.0, 4096.0, ["H1"], seed=42)
+print(simulator.metadata["autoregressive_moving_average"]["placed_lines"])
+```
+
+Both simulators accept an in-memory `target_psd` (with an optional
+`target_frequencies` grid) instead of a file, expose `state_nbytes`, and support
+`export_state()` / `import_state()` exactly like the other bounded-state
+simulators.
+
 ## Resuming a stopped stream
 
 The colored and overlap-save FIR simulators can persist the small state a
