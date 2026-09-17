@@ -24,6 +24,7 @@ from gwmock_noise.simulators.glitches import (
     InjectGlitches,
     apply_segment_gps_start,
 )
+from gwmock_noise.simulators.overlap_save import OverlapSaveFirSimulator
 from gwmock_noise.simulators.protocol import NoiseSimulator
 from gwmock_noise.simulators.real_noise import GwoscNoiseSimulator
 from gwmock_noise.simulators.schumann import SchumannNoiseSimulator, SchumannParams
@@ -52,6 +53,7 @@ __all__ = [
     "InjectGlitches",
     "LogNormalAmplitudeDistribution",
     "NoiseSimulator",
+    "OverlapSaveFirSimulator",
     "ScatteredLightGlitch",
     "SchumannNoiseSimulator",
     "SchumannParams",

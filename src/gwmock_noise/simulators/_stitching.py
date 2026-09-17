@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
 import numpy as np
 
@@ -16,6 +17,10 @@ DEFAULT_WINDOW_DURATION = 64
 
 # Smallest window (samples) that still yields a positive overlap (>= 1).
 MIN_WINDOW_SIZE = 2
+
+# Version tag written into exported resume state so a payload from an
+# incompatible layout is rejected instead of silently misread.
+RESUME_STATE_FORMAT_VERSION = 1
 
 WINDOW_SIZE = 2048
 OVERLAP_SIZE = WINDOW_SIZE // 2
@@ -115,6 +120,9 @@ class OverlapAddStitcher:
         if self.overlap_size >= self.window_size:
             raise ValueError("overlap_size must be smaller than window_size.")
         self.previous_strain: dict[str, np.ndarray] = {}
+        self.chunk_counter = 0
+        self._rngs: dict[str, np.random.Generator] | None = None
+        self._pre_chunk_rng_states: dict[str, Any] | None = None
         self._window_out = np.cos(np.linspace(0.0, np.pi / 2.0, overlap_size))
         self._window_in = np.sin(np.linspace(0.0, np.pi / 2.0, overlap_size))
         self._blend_norm = np.sqrt(self._window_out**2 + self._window_in**2)
@@ -126,8 +134,103 @@ class OverlapAddStitcher:
         self.reset()
 
     def reset(self) -> None:
-        """Clear any cached overlap history."""
+        """Clear any cached overlap history and stream bookkeeping."""
         self.previous_strain.clear()
+        self.chunk_counter = 0
+        self._pre_chunk_rng_states = None
+
+    def bind_rngs(self, rngs: Mapping[str, np.random.Generator]) -> None:
+        """Bind the per-detector bit generators checkpointed with each chunk.
+
+        Args:
+            rngs: One random-number generator per configured detector.
+
+        Raises:
+            ValueError: If the keys do not match the configured detectors.
+        """
+        if set(rngs) != set(self.detectors):
+            raise ValueError("rngs keys must exactly match the configured detectors.")
+        self._rngs = dict(rngs)
+
+    def draw_chunk(self, chunk_generator: Callable[[], dict[str, np.ndarray]]) -> dict[str, np.ndarray]:
+        """Draw one raw chunk, advancing the counter and checkpointing RNG state.
+
+        The bit-generator state captured immediately before the draw is what
+        :meth:`export_state` persists; restoring it and drawing once reproduces
+        the chunk exactly, so no strain needs to be cached.
+
+        Args:
+            chunk_generator: Callable returning one chunk per detector.
+
+        Returns:
+            The generated chunk map.
+        """
+        if self._rngs is not None:
+            self._pre_chunk_rng_states = {detector: rng.bit_generator.state for detector, rng in self._rngs.items()}
+        chunk = chunk_generator()
+        self._validate_chunk_map(chunk)
+        self.chunk_counter += 1
+        return chunk
+
+    def export_state(self) -> dict[str, Any]:
+        """Return the resume metadata for the current stream boundary.
+
+        The payload is the chunk counter and the per-detector bit-generator
+        state captured immediately before the most recently drawn chunk. It
+        contains no strain, so a stopped stream resumes by regenerating that
+        chunk instead of reloading a cached window.
+        """
+        return {
+            "format_version": RESUME_STATE_FORMAT_VERSION,
+            "detectors": list(self.detectors),
+            "chunk_counter": self.chunk_counter,
+            "rng_state": self._pre_chunk_rng_states,
+        }
+
+    def import_state(
+        self,
+        state: Mapping[str, Any],
+        chunk_generator: Callable[[], dict[str, np.ndarray]],
+    ) -> None:
+        """Resume a stopped stream from :meth:`export_state` metadata.
+
+        The bound generators are rewound to their state before the last drawn
+        chunk, that chunk is regenerated through ``chunk_generator`` and
+        installed as the continuity history, and the generators are left in
+        their post-chunk state ready for the next draw.
+
+        Args:
+            state: Resume metadata from a stream with the same detectors.
+            chunk_generator: The same callable that produced the stopped stream.
+
+        Raises:
+            ValueError: If the payload does not match this stitcher or no
+                generators have been bound.
+        """
+        if state.get("format_version") != RESUME_STATE_FORMAT_VERSION:
+            raise ValueError("Unsupported resume state format version.")
+        if list(state.get("detectors", [])) != self.detectors:
+            raise ValueError("resume state detectors do not match this stitcher.")
+
+        chunk_counter = int(state.get("chunk_counter", 0))
+        rng_states = state.get("rng_state")
+        if chunk_counter == 0 and not rng_states:
+            self.reset()
+            return
+
+        if self._rngs is None:
+            raise ValueError("RNGs must be bound before importing resume state.")
+        if rng_states is None or set(rng_states) != set(self.detectors):
+            raise ValueError("resume state does not contain a bit-generator state per detector.")
+
+        for detector in self.detectors:
+            self._rngs[detector].bit_generator.state = rng_states[detector]
+
+        previous = self.draw_chunk(chunk_generator)
+        self.previous_strain.clear()
+        self.previous_strain.update({detector: previous[detector].copy() for detector in self.detectors})
+        self.chunk_counter = chunk_counter
+        self._pre_chunk_rng_states = {detector: rng_states[detector] for detector in self.detectors}
 
     def _validate_chunk_map(self, chunks: dict[str, np.ndarray]) -> None:
         expected = set(self.detectors)
@@ -160,8 +263,7 @@ class OverlapAddStitcher:
         if history:
             self._validate_chunk_map(history)
         else:
-            history = chunk_generator()
-            self._validate_chunk_map(history)
+            history = self.draw_chunk(chunk_generator)
 
         raw_buffers = {detector: history[detector].copy() for detector in self.detectors}
         strain_buffers = {detector: raw_buffers[detector].copy() for detector in self.detectors}
@@ -179,8 +281,7 @@ class OverlapAddStitcher:
         current_size = self.window_size
 
         while current_size - self.window_size < n_samples:
-            raw_new_chunks = chunk_generator()
-            self._validate_chunk_map(raw_new_chunks)
+            raw_new_chunks = self.draw_chunk(chunk_generator)
 
             for detector in self.detectors:
                 raw_new = raw_new_chunks[detector]
