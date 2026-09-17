@@ -1,6 +1,6 @@
 """Tests for the streaming multichannel simulator and its exact reference.
 
-The tests pin the M4c contract for multichannel generation from a tabulated
+The tests pin the contract for multichannel generation from a tabulated
 PSD/CSD matrix:
 
 * the fitted factor reproduces the target cross-spectral matrix band by band;
@@ -34,6 +34,7 @@ from gwmock_noise.simulators import (
 )
 from gwmock_noise.simulators._fit import FitError
 from gwmock_noise.simulators._spectral import load_spectral_series
+from gwmock_noise.simulators.matrix_factorization import matrix_autocovariance
 from gwmock_noise.simulators.registry import available_simulator_names
 
 SAMPLING_FREQUENCY = 256.0
@@ -564,3 +565,53 @@ def test_export_state_rejects_mismatched_orders(tmp_path: Path) -> None:
     snapshot = exporter.export_state()
     with pytest.raises(ValueError, match="order"):
         make(32).import_state(snapshot)
+
+
+def test_complex_csd_phase_survives_generation() -> None:
+    """The generated cross-channel lag covariance carries the CSD phase.
+
+    The target is channel 2 delayed by three samples relative to channel 1, so its
+    cross-spectrum carries a frequency-dependent phase and the cross-channel
+    covariance is a spike at one lag. The generated process must reproduce the
+    target autocovariance there: a dropped or conjugated phase would move the
+    spike or halve it.
+    """
+    design_size = 64
+    delay = 3
+    frequencies = np.fft.rfftfreq(design_size, d=1.0 / SAMPLING_FREQUENCY)
+    angular = 2.0 * np.pi * frequencies / SAMPLING_FREQUENCY
+    target = np.zeros((frequencies.size, 2, 2), dtype=np.complex128)
+    target[:, 0, 0] = 1.0
+    target[:, 1, 1] = 1.0
+    cross = 0.2 * np.exp(-1j * angular * delay)
+    target[:, 0, 1] = cross
+    target[:, 1, 0] = np.conj(cross)
+    for index in (0, frequencies.size - 1):
+        target[index, 0, 1] = target[index, 0, 1].real
+        target[index, 1, 0] = target[index, 0, 1]
+
+    simulator = MultichannelNoiseSimulator(
+        target_matrices=target,
+        target_frequencies=frequencies,
+        detectors=["E1", "E2"],
+        sampling_frequency=SAMPLING_FREQUENCY,
+        order=8,
+        low_frequency_cutoff=2.0,
+        high_frequency_cutoff=48.0,
+        block_size=1 << 12,
+    )
+    target_curve = simulator.target_spectral_matrices
+    expected = matrix_autocovariance(target_curve, 2 * (target_curve.shape[0] - 1))
+    n_samples = 256
+    n_realizations = 128
+    accumulator = np.zeros((2, 2))
+    for seed in range(n_realizations):
+        realization = simulator.generate(n_samples / SAMPLING_FREQUENCY, SAMPLING_FREQUENCY, ["E1", "E2"], seed=seed)
+        strain = np.column_stack([realization["E1"], realization["E2"]])
+        accumulator += np.einsum("ti,tj->ij", strain[delay:], strain[:-delay]) / n_samples
+    estimate = accumulator / n_realizations
+
+    assert abs(expected[delay, 0, 1]) > 10.0 * abs(expected[delay, 1, 0])
+    tolerance = 0.25 * abs(expected[delay, 0, 1])
+    assert estimate[0, 1] == pytest.approx(expected[delay, 0, 1], abs=tolerance)
+    assert estimate[1, 0] == pytest.approx(expected[delay, 1, 0], abs=tolerance)

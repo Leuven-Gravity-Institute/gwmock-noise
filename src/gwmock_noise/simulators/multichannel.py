@@ -59,7 +59,8 @@ logger = logging.getLogger(LOGGER_NAME)
 DEFAULT_ORDER = 256
 #: Number of samples generated per recursion call before buffering.
 DEFAULT_BLOCK_SIZE = 65_536
-#: Relative ridge added to the target diagonal before factorizing.
+#: Relative ridge added as a zero-lag (white) floor when the in-band target is
+#: not positive definite.
 DEFAULT_REGULARIZATION_EPSILON = 1e-8
 DETECTOR_PAIR_SIZE = 2
 MIN_SPECTRAL_POINTS = 2
@@ -113,9 +114,10 @@ class MultichannelNoiseSimulator(ConfigurableNoiseSimulator):
             low_frequency_cutoff: Lower edge of the fit band in hertz.
             high_frequency_cutoff: Upper edge of the fit band in hertz.
             block_size: Number of samples generated per recursion call.
-            regularization_epsilon: Relative ridge added to the target diagonal
-                where it is not positive definite, as a fraction of the largest
-                diagonal entry.
+            regularization_epsilon: Relative ridge, as a fraction of the largest
+                in-band diagonal entry, added as a zero-lag (white) floor to the
+                autocovariance when the in-band target is not positive definite.
+                Zero forbids the ridge and makes such a target a fit failure.
         """
         file_inputs = psd_files is not None
         if file_inputs == (target_matrices is not None):
@@ -333,15 +335,30 @@ class MultichannelNoiseSimulator(ConfigurableNoiseSimulator):
             spacing = min(spacing, median_frequency_spacing(self._target_frequency_input))
         return spacing
 
-    def _regularize_target(self, target: np.ndarray) -> tuple[np.ndarray, float, float]:
-        """Add a relative ridge where the target is not positive definite.
+    def _in_band_ridge(self, target: np.ndarray, frequency_mask: np.ndarray) -> tuple[float, float]:
+        """Return the smallest in-band eigenvalue and the ridge needed to lift it.
+
+        Only the masked bins are inspected: the band mask zeroes the spectrum
+        outside the fitted band, and those structural zeros are not a property of
+        the in-band target. The ridge is applied later as a zero-lag (white) floor
+        on the autocovariance, so it raises the whole spectrum rather than
+        reshaping the in-band target.
+
+        Args:
+            target: The design-grid target cross-spectral matrices.
+            frequency_mask: Boolean mask of the fitted band bins.
 
         Returns:
-            The regularised target, its smallest eigenvalue before the ridge, and
-            the absolute ridge added.
+            The smallest in-band eigenvalue before the ridge, and the absolute
+            ridge to add to the zero-lag autocovariance (``0`` if the target is
+            already positive definite).
+
+        Raises:
+            FitError: If the in-band target is not positive definite and
+                ``regularization_epsilon`` is zero.
         """
-        target = np.asarray(target, dtype=np.complex128)
-        hermitian = 0.5 * (target + target.conj().swapaxes(-1, -2))
+        in_band = np.asarray(target, dtype=np.complex128)[frequency_mask]
+        hermitian = 0.5 * (in_band + in_band.conj().swapaxes(-1, -2))
         eigenvalues = np.linalg.eigvalsh(hermitian)
         min_eigenvalue = float(np.min(eigenvalues))
         scale = max(
@@ -350,15 +367,13 @@ class MultichannelNoiseSimulator(ConfigurableNoiseSimulator):
         )
         threshold = self.regularization_epsilon * scale
         if min_eigenvalue >= threshold:
-            return hermitian, min_eigenvalue, 0.0
+            return min_eigenvalue, 0.0
         if self.regularization_epsilon == 0.0:
             raise FitError(
-                "The target cross-spectral matrix is not positive definite and no ridge is allowed; "
+                "The in-band target cross-spectral matrix is not positive definite and no ridge is allowed; "
                 "the fit is not usable."
             )
-        ridge = threshold - min_eigenvalue
-        identity = np.eye(target.shape[-1], dtype=np.complex128)
-        return hermitian + ridge * identity, min_eigenvalue, ridge
+        return min_eigenvalue, threshold - min_eigenvalue
 
     def _fit_model(self) -> None:
         """Fit the Whittle autoregressive factor from the target matrix."""
@@ -375,8 +390,10 @@ class MultichannelNoiseSimulator(ConfigurableNoiseSimulator):
             raise ValueError("The requested frequency range contains no simulation bins.")
 
         target = self._build_target_matrices(frequency_grid, frequency_mask)
-        regularized, min_eigenvalue, ridge = self._regularize_target(target)
-        covariance = matrix_autocovariance(regularized, self._design_size)[: self.order + 1]
+        min_eigenvalue, ridge = self._in_band_ridge(target, frequency_mask)
+        covariance = matrix_autocovariance(target, self._design_size)[: self.order + 1]
+        if ridge > 0.0:
+            covariance[0] = covariance[0] + ridge * np.eye(target.shape[-1])
 
         factor = whittle_levinson_factorization(covariance, self.order)
         self._target_matrices = target

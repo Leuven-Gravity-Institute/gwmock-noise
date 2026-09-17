@@ -48,11 +48,15 @@ __all__ = [
     "whittle_levinson_factorization",
 ]
 
-#: Relative tolerance below which a prediction-error eigenvalue counts as lost.
-POSITIVE_DEFINITE_TOLERANCE = 1e-12
-
 #: An autocovariance stack carries one lag axis and two channel axes.
 AUTOCOVARIANCE_DIMENSIONS = 3
+
+#: A one-sided grid needs at least the zero-frequency and Nyquist bins.
+MINIMUM_FREQUENCY_BINS = 2
+
+#: Relative tolerance for the Hermitian symmetry and real endpoints a one-sided
+#: cross-spectral matrix must carry before it can be inverse-transformed.
+SPECTRUM_SYMMETRY_TOLERANCE = 1e-8
 
 
 @dataclass(frozen=True)
@@ -194,23 +198,91 @@ def whittle_levinson_factorization(autocovariance: np.ndarray, order: int) -> Wh
     )
 
 
+def _require_one_sided_spectrum(target_matrices: np.ndarray) -> np.ndarray:
+    """Reject a matrix that is not a valid one-sided cross-spectral matrix.
+
+    A real multichannel process has Hermitian spectral matrices whose
+    zero-frequency and Nyquist blocks are real, so the inverse transform is real.
+    A target that breaks either property cannot be turned into a covariance by
+    dropping the offending part: the dropped part is exactly the phase that
+    distinguishes one process from another.
+
+    Args:
+        target_matrices: The candidate one-sided spectral matrices.
+
+    Returns:
+        The target as a complex array.
+
+    Raises:
+        ValueError: If the array is not a stack of square matrices.
+        FitError: If the target is not Hermitian to tolerance, or one of its
+            zero-frequency or Nyquist blocks is not real.
+    """
+    target_matrices = np.asarray(target_matrices, dtype=np.complex128)
+    if target_matrices.ndim != AUTOCOVARIANCE_DIMENSIONS or target_matrices.shape[1] != target_matrices.shape[2]:
+        raise ValueError("target_matrices must have shape (n_frequencies, n_channels, n_channels).")
+    if target_matrices.shape[0] < MINIMUM_FREQUENCY_BINS:
+        raise ValueError("target_matrices must carry at least two frequency bins.")
+    if not np.all(np.isfinite(target_matrices)):
+        raise FitError("target_matrices must be finite.")
+
+    conjugate_transpose = target_matrices.conj().swapaxes(-1, -2)
+    asymmetry = float(np.max(np.abs(target_matrices - conjugate_transpose), initial=0.0))
+    scale = max(float(np.max(np.abs(target_matrices), initial=0.0)), np.finfo(float).tiny)
+    if asymmetry > SPECTRUM_SYMMETRY_TOLERANCE * scale:
+        raise FitError("target_matrices must be Hermitian at every frequency.")
+
+    for index in (0, target_matrices.shape[0] - 1):
+        imaginary = float(np.max(np.abs(target_matrices[index].imag), initial=0.0))
+        if imaginary > SPECTRUM_SYMMETRY_TOLERANCE * scale:
+            raise FitError("The zero-frequency and Nyquist blocks of target_matrices must be real.")
+    return target_matrices
+
+
 def matrix_autocovariance(target_matrices: np.ndarray, n_samples: int) -> np.ndarray:
     """Return the matrix autocovariance implied by a one-sided cross-spectrum.
 
-    The transform is the matrix form of the scalar construction the AR simulator
-    uses: ``R_tau`` is the inverse real transform of the target on its own grid,
-    so the variance ``R_0`` and the whole sequence are those of the sampled
-    spectrum rather than of the tabulated curve behind it.
+    The target is completed to a full two-sided spectrum before the inverse
+    transform: the negative-frequency block is the element-wise conjugate of the
+    one-sided block, ``S(-f) = conj(S(f))``, which is the symmetry a real process
+    has. That conjugation is what carries a complex cross-spectrum's phase into
+    the cross-channel lag covariances: without it a phase-shifted CSD would be
+    fitted as a different, time-reversed process. The transform is the matrix form
+    of the one the AR simulator uses, so the sequence describes the sampled
+    spectrum rather than the tabulated curve behind it.
+
+    With this convention the matrix ``target_matrices[j]`` is the Fourier
+    transform of the autocovariance, ``S(f_j) = sum_tau R_tau exp(-2 pi i f_j tau
+    / f_s)`` with ``R_tau[i, k] = E[x_{t + tau, i} x_{t, k}]``. A CSD exported by
+    a tool that instead defines ``S(f) = E[conj(X_i(f)) X_k(f)]`` is the conjugate
+    of this one; store its conjugate to match.
 
     Args:
         target_matrices: Hermitian spectral matrices on a one-sided grid, shape
-            ``(n_frequencies, n_channels, n_channels)``.
+            ``(n_frequencies, n_channels, n_channels)``. The zero-frequency and
+            Nyquist blocks must be real.
         n_samples: Length of the transform; ``2 * (n_frequencies - 1)``.
 
     Returns:
-        The ``(n_samples, n_channels, n_channels)`` real autocovariance sequence.
+        The ``(n_samples, n_channels, n_channels)`` real autocovariance sequence,
+        with ``R[-tau] = R[tau].T``.
+
+    Raises:
+        ValueError: If the shape is invalid or ``n_samples`` is not
+            ``2 * (n_frequencies - 1)``.
+        FitError: If the target is not Hermitian or has a complex zero-frequency
+            or Nyquist block.
     """
-    return np.asarray(np.fft.irfft(target_matrices, n=n_samples, axis=0), dtype=float)
+    target_matrices = _require_one_sided_spectrum(target_matrices)
+    n_frequencies = target_matrices.shape[0]
+    if n_samples != 2 * (n_frequencies - 1):
+        raise ValueError("n_samples must equal 2 * (n_frequencies - 1).")
+
+    full_spectrum = np.empty((n_samples, *target_matrices.shape[1:]), dtype=np.complex128)
+    full_spectrum[:n_frequencies] = target_matrices
+    full_spectrum[n_frequencies:] = np.conj(target_matrices[1 : n_frequencies - 1][::-1])
+    autocovariance = np.fft.ifft(full_spectrum, axis=0)
+    return np.ascontiguousarray(autocovariance.real)
 
 
 def matrix_band_fit_residual(  # noqa: PLR0913

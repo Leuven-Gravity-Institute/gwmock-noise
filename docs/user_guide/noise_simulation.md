@@ -792,11 +792,16 @@ channel, independent of the generated span.
 The cross-spectral matrix may be given as files (`psd_files` plus `csd_files`,
 in the same form as `CorrelatedNoiseSimulator`) or directly as an array
 (`target_matrices` with `target_frequencies`). A pair without a CSD file means
-zero coherence. The metadata records the fit method, the order, the per-band
-relative Frobenius residual of the modelled cross-spectral matrix against the
-target, the conditioning diagnostics and the state size. A target that is not
-positive definite raises `FitError` rather than being silently changed, unless a
-relative ridge is requested through `regularization_epsilon`.
+zero coherence. A complex CSD's phase is carried into the cross-channel lag
+covariances; the stored value is the one-sided cross-spectrum whose
+autocovariance is its inverse transform, so a CSD exported by a tool that
+defines the opposite conjugation should be stored conjugated. The metadata
+records the fit method, the order, the per-band relative Frobenius residual of
+the modelled cross-spectral matrix against the target, the conditioning
+diagnostics and the state size. An in-band target that is not positive definite
+raises `FitError` rather than being silently changed, unless a relative ridge is
+requested through `regularization_epsilon`, which is applied as a zero-lag
+(white) floor.
 
 ```python
 from gwmock_noise import MultichannelNoiseSimulator

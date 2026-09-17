@@ -1,6 +1,6 @@
 """Unit tests for the Whittle block-Toeplitz matrix spectral factorization.
 
-The tests pin the M4c construction: the recursion must recover a known
+The tests pin the construction: the recursion must recover a known
 autoregressive matrix filter from its autocovariance, reduce exactly to the
 scalar Levinson-Durbin recursion of the AR simulator, satisfy the block
 Yule-Walker equations, and refuse a covariance sequence that is not positive
@@ -136,7 +136,7 @@ def test_matrix_autocovariance_is_the_inverse_transform_of_the_target() -> None:
 
     autocovariance = matrix_autocovariance(target, n_samples)
 
-    np.testing.assert_allclose(autocovariance, np.fft.irfft(target, n=n_samples, axis=0))
+    np.testing.assert_allclose(autocovariance, np.fft.irfft(target, n=n_samples, axis=0), atol=1e-18)
 
 
 def test_matrix_band_fit_residual_reports_integrated_and_per_bin_errors() -> None:
@@ -150,3 +150,78 @@ def test_matrix_band_fit_residual_reports_integrated_and_per_bin_errors() -> Non
     assert len(residual["bands"]) == 2
     assert residual["worst_relative_error"] == pytest.approx(1.0)
     assert residual["median_relative_error"] == pytest.approx(1.0)
+
+
+def _delayed_pair_target(n_samples: int, delay: int, *, sampling_frequency: float = 128.0) -> np.ndarray:
+    """Return the spectral matrix of channel 2 being channel 1 delayed by ``delay``.
+
+    With this module's convention the cross-spectrum is ``exp(-i w delay)`` in
+    ``[0, 1]``, so the cross-channel autocovariance is a spike at lag ``-delay``.
+    """
+    frequencies = np.fft.rfftfreq(n_samples, d=1.0 / sampling_frequency)
+    angular = 2.0 * np.pi * frequencies / sampling_frequency
+    target = np.zeros((frequencies.size, 2, 2), dtype=np.complex128)
+    target[:, 0, 0] = 1.0
+    target[:, 1, 1] = 1.0
+    cross = 0.2 * np.exp(-1j * angular * delay)
+    target[:, 0, 1] = cross
+    target[:, 1, 0] = np.conj(cross)
+    for index in (0, frequencies.size - 1):
+        target[index, 0, 1] = target[index, 0, 1].real
+        target[index, 1, 0] = target[index, 0, 1]
+    return target
+
+
+def test_matrix_autocovariance_carries_a_complex_csd_phase() -> None:
+    """A complex CSD phase becomes a full-weight cross-channel lag.
+
+    The exact reference is the explicit full two-sided Hermitian inverse
+    transform, whose negative-frequency block is the conjugate of the one-sided
+    block. The phase-induced cross-lag must appear at the delayed lag with the
+    cross-spectrum's amplitude (``0.2``), not half of it, and the sequence must
+    stay real and stationary.
+    """
+    n_samples = 64
+    delay = 3
+    target = _delayed_pair_target(n_samples, delay)
+
+    autocovariance = matrix_autocovariance(target, n_samples)
+
+    full_spectrum = np.empty((n_samples, 2, 2), dtype=np.complex128)
+    full_spectrum[: target.shape[0]] = target
+    full_spectrum[target.shape[0] :] = np.conj(target[1 : target.shape[0] - 1][::-1])
+    reference = np.fft.ifft(full_spectrum, axis=0).real
+    np.testing.assert_allclose(autocovariance, reference, atol=1e-12)
+
+    assert autocovariance[delay, 0, 1] == pytest.approx(0.2, abs=1e-9)
+    assert autocovariance[0, 0, 1] == pytest.approx(0.0, abs=1e-9)
+    assert autocovariance[(n_samples - delay) % n_samples, 1, 0] == pytest.approx(0.2, abs=1e-9)
+    np.testing.assert_allclose(
+        autocovariance[(n_samples - delay) % n_samples],
+        autocovariance[delay].T,
+        atol=1e-12,
+    )
+
+
+def test_matrix_autocovariance_rejects_a_non_hermitian_target() -> None:
+    """A target whose cross-spectrum is not Hermitian is refused, not silently dropped."""
+    target = _delayed_pair_target(64, 3)
+    target[:, 1, 0] = target[:, 0, 1]
+    with pytest.raises(FitError, match="Hermitian"):
+        matrix_autocovariance(target, 64)
+
+
+def test_matrix_autocovariance_rejects_a_complex_endpoint_block() -> None:
+    """A complex zero-frequency or Nyquist block is not a real process and is refused."""
+    target = _delayed_pair_target(64, 3)
+    target[0, 0, 1] = 0.2 + 0.1j
+    target[0, 1, 0] = np.conj(target[0, 0, 1])
+    with pytest.raises(FitError, match="Nyquist"):
+        matrix_autocovariance(target, 64)
+
+
+def test_matrix_autocovariance_requires_a_matching_length() -> None:
+    """The transform length is fixed by the one-sided grid, not free."""
+    target = _delayed_pair_target(64, 3)
+    with pytest.raises(ValueError, match="n_samples"):
+        matrix_autocovariance(target, 32)
