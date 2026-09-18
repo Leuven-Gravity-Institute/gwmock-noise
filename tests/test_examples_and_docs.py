@@ -109,6 +109,7 @@ from gwmock_noise import (
     ColoredNoiseSimulator,
     DefaultNoiseSimulator,
     LogNormalAmplitudeDistribution,
+    MultichannelNoiseSimulator,
     NoiseConfig,
     NoiseSimulator,
     OutputConfig,
@@ -164,6 +165,18 @@ assert [component.simulator for component in network_config.components] == ["cor
 # minimal_usage AR / streaming
 ar_sim = ARNoiseSimulator(order=8, detectors=["H1"], duration=1.0, sampling_frequency=128.0, psd_file=psd_path)
 assert ar_sim.generate(1.0, 128.0, ["H1"], seed=5)["H1"].shape == (128,)
+
+# minimal_usage multichannel PSD/CSD
+multichannel_sim = MultichannelNoiseSimulator(
+    psd_files={"H1": psd_path},
+    detectors=["H1"],
+    order=8,
+    duration=1.0,
+    sampling_frequency=128.0,
+    low_frequency_cutoff=4.0,
+    high_frequency_cutoff=60.0,
+)
+assert multichannel_sim.generate(1.0, 128.0, ["H1"], seed=3)["H1"].shape == (128,)
 stream = open_stream(
     ColoredNoiseSimulator(psd_file=psd_path, detectors=["H1"], sampling_frequency=128.0),
     chunk_duration=0.5,
