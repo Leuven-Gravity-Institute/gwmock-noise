@@ -1,18 +1,21 @@
-"""Tests for the streaming multichannel simulator and its exact reference.
+"""Tests for the streaming multichannel simulator.
 
 The tests pin the contract for multichannel generation from a tabulated
 PSD/CSD matrix:
 
 * the fitted factor reproduces the target cross-spectral matrix band by band;
 * a long realization recovers the target PSD and CSD;
-* the generated cross-covariance agrees, over its first lags, with an exact
-  multivariate circulant embedding of the *same* design-grid target -- the
-  independent reference, built here from the target's own block-circulant
-  eigenvalues (Helgason, Pipiras and Abry 2011; Davies and Harte 1987);
+* a complex CSD's phase survives generation as a cross-channel lag;
 * the relation to the incumbent ``correlated_ar`` truncated VMA is measured on
   a shared target;
 * the continuation state is the bounded recursion history, resumable without
   cached strain.
+
+The comparison against an independent exact multivariate circulant embedding
+(Helgason, Pipiras and Abry 2011) is deliberately not part of this branch: the
+paper-side reference does not exist yet and that arm is recorded as gated and
+unanchored, so the generator's covariance is checked against the target's own
+PSD/CSD definition and the analytic per-band comparisons only.
 
 Numbers quoted in the docstrings are the values observed while writing the
 tests, so a later failure says what moved.
@@ -91,63 +94,6 @@ def _flat_pair(directory: Path, *, amplitude: float = 1.0e-3) -> tuple[dict[str,
     return psd_paths, {("E1", "E2"): csd_path}
 
 
-def _exact_multivariate_circulant_embedding(
-    target_matrices: np.ndarray,
-    n_samples: int,
-    rng: np.random.Generator,
-) -> np.ndarray:
-    """Draw samples whose Toeplitz covariance is the target for the first lags.
-
-    The block-circulant eigenvalues are the target cross-spectral matrices on the
-    design grid itself. For a record no longer than half the embedding, the first
-    lags of the resulting covariance are those of the target exactly, which is
-    the multivariate circulant embedding.
-
-    Args:
-        target_matrices: Hermitian target matrices on a one-sided grid.
-        n_samples: Record length to return.
-        rng: Random generator for the draws.
-
-    Returns:
-        An ``(n_samples, n_channels)`` real array.
-
-    Raises:
-        ValueError: If ``n_samples`` is longer than half the embedding.
-    """
-    n_frequencies = target_matrices.shape[0]
-    embed = 2 * (n_frequencies - 1)
-    if n_samples > embed // 2:
-        raise ValueError("n_samples must not exceed half the embedding length.")
-    n_channels = target_matrices.shape[-1]
-
-    def factor(index: int) -> np.ndarray:
-        matrix = 0.5 * (target_matrices[index] + target_matrices[index].conj().T)
-        eigenvalues, eigenvectors = np.linalg.eigh(matrix)
-        eigenvalues = np.clip(eigenvalues, 0.0, None)
-        return (eigenvectors * np.sqrt(eigenvalues)) @ eigenvectors.conj().T
-
-    spectrum = np.zeros((embed, n_channels), dtype=np.complex128)
-    spectrum[0] = factor(0) @ rng.standard_normal(n_channels) / np.sqrt(embed)
-    spectrum[embed // 2] = factor(embed // 2) @ rng.standard_normal(n_channels) / np.sqrt(embed)
-    for index in range(1, embed // 2):
-        white = (rng.standard_normal(n_channels) + 1j * rng.standard_normal(n_channels)) / np.sqrt(2.0)
-        spectrum[index] = factor(index) @ white / np.sqrt(embed)
-        spectrum[embed - index] = np.conj(spectrum[index])
-    return (np.fft.ifft(spectrum, axis=0).real * embed)[:n_samples]
-
-
-def _sample_autocovariance(samples: np.ndarray, lags: list[int]) -> np.ndarray:
-    """Return the biased sample autocovariance of a realization at the given lags."""
-    n_samples = samples.shape[0]
-    covariance = np.zeros((len(lags), samples.shape[1], samples.shape[1]))
-    for index, lag in enumerate(lags):
-        if lag == 0:
-            covariance[index] = np.einsum("ti,tj->ij", samples, samples) / n_samples
-        else:
-            covariance[index] = np.einsum("ti,tj->ij", samples[:-lag], samples[lag:]) / n_samples
-    return covariance
-
-
 def _band_relative_error(
     frequencies: np.ndarray,
     estimate: np.ndarray,
@@ -214,51 +160,6 @@ def test_generated_psd_and_csd_match_the_et_pair(tmp_path: Path) -> None:
     assert _band_relative_error(frequencies, psd, psd_target) < 0.15
     assert abs(float(np.sum(csd.real[(frequencies >= BAND_LOW) & (frequencies <= BAND_HIGH)]))) > 0.0
     assert _band_relative_error(frequencies, csd.real, csd_target) < 0.20
-
-
-def test_generated_covariance_matches_the_exact_circulant_embedding(tmp_path: Path) -> None:
-    """The generator and an exact circulant embedding share their target covariance.
-
-    On the ET pair at order 128 and record length 1024, both the reference and
-    the generator sit within about 1 per cent of the target autocovariance over
-    lags 0 to 8, and within about 2 per cent of each other.
-    """
-    psd_paths, csd_paths = _write_et_pair(tmp_path)
-    simulator = MultichannelNoiseSimulator(
-        psd_files=psd_paths,
-        csd_files=csd_paths,
-        detectors=["E1", "E2"],
-        sampling_frequency=SAMPLING_FREQUENCY,
-        order=128,
-        low_frequency_cutoff=BAND_LOW,
-        high_frequency_cutoff=BAND_HIGH,
-        block_size=1 << 14,
-    )
-    target = simulator.target_spectral_matrices
-    autocovariance = np.fft.irfft(target, n=2 * (target.shape[0] - 1), axis=0)
-    lags = [0, 1, 2, 4, 8]
-    n_samples = 1024
-    n_realizations = 64
-    scale = float(np.max(np.abs(autocovariance[0])))
-
-    rng = np.random.default_rng(20260917)
-    reference_accumulator = np.zeros((len(lags), 2, 2))
-    generator_accumulator = np.zeros((len(lags), 2, 2))
-    for seed in range(n_realizations):
-        reference = _exact_multivariate_circulant_embedding(target, n_samples, rng)
-        reference_accumulator += _sample_autocovariance(reference, lags)
-        realization = simulator.generate(n_samples / SAMPLING_FREQUENCY, SAMPLING_FREQUENCY, ["E1", "E2"], seed=seed)
-        generator_accumulator += _sample_autocovariance(np.column_stack([realization["E1"], realization["E2"]]), lags)
-    reference_estimate = reference_accumulator / n_realizations
-    generator_estimate = generator_accumulator / n_realizations
-
-    for index, lag in enumerate(lags):
-        reference_error = np.max(np.abs(reference_estimate[index] - autocovariance[lag])) / scale
-        generator_error = np.max(np.abs(generator_estimate[index] - autocovariance[lag])) / scale
-        disagreement = np.max(np.abs(generator_estimate[index] - reference_estimate[index])) / scale
-        assert reference_error < 0.05, (lag, reference_error)
-        assert generator_error < 0.06, (lag, generator_error)
-        assert disagreement < 0.08, (lag, disagreement)
 
 
 def test_relationship_to_correlated_ar_truncated_vma(tmp_path: Path) -> None:

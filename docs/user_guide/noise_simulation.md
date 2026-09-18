@@ -826,6 +826,13 @@ history of the same order. The two are compared on a shared target in the test
 suite, where the Whittle generator's band-integrated PSD and CSD errors are
 smaller at equal order.
 
+The comparison against an independent exact multivariate circulant embedding
+(Helgason, Pipiras and Abry 2011) is not part of this branch: the paper-side
+reference does not exist yet and that arm is recorded as gated and unanchored.
+The generator is therefore verified against the target's own PSD/CSD definition
+and the analytic per-band comparisons, not against an independent exact
+multivariate reference.
+
 ## Resuming a stopped stream
 
 The colored and overlap-save FIR simulators can persist the small state a

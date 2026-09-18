@@ -155,8 +155,9 @@ def test_matrix_band_fit_residual_reports_integrated_and_per_bin_errors() -> Non
 def _delayed_pair_target(n_samples: int, delay: int, *, sampling_frequency: float = 128.0) -> np.ndarray:
     """Return the spectral matrix of channel 2 being channel 1 delayed by ``delay``.
 
-    With this module's convention the cross-spectrum is ``exp(-i w delay)`` in
-    ``[0, 1]``, so the cross-channel autocovariance is a spike at lag ``-delay``.
+    With this module's convention the cross-spectrum in ``[0, 1]`` is
+    ``exp(-i w delay)``, so the cross-channel autocovariance ``R[., 0, 1]`` is a
+    spike at lag ``delay``.
     """
     frequencies = np.fft.rfftfreq(n_samples, d=1.0 / sampling_frequency)
     angular = 2.0 * np.pi * frequencies / sampling_frequency
