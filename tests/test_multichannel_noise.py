@@ -31,6 +31,7 @@ import pytest
 from scipy.signal import csd as cross_spectral_density
 from scipy.signal import welch
 
+from gwmock_noise.config import NoiseComponentConfig, NoiseConfig
 from gwmock_noise.simulators import (
     CorrelatedARNoiseSimulator,
     MultichannelNoiseSimulator,
@@ -516,3 +517,196 @@ def test_complex_csd_phase_survives_generation() -> None:
     tolerance = 0.25 * abs(expected[delay, 0, 1])
     assert estimate[0, 1] == pytest.approx(expected[delay, 0, 1], abs=tolerance)
     assert estimate[1, 0] == pytest.approx(expected[delay, 1, 0], abs=tolerance)
+
+
+def _small_pair_target(n_frequencies: int = 33) -> tuple[np.ndarray, np.ndarray]:
+    """Return a minimal positive-definite two-channel target and its grid."""
+    frequencies = np.fft.rfftfreq(2 * (n_frequencies - 1), d=1.0 / SAMPLING_FREQUENCY)
+    target = np.zeros((n_frequencies, 2, 2), dtype=np.complex128)
+    target[:, 0, 0] = 1.0e-3
+    target[:, 1, 1] = 1.5e-3
+    target[:, 0, 1] = 4.0e-4
+    target[:, 1, 0] = 4.0e-4
+    return target, frequencies
+
+
+def _build_small_simulator(**overrides: object) -> MultichannelNoiseSimulator:
+    """Construct a small in-memory simulator for the behavioural path tests."""
+    target, frequencies = _small_pair_target()
+    settings: dict[str, object] = {
+        "target_matrices": target,
+        "target_frequencies": frequencies,
+        "detectors": ["E1", "E2"],
+        "sampling_frequency": SAMPLING_FREQUENCY,
+        "order": 8,
+        "low_frequency_cutoff": 2.0,
+        "high_frequency_cutoff": 40.0,
+    }
+    settings.update(overrides)
+    return MultichannelNoiseSimulator(**settings)
+
+
+def test_target_frequencies_default_to_the_matching_grid() -> None:
+    """An in-memory target without a frequency grid uses the rfft grid of its length."""
+    target, _ = _small_pair_target()
+    simulator = MultichannelNoiseSimulator(
+        target_matrices=target,
+        detectors=["E1", "E2"],
+        sampling_frequency=SAMPLING_FREQUENCY,
+        order=8,
+        low_frequency_cutoff=2.0,
+        high_frequency_cutoff=40.0,
+    )
+    assert simulator.design_frequencies.size >= target.shape[0]
+
+
+def test_target_channel_count_must_match_detectors() -> None:
+    """A target with more channels than detectors is rejected."""
+    target, frequencies = _small_pair_target()
+    with pytest.raises(ValueError, match="channel count"):
+        MultichannelNoiseSimulator(
+            target_matrices=target,
+            target_frequencies=frequencies,
+            detectors=["E1", "E2", "E3"],
+            sampling_frequency=SAMPLING_FREQUENCY,
+            order=8,
+            low_frequency_cutoff=2.0,
+        )
+
+
+def test_target_frequencies_must_match_the_target_length() -> None:
+    """A frequency grid of the wrong length is rejected."""
+    target, frequencies = _small_pair_target()
+    with pytest.raises(ValueError, match="agree in length"):
+        MultichannelNoiseSimulator(
+            target_matrices=target,
+            target_frequencies=frequencies[:-1],
+            detectors=["E1", "E2"],
+            sampling_frequency=SAMPLING_FREQUENCY,
+            order=8,
+            low_frequency_cutoff=2.0,
+        )
+
+
+def test_target_with_one_frequency_bin_is_rejected() -> None:
+    """A one-bin target has no design grid to fit and is refused."""
+    target = np.zeros((1, 2, 2), dtype=np.complex128)
+    target[0, 0, 0] = 1.0e-3
+    target[0, 1, 1] = 1.5e-3
+    with pytest.raises(ValueError, match="at least two frequency samples"):
+        MultichannelNoiseSimulator(
+            target_matrices=target,
+            target_frequencies=np.array([0.0]),
+            detectors=["E1", "E2"],
+            sampling_frequency=SAMPLING_FREQUENCY,
+            order=8,
+            low_frequency_cutoff=2.0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"duration": 0.0}, "duration must be greater than zero"),
+        ({"sampling_frequency": 0.0}, "sampling_frequency must be greater than zero"),
+        ({"order": 0}, "order must be greater than zero"),
+        ({"block_size": 0}, "block_size must be greater than zero"),
+        ({"regularization_epsilon": -1.0}, "regularization_epsilon must be non-negative"),
+        ({"low_frequency_cutoff": -1.0}, "low_frequency_cutoff must be non-negative"),
+        ({"low_frequency_cutoff": 10.0, "high_frequency_cutoff": 5.0}, "high_frequency_cutoff must be greater"),
+        ({"high_frequency_cutoff": SAMPLING_FREQUENCY}, "must not exceed the Nyquist"),
+    ],
+)
+def test_constructor_validates_runtime_settings(overrides: dict[str, object], message: str) -> None:
+    """Each invalid runtime setting is refused by name."""
+    with pytest.raises(ValueError, match=message):
+        _build_small_simulator(**overrides)
+
+
+def test_from_component_builds_from_psd_and_csd_options(tmp_path: Path) -> None:
+    """A config-driven component constructs a working simulator from file options."""
+    psd_paths, csd_paths = _write_et_pair(tmp_path)
+    component = NoiseComponentConfig(
+        simulator="multichannel",
+        options={
+            "psd_files": {detector: str(path) for detector, path in psd_paths.items()},
+            "csd_files": {"E1-E2": str(csd_paths[("E1", "E2")])},
+            "order": 8,
+            "low_frequency_cutoff": BAND_LOW,
+            "high_frequency_cutoff": BAND_HIGH,
+        },
+    )
+    config = NoiseConfig(
+        detectors=["E1", "E2"],
+        duration=1.0,
+        sampling_frequency=SAMPLING_FREQUENCY,
+        seed=3,
+        components=[component],
+    )
+    simulator = MultichannelNoiseSimulator.from_component(component, config)
+    assert isinstance(simulator, MultichannelNoiseSimulator)
+    assert simulator.generate(0.5, SAMPLING_FREQUENCY, ["E1", "E2"])["E1"].shape == (128,)
+
+
+@pytest.mark.parametrize(
+    ("csd_files", "message"),
+    [
+        ({("E1", "E1"): "self.txt"}, "two distinct detectors"),
+        ({("E1", "E2"): "a.txt", ("E2", "E1"): "b.txt"}, "Duplicate CSD file mapping"),
+        ({"E1-E9": "unknown.txt"}, "reference configured detectors"),
+    ],
+)
+def test_csd_file_maps_are_validated(csd_files: dict, message: str) -> None:
+    """Self-pairs, duplicate normalized pairs and unknown detectors are refused."""
+    with pytest.raises(ValueError, match=message):
+        _build_small_simulator(csd_files=csd_files)
+
+
+def test_reset_clears_the_streaming_state() -> None:
+    """reset() clears the recursion history, pending output and generator."""
+    simulator = _build_small_simulator(block_size=1 << 12)
+    simulator.generate(0.5, SAMPLING_FREQUENCY, ["E1", "E2"], seed=1)
+    simulator.reset()
+    assert simulator.state_nbytes > 0
+
+
+def test_first_order_simulation_covers_the_single_lag_history() -> None:
+    """An order-one fit exercises the history shift's single-lag path."""
+    simulator = _build_small_simulator(order=1)
+    realization = simulator.generate(0.5, SAMPLING_FREQUENCY, ["E1", "E2"], seed=4)
+    assert realization["E1"].shape == (128,)
+
+
+def test_reconfiguration_streaming_and_sub_sample_paths() -> None:
+    """A changed sampling frequency refits, a sub-sample span is refused, and the stream yields."""
+    simulator = _build_small_simulator()
+    realization = simulator.generate(0.5, SAMPLING_FREQUENCY / 2.0, ["E1", "E2"], seed=1)
+    assert realization["E1"].shape == (64,)
+    with pytest.raises(ValueError, match="at least one sample"):
+        simulator.generate(0.001, SAMPLING_FREQUENCY / 2.0, ["E1", "E2"])
+    stream = simulator.generate_stream(0.25, SAMPLING_FREQUENCY / 2.0, ["E1", "E2"], seed=2)
+    assert next(stream)["E1"].shape == (32,)
+
+
+def test_import_state_accepts_an_unstarted_snapshot_and_checks_the_rate() -> None:
+    """A never-started snapshot imports, and a mismatched sampling frequency is refused."""
+    exporter = _build_small_simulator()
+    consumer = _build_small_simulator()
+    consumer.import_state(exporter.export_state())
+
+    exporter.generate(0.5, SAMPLING_FREQUENCY, ["E1", "E2"], seed=1)
+    snapshot = exporter.export_state()
+    with pytest.raises(ValueError, match="sampling frequency"):
+        _build_small_simulator(sampling_frequency=SAMPLING_FREQUENCY / 2.0).import_state(snapshot)
+
+
+def test_spectral_accessors_return_the_design_grid_and_model() -> None:
+    """The matrix accessors expose the design grid, target and fitted model."""
+    simulator = _build_small_simulator()
+    assert simulator.model_spectral_matrices.shape == simulator.target_spectral_matrices.shape
+    target_frequencies, target = simulator.target_spectral_matrix_curve
+    model_frequencies, model = simulator.model_spectral_matrix_curve
+    assert target.shape == model.shape
+    np.testing.assert_array_equal(target_frequencies, model_frequencies)
+    assert simulator.ar_coefficients.shape[0] == 8
+    assert simulator.innovation_covariance.shape == (2, 2)

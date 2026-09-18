@@ -15,6 +15,7 @@ import pytest
 
 from gwmock_noise.simulators._fit import FitError, levinson_durbin
 from gwmock_noise.simulators.matrix_factorization import (
+    _require_positive_definite,
     matrix_autocovariance,
     matrix_band_fit_residual,
     whittle_levinson_factorization,
@@ -226,3 +227,32 @@ def test_matrix_autocovariance_requires_a_matching_length() -> None:
     target = _delayed_pair_target(64, 3)
     with pytest.raises(ValueError, match="n_samples"):
         matrix_autocovariance(target, 32)
+
+
+def test_require_positive_definite_rejects_non_finite_input() -> None:
+    """A covariance with a non-finite entry is reported as a fit failure."""
+    with pytest.raises(FitError, match="not finite"):
+        _require_positive_definite(np.full((1, 2, 2), np.nan), "test covariance")
+
+
+def test_matrix_autocovariance_validates_the_one_sided_shape() -> None:
+    """A non-square stack and a one-bin grid are refused."""
+    with pytest.raises(ValueError, match="shape"):
+        matrix_autocovariance(np.zeros((5, 2, 3)), 8)
+    with pytest.raises(ValueError, match="at least two frequency bins"):
+        matrix_autocovariance(np.zeros((1, 2, 2)), 0)
+
+
+def test_matrix_autocovariance_rejects_a_non_finite_target() -> None:
+    """A target with a non-finite entry is reported as a fit failure."""
+    with pytest.raises(FitError, match="finite"):
+        matrix_autocovariance(np.full((5, 2, 2), np.nan), 8)
+
+
+def test_matrix_band_fit_residual_skips_a_zero_target_band() -> None:
+    """A band whose target integrates to zero is skipped rather than divided by."""
+    frequencies = np.linspace(1.0, 9.0, 9)
+    target = np.zeros((9, 2, 2), dtype=np.complex128)
+    residual = matrix_band_fit_residual(frequencies, target, target, low_frequency=1.0, high_frequency=9.0, n_bands=2)
+    assert residual["band_count"] == 0
+    assert residual["worst_relative_error"] == 0.0
