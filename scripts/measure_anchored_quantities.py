@@ -27,6 +27,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import math
 from itertools import pairwise
 from typing import NamedTuple
 
@@ -92,6 +93,12 @@ PEAK_SEARCH_SAMPLES = 3
 
 #: Lower edge of the fitted band for the Einstein Telescope presets, in hertz.
 ET_LOW_FREQUENCY = 5.0
+
+#: The mains harmonic, an externally named feature the threshold gives up.
+MAINS_FREQUENCY_HZ = 60.0
+
+#: The presets whose tabulated curve carries that harmonic.
+MAINS_PRESETS = ("aLIGO_O4_high_projected_psd", "aLIGO_O4_low_projected_psd")
 
 #: The two ET-D low-frequency ripple features whose score moves with the band.
 ET_RIPPLE_HZ = (15.0, 21.2)
@@ -370,6 +377,47 @@ def selected_candidates(case: DetectionCase) -> list[float]:
     return _detect_line_frequencies(case.frequencies, case.values, max_lines=DEFAULT_MAX_LINES, prominence=1.0)
 
 
+class Candidate(NamedTuple):
+    """One scored candidate, with the preset and frequency it came from.
+
+    Attributes:
+        ratio: Its peak-to-median score.
+        psd_file: The preset it belongs to.
+        frequency: Its frequency in hertz.
+    """
+
+    ratio: float
+    psd_file: str
+    frequency: float
+
+
+def prominence_gap_members(population: list[DetectionCase] | None = None) -> tuple[Candidate, Candidate]:
+    """Return the two candidates that bound the prominence gap, with their identities.
+
+    Args:
+        population: The detection population; measured afresh when omitted.
+
+    Returns:
+        The selected candidate that is not a tabulated line and scores highest,
+        and the selected tabulated line that scores lowest while still standing
+        above it. Any threshold between the two keeps every tabulated line a
+        false-candidate-free threshold can keep, and places no others.
+    """
+    population = population if population is not None else detection_population()
+    strongest_false = Candidate(0.0, "", float("nan"))
+    true_candidates: list[Candidate] = []
+    for case in population:
+        for frequency in selected_candidates(case):
+            scored = Candidate(case.peak_to_median(frequency), case.psd_file, frequency)
+            if case.is_tabulated(frequency):
+                true_candidates.append(scored)
+            elif scored.ratio > strongest_false.ratio:
+                strongest_false = scored
+    above = [scored for scored in true_candidates if scored.ratio > strongest_false.ratio]
+    weakest_true = min(above, default=Candidate(float("nan"), "", float("nan")), key=lambda scored: scored.ratio)
+    return strongest_false, weakest_true
+
+
 def prominence_gap(population: list[DetectionCase] | None = None) -> tuple[float, float]:
     """Return the gap the prominence threshold has to sit inside.
 
@@ -377,23 +425,11 @@ def prominence_gap(population: list[DetectionCase] | None = None) -> tuple[float
         population: The detection population; measured afresh when omitted.
 
     Returns:
-        The largest peak-to-median ratio of a selected candidate that is not a
-        tabulated line, and the smallest ratio of a selected tabulated line
-        standing above it. Any threshold in between keeps every tabulated line
-        that a false-candidate-free threshold can keep, and places no others.
+        The two scores from :func:`prominence_gap_members`, without their
+        identities.
     """
-    population = population if population is not None else detection_population()
-    strongest_false = 0.0
-    true_ratios: list[float] = []
-    for case in population:
-        for candidate in selected_candidates(case):
-            ratio = case.peak_to_median(candidate)
-            if case.is_tabulated(candidate):
-                true_ratios.append(ratio)
-            else:
-                strongest_false = max(strongest_false, ratio)
-    above = [ratio for ratio in true_ratios if ratio > strongest_false]
-    return strongest_false, min(above) if above else float("nan")
+    strongest_false, weakest_true = prominence_gap_members(population)
+    return strongest_false.ratio, weakest_true.ratio
 
 
 def strongest_false_local_maximum(population: list[DetectionCase] | None = None) -> tuple[float, str, float]:
@@ -440,6 +476,20 @@ def pooled_line_widths(population: list[DetectionCase] | None = None) -> np.ndar
     return np.array([width for width in widths if np.isfinite(width)])
 
 
+def ceil_to_two_decimals(value: float) -> float:
+    """Return a tolerance rounded up to two decimal places, as the rule states.
+
+    Args:
+        value: The raw value the tolerance rule produced.
+
+    Returns:
+        The smallest two-decimal value at or above it. The intermediate is
+        rounded before the ceiling so that a value already at two decimals is
+        not pushed up a step by floating-point representation.
+    """
+    return math.ceil(round(value * 100.0, 9)) / 100.0
+
+
 def worst_band(simulator: ARNoiseSimulator | ARMANoiseSimulator, low_frequency: float) -> float:
     """Return a fitted simulator's worst per-band relative error.
 
@@ -476,13 +526,20 @@ def report_tolerances() -> None:
                 on_grid = np.interp(estimate_frequencies, table_frequencies, table_values, left=0.0, right=0.0)
                 worst.append(max(band_errors(estimate_frequencies, on_grid, estimate, low_frequency)))
             sampled = np.array(worst)
+            fitted_rule = TOLERANCE_HEADROOM * max(fit)
+            generated_rule = TOLERANCE_HEADROOM * sampled.mean() + TOLERANCE_SIGMA * sampled.std(ddof=1)
             print(f"  {model:4s} {psd_file:30s} cutoff {low_frequency:4.1f} Hz")
             print("    fit curve : per band " + " ".join(f"{error:.4f}" for error in fit))
-            print(f"    fit curve : worst {max(fit):.4f} -> tolerance {TOLERANCE_HEADROOM * max(fit):.4f}")
+            print(
+                f"    fit curve : worst {max(fit):.4f} -> rule {fitted_rule:.4f} -> "
+                f"tolerance {ceil_to_two_decimals(fitted_rule):.2f} "
+                f"({ceil_to_two_decimals(fitted_rule) / max(fit):.2f}x the observed worst band)"
+            )
             print(
                 f"    generated : mean {sampled.mean():.4f} sd {sampled.std(ddof=1):.4f} "
-                f"max {sampled.max():.4f} over {N_SEED_GROUPS} seed groups -> tolerance "
-                f"{TOLERANCE_HEADROOM * sampled.mean() + TOLERANCE_SIGMA * sampled.std(ddof=1):.4f}"
+                f"max {sampled.max():.4f} over {N_SEED_GROUPS} seed groups -> rule "
+                f"{generated_rule:.4f} -> tolerance {ceil_to_two_decimals(generated_rule):.2f} "
+                f"({ceil_to_two_decimals(generated_rule) / sampled.max():.2f}x the observed maximum)"
             )
 
     print("  does the fitted-curve bound discriminate? AR at orders below the tested 256:")
@@ -589,18 +646,7 @@ def report_prominence() -> None:
             f"{precision:10.3f} {recall:8.3f} {harmonic:7.3f}"
         )
 
-    strongest_false, weakest_true = prominence_gap(population)
-    print("  the gap the threshold sits in, over the same selected candidates:")
-    print(f"    strongest selected candidate that is NOT a tabulated line : {strongest_false:.4f}")
-    print(f"    weakest selected tabulated line standing above it         : {weakest_true:.4f}")
-    print(f"    DEFAULT_LINE_PROMINENCE                                   : {DEFAULT_LINE_PROMINENCE:.4f}")
-    print(f"    inside the gap: {strongest_false < DEFAULT_LINE_PROMINENCE <= weakest_true}")
-
-    unselected, preset, frequency = strongest_false_local_maximum(population)
-    print("  for contrast, a DIFFERENT statistic -- every local maximum, not only the selected ones:")
-    print(f"    strongest non-line local maximum: {unselected:.2f} at {frequency:.4f} Hz in {preset}")
-    print(f"    it is not among that preset's top {DEFAULT_MAX_LINES}, so no threshold change can place it,")
-    print("    and the default does not clear it. The selected-candidate gap above is the anchor.")
+    report_gap(population)
 
     print("  what each preset places, and what it misses, at the anchored threshold:")
     for case in population:
@@ -623,6 +669,43 @@ def report_prominence() -> None:
 
     report_detection_cost()
     report_band_dependence()
+
+
+def report_gap(population: list[DetectionCase]) -> None:
+    """Print the gap, both its endpoints' identities, and the contrasting statistic.
+
+    Args:
+        population: The detection population.
+    """
+    strongest_false, weakest_true = prominence_gap_members(population)
+    print("  the gap the threshold sits in, over the same selected candidates:")
+    print(
+        f"    strongest selected candidate that is NOT a tabulated line : {strongest_false.ratio:.4f}"
+        f"  ({strongest_false.psd_file} at {strongest_false.frequency:.4f} Hz)"
+    )
+    print(
+        f"    weakest selected tabulated line standing above it         : {weakest_true.ratio:.4f}"
+        f"  ({weakest_true.psd_file} at {weakest_true.frequency:.4f} Hz)"
+    )
+    print(f"    DEFAULT_LINE_PROMINENCE                                   : {DEFAULT_LINE_PROMINENCE:.4f}")
+    print(f"    inside the gap: {strongest_false.ratio < DEFAULT_LINE_PROMINENCE <= weakest_true.ratio}")
+
+    unselected, preset, frequency = strongest_false_local_maximum(population)
+    print("  for contrast, a DIFFERENT statistic -- every local maximum, not only the selected ones:")
+    print(f"    strongest non-line local maximum: {unselected:.2f} at {frequency:.4f} Hz in {preset}")
+    owner = next(case for case in population if case.psd_file == preset)
+    scores = sorted(owner.peak_to_median(candidate) for candidate in selected_candidates(owner))
+    print(f"    that preset's {len(scores)} selected candidates score {scores[0]:.4g} to {scores[-1]:.4g},")
+    print("    so it is nowhere near them: no threshold change can place it, and the default")
+    print("    does not clear it either. The selected-candidate gap above is the anchor.")
+
+    print(f"  the {MAINS_FREQUENCY_HZ:.0f} Hz mains feature, which the anchored threshold gives up:")
+    for psd_file in MAINS_PRESETS:
+        case = next(entry for entry in population if entry.psd_file == psd_file)
+        index = int(np.argmin(np.abs(case.frequencies - MAINS_FREQUENCY_HZ)))
+        frequency = float(case.frequencies[index])
+        listed = "in the reference line list" if case.is_tabulated(frequency) else "NOT in the reference line list"
+        print(f"    {psd_file:30s} {frequency:8.4f} Hz scores {case.peak_to_median(frequency):6.4f}  ({listed})")
 
 
 def report_detection_cost() -> None:

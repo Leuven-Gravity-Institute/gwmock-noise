@@ -11,9 +11,11 @@ Everything here is reproduced by
 uv run python scripts/measure_anchored_quantities.py
 ```
 
-which takes about fifteen seconds and prints **every** number quoted below, each
-labelled with the population it was scored over. Re-run it after touching the
-fit code, the bundled presets, or the band definition, and update this page with
+which takes about fifteen seconds and prints **every** number quoted below —
+each value, the identity of the preset and frequency it came from where that
+matters, and the population it was scored over. Nothing on this page is derived
+by hand from a run that is not in the script. Re-run it after touching the fit
+code, the bundled presets, or the band definition, and update this page with
 whatever it prints. Where a number also has to keep holding — the two line
 defaults, and the claim that the tightened fit bounds can actually fail — a test
 in `tests/test_anchored_quantities.py` or `tests/test_ar_levinson_fit.py`
@@ -216,7 +218,7 @@ strongest non-line local maximum anywhere in the eleven presets is the 24.0096
 Hz feature of `aLIGO_O3_actual_H1_psd` at **46.30**, which 15.0 does not clear.
 That is not a contradiction, and it does not weaken the anchor: that feature is
 nowhere near its own preset's top eight -- the O3 Hanford curve's eight selected
-candidates score between 1.8e4 and 1.7e6 -- so no threshold can make the
+candidates score between 1.807e4 and 1.678e6 -- so no threshold can make the
 detector place it. It would matter only if `max_lines` were unbounded. The
 harness prints both numbers, each labelled with the population it was scored
 over, and `test_the_unselected_statistic_is_recorded_as_a_different_one` pins
@@ -242,12 +244,17 @@ is correctly kept, and the fit is still two orders of magnitude worse for having
 a pole placed on it. Detection accuracy is not what limits pole placement on
 these curves; the pole's own contrast is.
 
-**What it costs.** The 60.01 Hz mains harmonic in the two O4 projections scores
-6.4 and 4.3 and now falls below the threshold, so it is left to the smooth fit
-instead of being placed. That is the intended trade: fabricating a resonance
-where the target has none is worse for a mock-data generator than
-under-resolving one it does have, and a caller who wants the mains line can ask
-for it by name with `line_frequencies=[60.0]`.
+**What it costs.** The 60 Hz mains harmonic both O4 projections tabulate now
+falls below the threshold on each of them, so it is left to the smooth fit
+instead of being placed. It scores **6.40** on `aLIGO_O4_high_projected_psd`,
+where the reference line list does carry it, and **4.28** on
+`aLIGO_O4_low_projected_psd`, where it is weak enough that the reference
+criterion does not label it a line at all -- so on that curve it is not a
+tabulated line being given up, only a feature that would not have been placed
+either way. That is the intended trade: fabricating a resonance where the target
+has none is worse for a mock-data generator than under-resolving one it does
+have, and a caller who wants the mains line can ask for it by name with
+`line_frequencies=[60.0]`.
 
 **What is still not anchored.** The statistic is a ratio to the median of the
 _whole fitted band_, which is not a local prominence. On a target whose baseline
