@@ -26,6 +26,14 @@ ALIGO_PSD = "aLIGO_O4_high_projected_psd"
 ET_PSD = "ET_D_psd"
 SAMPLING_FREQUENCY = 4096.0
 
+#: Anchored per-band tolerances. Each is ``1.25 * mean + 5 * sd`` of the
+#: measured worst-band population, rounded up to two decimal places; see
+#: ``docs/dev/anchored_quantities.md``.
+ALIGO_FITTED_TOLERANCE = 0.09
+ET_FITTED_TOLERANCE = 0.54
+ALIGO_GENERATED_TOLERANCE = 0.18
+ET_GENERATED_TOLERANCE = 0.76
+
 
 def _synthetic_line_target(
     *,
@@ -68,7 +76,7 @@ def _band_errors(  # noqa: PLR0913
 
 @pytest.mark.parametrize(
     ("psd_file", "low_frequency", "tolerance"),
-    [(ALIGO_PSD, 20.0, 0.09), (ET_PSD, 5.0, 0.54)],
+    [(ALIGO_PSD, 20.0, ALIGO_FITTED_TOLERANCE), (ET_PSD, 5.0, ET_FITTED_TOLERANCE)],
 )
 def test_fitted_psd_matches_target_per_band(psd_file: str, low_frequency: float, tolerance: float) -> None:
     """The tabulated aLIGO and ET-D curves (lines included) are reproduced per band.
@@ -94,7 +102,7 @@ def test_fitted_psd_matches_target_per_band(psd_file: str, low_frequency: float,
 
 @pytest.mark.parametrize(
     ("psd_file", "low_frequency", "tolerance"),
-    [(ALIGO_PSD, 20.0, 0.18), (ET_PSD, 5.0, 0.76)],
+    [(ALIGO_PSD, 20.0, ALIGO_GENERATED_TOLERANCE), (ET_PSD, 5.0, ET_GENERATED_TOLERANCE)],
 )
 def test_generated_psd_matches_target_per_band(psd_file: str, low_frequency: float, tolerance: float) -> None:
     """A long realization recovers the target band powers, not just the model curve.

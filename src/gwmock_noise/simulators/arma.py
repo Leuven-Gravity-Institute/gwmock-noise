@@ -72,12 +72,17 @@ DEFAULT_REGULARIZATION = 1e-10
 DEFAULT_LINE_WIDTH_HZ = 0.46
 DEFAULT_MAX_LINES = 8
 #: Minimum peak-to-median ratio for :func:`_detect_line_frequencies`. Measured
-#: against the lines the bundled presets tabulate: over those eleven curves the
-#: largest peak-to-median ratio of a candidate that is *not* a tabulated line
-#: is 12.18, and the weakest tabulated line standing above that floor scores
-#: 18.63, so the two populations separate and this is the round value inside
-#: the gap. It gives precision 1.000 and recall 0.935 at
-#: :data:`DEFAULT_MAX_LINES`, against 0.750 and 0.968 at the earlier 4.0.
+#: against the lines the bundled presets tabulate, scored over the candidates
+#: that reach a preset's top :data:`DEFAULT_MAX_LINES` -- the only ones this
+#: simulator can place, and so the only population the threshold decides. Over
+#: those eleven curves the largest such candidate that is *not* a tabulated
+#: line scores 12.18, and the weakest tabulated one standing above that floor
+#: scores 18.63, so the two populations separate and this is the round value
+#: inside the gap. It gives precision 1.000 and recall 0.935, against 0.750 and
+#: 0.968 at the earlier 4.0. Scored over *every* local maximum instead the
+#: floor is 46.30, which no threshold has to clear because that feature never
+#: reaches its preset's top :data:`DEFAULT_MAX_LINES`;
+#: ``scripts/measure_anchored_quantities.py prominence`` prints both.
 DEFAULT_LINE_PROMINENCE = 15.0
 LINE_RADIUS_LIMIT = 0.999999
 MIN_INTERPOLATION_POINTS = 2

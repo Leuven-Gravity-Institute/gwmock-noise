@@ -2,10 +2,14 @@
 
 ``DEFAULT_LINE_WIDTH_HZ`` and ``DEFAULT_LINE_PROMINENCE`` are measured from the
 lines the bundled PSD presets tabulate rather than chosen. The tests here
-re-run those measurements with the shipped harness and check the constants
-still follow from them, so adding, replacing or re-sampling a bundled preset
-cannot silently leave either default behind. ``docs/dev/anchored_quantities.md``
-records what the numbers were when they were set.
+re-run those measurements through the same functions the shipped harness
+prints from -- :func:`pooled_line_widths` and :func:`prominence_gap` -- and
+check the constants still follow from them. Sharing the functions is the point:
+a test, the harness printout and the reference page then cannot disagree about
+which statistic a number came from. Adding, replacing or re-sampling a bundled
+preset cannot silently leave either default behind.
+``docs/dev/anchored_quantities.md`` records what the numbers were when they
+were set.
 """
 
 from __future__ import annotations
@@ -13,48 +17,22 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from measure_anchored_quantities import (
-    PRESETS,
-    design_grid,
-    full_width_half_maximum,
-    tabulated_lines,
+    detection_population,
+    pooled_line_widths,
+    prominence_gap,
+    selected_candidates,
+    strongest_false_local_maximum,
 )
 
 from gwmock_noise.simulators import ARMANoiseSimulator
-from gwmock_noise.simulators._spectral import load_spectral_series
-from gwmock_noise.simulators.arma import (
-    DEFAULT_LINE_PROMINENCE,
-    DEFAULT_LINE_WIDTH_HZ,
-    DEFAULT_MAX_LINES,
-    _detect_line_frequencies,
-)
+from gwmock_noise.simulators.arma import DEFAULT_LINE_PROMINENCE, DEFAULT_LINE_WIDTH_HZ
 
 SAMPLING_FREQUENCY = 4096.0
 
 
-def _population() -> list[tuple[np.ndarray, np.ndarray, list[float], float]]:
-    """Return each preset's in-band target, its tabulated lines and a match window.
-
-    Returns:
-        One entry per bundled preset: the design-grid frequencies and values the
-        detector sees, the tabulated line frequencies, and how far a detection
-        may sit from a tabulated line and still be the same line -- two steps of
-        the design grid plus one of the table the line was read from.
-    """
-    population = []
-    for psd_file, low_frequency in PRESETS.items():
-        frequencies, values = design_grid(psd_file, low_frequency)
-        table_frequencies, _ = load_spectral_series(psd_file, kind="PSD")
-        window = 2.0 * float(frequencies[1] - frequencies[0]) + float(np.median(np.diff(table_frequencies)))
-        population.append((frequencies, values, tabulated_lines(psd_file, low_frequency), window))
-    return population
-
-
 def test_default_line_width_is_the_measured_median() -> None:
     """The default width is the median width of the lines the presets tabulate."""
-    widths = []
-    for frequencies, values, lines, _ in _population():
-        widths.extend(full_width_half_maximum(frequencies, values, line) for line in lines)
-    measured = np.array([width for width in widths if np.isfinite(width)])
+    measured = pooled_line_widths()
     assert measured.size > 50, "the bundled presets should supply a line population to measure"
     assert pytest.approx(float(np.median(measured)), abs=0.01) == DEFAULT_LINE_WIDTH_HZ
 
@@ -62,25 +40,35 @@ def test_default_line_width_is_the_measured_median() -> None:
 def test_default_prominence_lies_in_the_gap_between_the_measured_populations() -> None:
     """No non-line candidate reaches the default, and a tabulated line still does.
 
-    Scoring every candidate the detector would consider splits them in two: the
-    strongest that is not a tabulated line, and the weakest tabulated line that
-    stands above it. The default has to sit between the two, which is the
-    property that makes it an anchored number rather than a chosen one.
+    The population is the candidates that reach a preset's top ``max_lines``,
+    because those are the only ones the detector can place. Scoring them splits
+    them in two: the strongest that is not a tabulated line, and the weakest
+    tabulated line standing above it. The default has to sit between the two,
+    which is the property that makes it an anchored number rather than a chosen
+    one.
     """
-    strongest_false = 0.0
-    true_ratios = []
-    for frequencies, values, lines, window in _population():
-        median = float(np.median(values))
-        for candidate in _detect_line_frequencies(frequencies, values, max_lines=DEFAULT_MAX_LINES, prominence=1.0):
-            ratio = float(values[int(np.argmin(np.abs(frequencies - candidate)))] / median)
-            if any(abs(candidate - line) <= window for line in lines):
-                true_ratios.append(ratio)
-            else:
-                strongest_false = max(strongest_false, ratio)
+    strongest_false, weakest_true = prominence_gap()
+    assert np.isfinite(weakest_true), "a threshold clear of every false candidate must still keep a tabulated line"
+    assert strongest_false < DEFAULT_LINE_PROMINENCE <= weakest_true
 
-    above_the_false_floor = [ratio for ratio in true_ratios if ratio > strongest_false]
-    assert above_the_false_floor, "a threshold clear of every false candidate must still keep a tabulated line"
-    assert strongest_false < DEFAULT_LINE_PROMINENCE <= min(above_the_false_floor)
+
+def test_the_unselected_statistic_is_recorded_as_a_different_one() -> None:
+    """The strongest non-line local maximum is not a candidate the detector places.
+
+    Scoring every local maximum rather than the selected ones gives a much
+    larger floor, which the default does not clear. That is not a contradiction
+    -- the feature never reaches its preset's top ``max_lines``, so no threshold
+    can place it -- but the two statistics must not be confused for each other,
+    which is exactly the mistake this test exists to catch.
+    """
+    population = detection_population()
+    strongest_false, _ = prominence_gap(population)
+    unselected, preset, frequency = strongest_false_local_maximum(population)
+
+    assert unselected > strongest_false
+    assert unselected > DEFAULT_LINE_PROMINENCE
+    case = next(entry for entry in population if entry.psd_file == preset)
+    assert all(abs(candidate - frequency) > case.match_window for candidate in selected_candidates(case))
 
 
 def test_default_detection_places_only_the_tabulated_et_d_line() -> None:

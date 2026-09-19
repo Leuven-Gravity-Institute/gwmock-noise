@@ -11,9 +11,14 @@ Everything here is reproduced by
 uv run python scripts/measure_anchored_quantities.py
 ```
 
-which takes a few seconds and prints the tables quoted below. Re-run it after
-touching the fit code, the bundled presets, or the band definition, and update
-this page with whatever it prints.
+which takes about fifteen seconds and prints **every** number quoted below, each
+labelled with the population it was scored over. Re-run it after touching the
+fit code, the bundled presets, or the band definition, and update this page with
+whatever it prints. Where a number also has to keep holding — the two line
+defaults, and the claim that the tightened fit bounds can actually fail — a test
+in `tests/test_anchored_quantities.py` or `tests/test_ar_levinson_fit.py`
+asserts it through the same functions the harness prints from, so the page, the
+printout and the assertion cannot drift apart.
 
 ## Source data
 
@@ -98,6 +103,8 @@ Three consequences worth stating plainly.
   was far too loose for the Advanced LIGO cases -- an AR fit at order 224
   instead of 256 has a worst band of 0.1048 on O4-high, which the old 0.5 passed
   and the new 0.06 does not.
+  `test_fitted_tolerance_rejects_an_underfitted_model` pins exactly that, so the
+  bound cannot quietly be widened back to a value nothing can breach.
 - **The ARMA ET-D generated bound had to loosen, and that is the honest
   reading.** `1.25 × 0.5306 + 5 × 0.0175 = 0.751` is above the old 0.6: the
   population that test asserts on sits closer to its bound than five standard
@@ -181,16 +188,39 @@ the reference line list, over all eleven presets.
 | 50        | 26     | 0     | 5      | 1.000     | 0.839     | 0.912     |
 | 100       | 25     | 0     | 6      | 1.000     | 0.806     | 0.893     |
 
-The two populations separate cleanly. The strongest candidate that reaches the
-top eight and is _not_ a tabulated line scores 12.18 (the 15.02 Hz ripple of
-`ET_15_full_cryo_psd`); the weakest tabulated line that stands above that floor
-scores 18.63 (the 15.02 Hz line of `ET_10_full_cryo_psd`). Any threshold in
-between gives precision 1.000 at recall 0.935, and F1 is maximal there.
+**Which candidates are scored, and why it matters.** Every number in this
+section -- the table above and the gap below -- is scored over the candidates
+that reach a preset's top `max_lines`, because those are the only ones the
+detector can place. Ordering by value and ordering by peak-to-median ratio are
+the same ordering on one preset, since its band median is a constant, so raising
+the threshold can only drop members of that set and never admit a new one.
+`selected_candidates()` in the harness is that definition, and
+`prominence_gap()` is the statistic; the tests import both rather than
+recomputing them, so the page, the printout and the assertion cannot drift.
+
+The two populations separate cleanly. The strongest selected candidate that is
+_not_ a tabulated line scores **12.18** (the 15.02 Hz ripple of
+`ET_15_full_cryo_psd`); the weakest selected tabulated line standing above that
+floor scores **18.63** (the 15.02 Hz line of `ET_10_full_cryo_psd`). Any
+threshold in between gives precision 1.000 at recall 0.935, and F1 is maximal
+there.
 
 `DEFAULT_LINE_PROMINENCE` is therefore **15.0**, the round value inside that
 gap, where it was 4.0. `tests/test_anchored_quantities.py` asserts the gap
 property directly, so a new or re-sampled preset that closed it would fail
 rather than silently degrade the default.
+
+**A different statistic, and not the one that governs.** Scoring _every_ local
+maximum instead of only the selected ones gives a much larger floor: the
+strongest non-line local maximum anywhere in the eleven presets is the 24.0096
+Hz feature of `aLIGO_O3_actual_H1_psd` at **46.30**, which 15.0 does not clear.
+That is not a contradiction, and it does not weaken the anchor: that feature is
+nowhere near its own preset's top eight -- the O3 Hanford curve's eight selected
+candidates score between 1.8e4 and 1.7e6 -- so no threshold can make the
+detector place it. It would matter only if `max_lines` were unbounded. The
+harness prints both numbers, each labelled with the population it was scored
+over, and `test_the_unselected_statistic_is_recorded_as_a_different_one` pins
+the distinction so the two cannot be quoted for each other.
 
 **What raising it fixes.** At 4.0 the detector placed poles on the ripple of the
 steep low-frequency rise of five presets, and those poles wreck the fit. At the
