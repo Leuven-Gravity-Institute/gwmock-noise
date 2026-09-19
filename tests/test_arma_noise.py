@@ -26,6 +26,14 @@ ALIGO_PSD = "aLIGO_O4_high_projected_psd"
 ET_PSD = "ET_D_psd"
 SAMPLING_FREQUENCY = 4096.0
 
+#: Anchored per-band tolerances. Each is ``1.25 * mean + 5 * sd`` of the
+#: measured worst-band population, rounded up to two decimal places; see
+#: ``docs/dev/anchored_quantities.md``.
+ALIGO_FITTED_TOLERANCE = 0.09
+ET_FITTED_TOLERANCE = 0.54
+ALIGO_GENERATED_TOLERANCE = 0.18
+ET_GENERATED_TOLERANCE = 0.76
+
 
 def _synthetic_line_target(
     *,
@@ -67,11 +75,16 @@ def _band_errors(  # noqa: PLR0913
 
 
 @pytest.mark.parametrize(
-    ("psd_file", "low_frequency"),
-    [(ALIGO_PSD, 20.0), (ET_PSD, 5.0)],
+    ("psd_file", "low_frequency", "tolerance"),
+    [(ALIGO_PSD, 20.0, ALIGO_FITTED_TOLERANCE), (ET_PSD, 5.0, ET_FITTED_TOLERANCE)],
 )
-def test_fitted_psd_matches_target_per_band(psd_file: str, low_frequency: float) -> None:
-    """The tabulated aLIGO and ET-D curves (lines included) are reproduced per band."""
+def test_fitted_psd_matches_target_per_band(psd_file: str, low_frequency: float, tolerance: float) -> None:
+    """The tabulated aLIGO and ET-D curves (lines included) are reproduced per band.
+
+    The bound is measured, not chosen: the worst band of this deterministic fit
+    is 0.0645 on aLIGO O4-high and 0.4314 on ET-D, and the tolerance carries
+    25 % headroom over that. See ``docs/dev/anchored_quantities.md``.
+    """
     simulator = ARMANoiseSimulator(
         psd_file=psd_file,
         detectors=["H1"],
@@ -84,15 +97,23 @@ def test_fitted_psd_matches_target_per_band(psd_file: str, low_frequency: float)
     model = simulator.model_psd_curve
     errors = _band_errors(frequencies, target, model, low=low_frequency, high=2000.0)
     assert errors
-    assert max(errors) <= 0.6
+    assert max(errors) <= tolerance
 
 
 @pytest.mark.parametrize(
-    ("psd_file", "low_frequency"),
-    [(ALIGO_PSD, 20.0), (ET_PSD, 5.0)],
+    ("psd_file", "low_frequency", "tolerance"),
+    [(ALIGO_PSD, 20.0, ALIGO_GENERATED_TOLERANCE), (ET_PSD, 5.0, ET_GENERATED_TOLERANCE)],
 )
-def test_generated_psd_matches_target_per_band(psd_file: str, low_frequency: float) -> None:
-    """A long realization recovers the target band powers, not just the model curve."""
+def test_generated_psd_matches_target_per_band(psd_file: str, low_frequency: float, tolerance: float) -> None:
+    """A long realization recovers the target band powers, not just the model curve.
+
+    The bound is measured over twenty independent seed groups of this same
+    configuration: the worst band is 0.0409 +/- 0.0252 on aLIGO O4-high and
+    0.5306 +/- 0.0175 on ET-D, and the tolerance is 1.25 times the mean plus
+    five standard deviations. The earlier shared bound of 0.6 sat below the
+    five-sigma point of the ET-D population it was asserting on.
+    See ``docs/dev/anchored_quantities.md``.
+    """
     simulator = ARMANoiseSimulator(
         psd_file=psd_file,
         detectors=["H1"],
@@ -106,7 +127,7 @@ def test_generated_psd_matches_target_per_band(psd_file: str, low_frequency: flo
     target_frequencies, target_values = load_spectral_series(psd_file, kind="PSD")
     target_on_grid = np.interp(frequencies, target_frequencies, target_values, left=0.0, right=0.0)
     errors = _band_errors(frequencies, target_on_grid, estimate, low=low_frequency, high=2000.0)
-    assert max(errors) <= 0.6
+    assert max(errors) <= tolerance
 
 
 def test_metadata_records_orders_state_and_residual() -> None:
