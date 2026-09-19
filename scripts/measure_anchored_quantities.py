@@ -450,9 +450,14 @@ def strongest_false_local_maximum(population: list[DetectionCase] | None = None)
     worst, worst_preset, worst_frequency = 0.0, "", float("nan")
     for case in population:
         interior = (case.values[1:-1] >= case.values[:-2]) & (case.values[1:-1] > case.values[2:])
-        indices = np.flatnonzero(interior) + 1
+        # ``interior`` is indexed from the first interior sample, so each hit is
+        # one short of its index in the full array. Offsetting inside the loop
+        # rather than on the array keeps what is iterated over plainly an
+        # ndarray; the indices visited are the same either way.
+        interior_indices = np.flatnonzero(interior)
         median = float(np.median(case.values))
-        for index in indices:
+        for interior_index in interior_indices:
+            index = int(interior_index) + 1
             frequency = float(case.frequencies[index])
             ratio = float(case.values[index] / median)
             if ratio > worst and not case.is_tabulated(frequency):
