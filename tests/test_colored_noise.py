@@ -576,7 +576,9 @@ def test_psd_array_path_is_bit_identical_to_the_file_path(tmp_path: Path) -> Non
         "low_frequency_cutoff": 2.0,
     }
     from_file = ColoredNoiseSimulator(psd_file=psd_path, seed=7, **settings)
-    from_array = ColoredNoiseSimulator(psd_array=from_file._psd.copy(), seed=7, **settings)
+    from_array = ColoredNoiseSimulator(
+        psd_array=from_file._psd.copy(), delta_frequency=from_file._delta_frequency, seed=7, **settings
+    )
 
     file_output = from_file.generate(4.0, 256.0, ["H1"], seed=7)
     array_output = from_array.generate(4.0, 256.0, ["H1"], seed=7)
@@ -595,6 +597,7 @@ def test_psd_array_path_preserves_the_supplied_target() -> None:
 
     simulator = ColoredNoiseSimulator(
         psd_array=target,
+        frequencies=frequencies,
         detectors=["H1"],
         sampling_frequency=sampling_frequency,
         window_duration=window_duration,
@@ -614,6 +617,7 @@ def test_psd_array_path_zeroes_bins_outside_the_band() -> None:
 
     simulator = ColoredNoiseSimulator(
         psd_array=target,
+        frequencies=grid,
         detectors=["H1"],
         sampling_frequency=sampling_frequency,
         window_duration=window_duration,
@@ -631,6 +635,7 @@ def test_psd_array_path_rejects_wrong_length() -> None:
     with pytest.raises(ValueError, match="psd_array must have one value per frequency grid bin"):
         ColoredNoiseSimulator(
             psd_array=np.ones(16),
+            delta_frequency=0.25,
             detectors=["H1"],
             sampling_frequency=256.0,
             window_duration=4.0,
@@ -642,6 +647,7 @@ def test_psd_array_path_rejects_non_1d_input() -> None:
     with pytest.raises(ValueError, match="psd_array must be one-dimensional"):
         ColoredNoiseSimulator(
             psd_array=np.ones((4, 4)),
+            delta_frequency=0.25,
             detectors=["H1"],
             sampling_frequency=256.0,
             window_duration=4.0,
@@ -656,4 +662,132 @@ def test_psd_array_path_is_mutually_exclusive_with_other_sources(tmp_path: Path)
     with pytest.raises(ValueError, match="mutually exclusive"):
         ColoredNoiseSimulator(
             psd_schedule=[(0.0, psd_path)], psd_array=np.ones(4), detectors=["H1"], sampling_frequency=256.0
+        )
+
+
+def test_psd_array_requires_a_frequency_axis() -> None:
+    """An array target must declare its frequency axis."""
+    with pytest.raises(ValueError, match="requires its frequency axis"):
+        ColoredNoiseSimulator(
+            psd_array=np.ones(513),
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            window_duration=4.0,
+        )
+
+
+def test_psd_array_accepts_a_matching_frequencies_axis() -> None:
+    """A frequency axis on the simulator's own grid is accepted."""
+    sampling_frequency = 256.0
+    window_duration = 4.0
+    window_size = round(window_duration * sampling_frequency)
+    grid = np.fft.rfftfreq(window_size, d=1.0 / sampling_frequency)
+
+    simulator = ColoredNoiseSimulator(
+        psd_array=np.full(grid.size, 1.0e-3),
+        frequencies=grid,
+        detectors=["H1"],
+        sampling_frequency=sampling_frequency,
+        window_duration=window_duration,
+        low_frequency_cutoff=0.0,
+    )
+
+    assert simulator._psd.shape == grid.shape
+
+
+def test_psd_array_rejects_a_mismatched_delta_frequency() -> None:
+    """A scalar spacing that disagrees with the grid is an error."""
+    with pytest.raises(ValueError, match=r"delta_frequency 0\.5 .* does not match .* 0\.25"):
+        ColoredNoiseSimulator(
+            psd_array=np.ones(513),
+            delta_frequency=0.5,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            window_duration=4.0,
+        )
+
+
+def test_psd_array_rejects_a_mismatched_frequencies_axis() -> None:
+    """An equal-length array built at a different spacing is an error.
+
+    Both grids have 513 bins: the array is built at 512 Hz over 2 s
+    (``df = 0.5``) while the simulator runs at 256 Hz over 4 s (``df = 0.25``).
+    Length alone cannot separate them; the declared axis must.
+    """
+    supplied = np.fft.rfftfreq(round(2.0 * 512.0), d=1.0 / 512.0)
+
+    with pytest.raises(ValueError, match=r"supplied spacing 0\.5 .* expected 0\.25"):
+        ColoredNoiseSimulator(
+            psd_array=np.ones(supplied.size),
+            frequencies=supplied,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            window_duration=4.0,
+        )
+
+
+def test_psd_array_rejects_negative_frequencies() -> None:
+    """A negative frequency sample is rejected."""
+    grid = np.fft.rfftfreq(1024, d=1.0 / 256.0).copy()
+    grid[1] = -grid[1]
+
+    with pytest.raises(ValueError, match="frequencies must be non-negative"):
+        ColoredNoiseSimulator(
+            psd_array=np.ones(grid.size),
+            frequencies=grid,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            window_duration=4.0,
+        )
+
+
+def test_psd_array_rejects_non_increasing_frequencies() -> None:
+    """A frequency axis that is not strictly increasing is rejected."""
+    grid = np.fft.rfftfreq(1024, d=1.0 / 256.0).copy()
+    grid[2] = grid[1]
+
+    with pytest.raises(ValueError, match="frequencies must be strictly increasing"):
+        ColoredNoiseSimulator(
+            psd_array=np.ones(grid.size),
+            frequencies=grid,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            window_duration=4.0,
+        )
+
+
+def test_psd_array_rejects_non_positive_delta_frequency() -> None:
+    """A non-positive spacing is rejected."""
+    with pytest.raises(ValueError, match="delta_frequency must be positive"):
+        ColoredNoiseSimulator(
+            psd_array=np.ones(513),
+            delta_frequency=0.0,
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            window_duration=4.0,
+        )
+
+
+def test_psd_array_rejects_a_frequencies_axis_of_the_wrong_length() -> None:
+    """The frequency axis must carry one value per array bin."""
+    with pytest.raises(ValueError, match="frequencies must have one value per psd_array bin"):
+        ColoredNoiseSimulator(
+            psd_array=np.ones(513),
+            frequencies=np.fft.rfftfreq(256, d=1.0 / 256.0),
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            window_duration=4.0,
+        )
+
+
+def test_frequencies_without_an_array_target_are_rejected(tmp_path: Path) -> None:
+    """A frequency axis is meaningless without an in-memory array."""
+    psd_path = _write_psd_file(tmp_path / "frequencies_without_array.txt")
+    with pytest.raises(ValueError, match="only valid with it"):
+        ColoredNoiseSimulator(
+            psd_file=psd_path,
+            frequencies=np.fft.rfftfreq(1024, d=1.0 / 256.0),
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            window_duration=4.0,
         )
