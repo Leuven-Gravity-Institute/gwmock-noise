@@ -58,11 +58,16 @@ def _welch_psd(strain: np.ndarray, sampling_frequency: float) -> tuple[np.ndarra
 
 
 @pytest.mark.parametrize(
-    ("psd_file", "low_frequency"),
-    [(ALIGO_PSD, 20.0), (ET_PSD, 5.0)],
+    ("psd_file", "low_frequency", "tolerance"),
+    [(ALIGO_PSD, 20.0, 0.06), (ET_PSD, 5.0, 0.41)],
 )
-def test_fitted_psd_matches_target_per_band(psd_file: str, low_frequency: float) -> None:
-    """The tabulated target is reproduced band by band across the fit band."""
+def test_fitted_psd_matches_target_per_band(psd_file: str, low_frequency: float, tolerance: float) -> None:
+    """The tabulated target is reproduced band by band across the fit band.
+
+    The bound is measured, not chosen: the worst band of this deterministic fit
+    is 0.0439 on aLIGO O4-high and 0.3203 on ET-D, and the tolerance carries
+    25 % headroom over that. See ``docs/dev/anchored_quantities.md``.
+    """
     simulator = ARNoiseSimulator(
         psd_file=psd_file,
         detectors=["H1"],
@@ -74,15 +79,21 @@ def test_fitted_psd_matches_target_per_band(psd_file: str, low_frequency: float)
     model = simulator.model_psd_curve
     errors = _band_errors(frequencies, target, model, low=low_frequency, high=2000.0)
     assert errors
-    assert max(errors) <= 0.5
+    assert max(errors) <= tolerance
 
 
 @pytest.mark.parametrize(
-    ("psd_file", "low_frequency"),
-    [(ALIGO_PSD, 20.0), (ET_PSD, 5.0)],
+    ("psd_file", "low_frequency", "tolerance"),
+    [(ALIGO_PSD, 20.0, 0.27), (ET_PSD, 5.0, 0.66)],
 )
-def test_generated_psd_matches_target_per_band(psd_file: str, low_frequency: float) -> None:
-    """A long realization recovers the target band powers, not just the model curve."""
+def test_generated_psd_matches_target_per_band(psd_file: str, low_frequency: float, tolerance: float) -> None:
+    """A long realization recovers the target band powers, not just the model curve.
+
+    The bound is measured over twenty independent seed groups of this same
+    configuration: the worst band is 0.1061 +/- 0.0260 on aLIGO O4-high and
+    0.4429 +/- 0.0210 on ET-D, and the tolerance is 1.25 times the mean plus
+    five standard deviations. See ``docs/dev/anchored_quantities.md``.
+    """
     simulator = ARNoiseSimulator(
         psd_file=psd_file,
         detectors=["H1"],
@@ -95,7 +106,7 @@ def test_generated_psd_matches_target_per_band(psd_file: str, low_frequency: flo
     target_frequencies, target_values = load_spectral_series(psd_file, kind="PSD")
     target_on_grid = np.interp(frequencies, target_frequencies, target_values, left=0.0, right=0.0)
     errors = _band_errors(frequencies, target_on_grid, estimate, low=low_frequency, high=2000.0)
-    assert max(errors) <= 0.5
+    assert max(errors) <= tolerance
 
 
 def test_fit_records_levinson_conditioning_diagnostics() -> None:
