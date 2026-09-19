@@ -30,6 +30,21 @@ ALIGO_PSD = "aLIGO_O4_high_projected_psd"
 ET_PSD = "ET_D_psd"
 SAMPLING_FREQUENCY = 4096.0
 
+#: The fit order the tolerances below were measured at.
+FIT_ORDER = 256
+
+#: An order low enough that the aLIGO fitted-curve bound must reject it; the
+#: measured worst band there is 0.1048, against 0.0439 at :data:`FIT_ORDER`.
+UNDERFITTED_ORDER = 224
+
+#: Anchored per-band tolerances. Each is ``1.25 * mean + 5 * sd`` of the
+#: measured worst-band population, rounded up to two decimal places; see
+#: ``docs/dev/anchored_quantities.md``.
+ALIGO_FITTED_TOLERANCE = 0.06
+ET_FITTED_TOLERANCE = 0.41
+ALIGO_GENERATED_TOLERANCE = 0.27
+ET_GENERATED_TOLERANCE = 0.66
+
 
 def _band_errors(  # noqa: PLR0913
     frequencies: np.ndarray,
@@ -58,36 +73,47 @@ def _welch_psd(strain: np.ndarray, sampling_frequency: float) -> tuple[np.ndarra
 
 
 @pytest.mark.parametrize(
-    ("psd_file", "low_frequency"),
-    [(ALIGO_PSD, 20.0), (ET_PSD, 5.0)],
+    ("psd_file", "low_frequency", "tolerance"),
+    [(ALIGO_PSD, 20.0, ALIGO_FITTED_TOLERANCE), (ET_PSD, 5.0, ET_FITTED_TOLERANCE)],
 )
-def test_fitted_psd_matches_target_per_band(psd_file: str, low_frequency: float) -> None:
-    """The tabulated target is reproduced band by band across the fit band."""
+def test_fitted_psd_matches_target_per_band(psd_file: str, low_frequency: float, tolerance: float) -> None:
+    """The tabulated target is reproduced band by band across the fit band.
+
+    The bound is measured, not chosen: the worst band of this deterministic fit
+    is 0.0439 on aLIGO O4-high and 0.3203 on ET-D, and the tolerance carries
+    25 % headroom over that. See ``docs/dev/anchored_quantities.md``.
+    """
     simulator = ARNoiseSimulator(
         psd_file=psd_file,
         detectors=["H1"],
         sampling_frequency=SAMPLING_FREQUENCY,
-        order=256,
+        order=FIT_ORDER,
         low_frequency_cutoff=low_frequency,
     )
     frequencies, target = simulator.target_psd_curve
     model = simulator.model_psd_curve
     errors = _band_errors(frequencies, target, model, low=low_frequency, high=2000.0)
     assert errors
-    assert max(errors) <= 0.5
+    assert max(errors) <= tolerance
 
 
 @pytest.mark.parametrize(
-    ("psd_file", "low_frequency"),
-    [(ALIGO_PSD, 20.0), (ET_PSD, 5.0)],
+    ("psd_file", "low_frequency", "tolerance"),
+    [(ALIGO_PSD, 20.0, ALIGO_GENERATED_TOLERANCE), (ET_PSD, 5.0, ET_GENERATED_TOLERANCE)],
 )
-def test_generated_psd_matches_target_per_band(psd_file: str, low_frequency: float) -> None:
-    """A long realization recovers the target band powers, not just the model curve."""
+def test_generated_psd_matches_target_per_band(psd_file: str, low_frequency: float, tolerance: float) -> None:
+    """A long realization recovers the target band powers, not just the model curve.
+
+    The bound is measured over twenty independent seed groups of this same
+    configuration: the worst band is 0.1061 +/- 0.0260 on aLIGO O4-high and
+    0.4429 +/- 0.0210 on ET-D, and the tolerance is 1.25 times the mean plus
+    five standard deviations. See ``docs/dev/anchored_quantities.md``.
+    """
     simulator = ARNoiseSimulator(
         psd_file=psd_file,
         detectors=["H1"],
         sampling_frequency=SAMPLING_FREQUENCY,
-        order=256,
+        order=FIT_ORDER,
         low_frequency_cutoff=low_frequency,
     )
     strains = [simulator.generate(32.0, SAMPLING_FREQUENCY, ["H1"], seed=seed)["H1"] for seed in range(6)]
@@ -95,7 +121,28 @@ def test_generated_psd_matches_target_per_band(psd_file: str, low_frequency: flo
     target_frequencies, target_values = load_spectral_series(psd_file, kind="PSD")
     target_on_grid = np.interp(frequencies, target_frequencies, target_values, left=0.0, right=0.0)
     errors = _band_errors(frequencies, target_on_grid, estimate, low=low_frequency, high=2000.0)
-    assert max(errors) <= 0.5
+    assert max(errors) <= tolerance
+
+
+def test_fitted_tolerance_rejects_an_underfitted_model() -> None:
+    """The aLIGO fitted-curve bound is tight enough to reject a lower-order fit.
+
+    A tolerance that nothing can breach asserts nothing. The same fit at order
+    224 instead of 256 has a measured worst band of 0.1048 on aLIGO O4-high,
+    comfortably above the anchored 0.06 -- and below the 0.5 this bound
+    replaced, which is why that one said nothing. Any widening of
+    :data:`ALIGO_FITTED_TOLERANCE` past the underfitted value fails here.
+    """
+    simulator = ARNoiseSimulator(
+        psd_file=ALIGO_PSD,
+        detectors=["H1"],
+        sampling_frequency=SAMPLING_FREQUENCY,
+        order=UNDERFITTED_ORDER,
+        low_frequency_cutoff=20.0,
+    )
+    frequencies, target = simulator.target_psd_curve
+    errors = _band_errors(frequencies, target, simulator.model_psd_curve, low=20.0, high=2000.0)
+    assert max(errors) > ALIGO_FITTED_TOLERANCE
 
 
 def test_fit_records_levinson_conditioning_diagnostics() -> None:

@@ -772,6 +772,29 @@ other bounded-state simulators; the reported `state_size` is the delay-line
 length the filter actually carries, including the two taps each placed conjugate
 pole pair adds.
 
+### Line detection and placed-pole widths
+
+`detect_lines` is off by default, and when it is on, two defaults govern it:
+`line_prominence` (the minimum ratio of a local maximum to the median of the
+fitted band, 15.0) and the width given to a line whose width you do not supply
+(0.46 Hz). Neither is a round number picked for convenience -- both are measured
+over the lines the bundled presets tabulate, and
+[Anchored Quantities](../dev/anchored_quantities.md) records the measurement,
+including the per-band fit tolerances and what the ET-D lowest-band residual is
+a floor of.
+
+Two properties of pole placement are worth knowing before you turn it on. The
+prominence is a ratio to the median of the _whole_ fitted band, not a local
+prominence, so its measured accuracy does not carry over to a band much narrower
+than the full one up to Nyquist. And a placed pole's peak height follows from
+its width alone, not from how far the target's line rises above its
+surroundings, so on a tabulated curve whose lines are one to three samples wide
+the model overshoots at the line: placing the eight lines detected on the
+measured O3 Hanford curve raises the worst per-band residual from 0.36 to about
+`1e14`. Place poles for lines whose width you know and whose contrast is modest,
+pass `line_widths` explicitly when you do, and read the reported `fit_residual`
+rather than assuming the lines were reproduced.
+
 ## Multichannel generation from a PSD/CSD matrix
 
 `MultichannelNoiseSimulator` generates correlated multichannel noise from a
