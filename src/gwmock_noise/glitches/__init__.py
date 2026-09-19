@@ -9,6 +9,7 @@ from gwmock_noise.glitches.models import (
     GlitchDraw,
     GlitchModel,
     LogNormalAmplitudeDistribution,
+    NetworkCoherence,
     ScatteredLightGlitch,
     normalize_glitch_models,
     supported_glitch_kinds,
@@ -20,6 +21,7 @@ from gwmock_noise.glitches.snr import (
     SNRDistribution,
     load_snr_samples,
     normalize_snr,
+    snr_survival,
 )
 
 __all__ = [
@@ -30,12 +32,14 @@ __all__ = [
     "GlitchDraw",
     "GlitchModel",
     "LogNormalAmplitudeDistribution",
+    "NetworkCoherence",
     "PowerLawSNRDistribution",
     "SNRDistribution",
     "ScatteredLightGlitch",
     "load_snr_samples",
     "normalize_glitch_models",
     "normalize_snr",
+    "snr_survival",
     "supported_glitch_kinds",
     "validate_glitch_detector_coverage",
 ]

@@ -43,6 +43,102 @@ class LogNormalAmplitudeDistribution:
         return float(rng.lognormal(mean=mu, sigma=sigma))
 
 
+@dataclass(slots=True)
+class NetworkCoherence:
+    """Share one glitch model's events across the interferometers it applies to.
+
+    Without it, every glitch model runs an independent Poisson process and an
+    independent random stream per interferometer, so two interferometers never
+    carry the same transient. That is the right default, and it is what the one
+    measurement of the question says for widely separated sites: over O1 and O2 the
+    LIGO blip population produced *no* coincidences inside the +/-15 ms window an
+    astrophysical signal can occupy, and the coincidences found in wider windows
+    matched the accidental expectation.
+
+    It is not what a network of *co-located* interferometers is expected to do. Three
+    interferometers sharing one site, one vacuum system and one seismic environment
+    see a common environmental transient in all three at once, and a coincidence veto
+    -- or a null stream -- assumes exactly the incoherence that such an event breaks.
+    A model carrying this runs **one** Poisson process for the whole network, draws
+    **one** waveform per event, and offers that waveform to each interferometer it
+    applies to.
+
+    **Participation is decided per interferometer, independently, and is never
+    conditioned on how many others took the event.** Conditioning -- "keep only
+    events that land in at least two interferometers" -- is the obvious way to write
+    a coincident population, and it is the wrong one here: it makes what one
+    interferometer's strain contains depend on which *other* interferometers the run
+    happens to include, so the same channel stops being reproducible between a
+    three-interferometer run and a two-interferometer one. Paired-geometry
+    comparisons need that reproducibility, so an event that lands nowhere simply
+    lands nowhere, and the multiplicity comes out Binomial rather than being imposed.
+
+    Attributes:
+        participation_probability: Probability that any one interferometer the model
+            applies to receives a given network event. ``1.0`` -- the default -- puts
+            every event in every one of them, which is the strongest coherence the
+            model can express.
+        amplitude_ratio_std: Standard deviation of a per-interferometer lognormal
+            amplitude ratio with linear mean ``1.0``, applied to the shared waveform.
+            ``0.0`` -- the default -- injects the identical strain into every
+            participating interferometer.
+    """
+
+    participation_probability: float = 1.0
+    amplitude_ratio_std: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Validate the configured coherence parameters.
+
+        Raises:
+            ValueError: If the participation probability is outside ``[0, 1]`` or the
+                amplitude-ratio spread is negative.
+        """
+        if not 0.0 <= self.participation_probability <= 1.0:
+            raise ValueError("network participation_probability must lie between zero and one.")
+        if self.amplitude_ratio_std < 0.0:
+            raise ValueError("network amplitude_ratio_std must be non-negative.")
+
+    def amplitude_ratio(self, rng: np.random.Generator) -> float:
+        """Draw one interferometer's amplitude ratio for a shared waveform.
+
+        Args:
+            rng: The generator for this (event, interferometer) pair.
+
+        Returns:
+            The multiplier to apply to the shared waveform.
+        """
+        return LogNormalAmplitudeDistribution(mean=1.0, std=self.amplitude_ratio_std).sample(rng)
+
+    def serialize(self) -> dict[str, Any]:
+        """Return the mapping that reconstructs this coherence specification."""
+        return {
+            "participation_probability": self.participation_probability,
+            "amplitude_ratio_std": self.amplitude_ratio_std,
+        }
+
+
+def _normalize_network_coherence(value: Any) -> NetworkCoherence | None:
+    """Normalize a glitch model's network-coherence specification.
+
+    Args:
+        value: ``None`` for an independent per-interferometer model, a
+            :class:`NetworkCoherence`, or the mapping that configures one.
+
+    Returns:
+        The coherence specification, or ``None``.
+
+    Raises:
+        TypeError: If the value is neither ``None``, a mapping, nor a
+            :class:`NetworkCoherence`.
+    """
+    if value is None or isinstance(value, NetworkCoherence):
+        return value
+    if not isinstance(value, dict):
+        raise TypeError("glitch model network must be a mapping or a NetworkCoherence.")
+    return NetworkCoherence(**value)
+
+
 def _normalize_detector_selector(value: Any) -> tuple[str, ...] | None:
     """Normalize a glitch model's interferometer selector.
 
@@ -152,6 +248,12 @@ class GlitchModel:
     #: Interferometers this model injects into, or ``None`` for all of them. Given
     #: as a name or a list of names; normalized to a tuple when the model is built.
     detectors: tuple[str, ...] | None = field(default=None, kw_only=True)
+    #: How this model's events are shared across the interferometers it applies to.
+    #: ``None`` -- the default -- runs an independent Poisson process and an
+    #: independent random stream in each of them. A :class:`NetworkCoherence` runs one
+    #: process for the whole network and offers each drawn waveform to every one of
+    #: them; see that class for why participation is never conditioned on multiplicity.
+    network: NetworkCoherence | None = field(default=None, kw_only=True)
     kind: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -159,6 +261,7 @@ class GlitchModel:
         if self.rate < 0.0:
             raise ValueError("glitch rate must be non-negative.")
         self.detectors = _normalize_detector_selector(self.detectors)
+        self.network = _normalize_network_coherence(self.network)
 
     def applies_to(self, detector: str) -> bool:
         """Return whether this model injects glitches into ``detector``.
@@ -262,6 +365,7 @@ class GlitchModel:
             "kind": self.kind,
             "rate": self.rate,
             "detectors": None if self.detectors is None else list(self.detectors),
+            "network": None if self.network is None else self.network.serialize(),
             "amplitude_distribution": {
                 "distribution": self.amplitude_distribution.distribution,
                 "mean": self.amplitude_distribution.mean,

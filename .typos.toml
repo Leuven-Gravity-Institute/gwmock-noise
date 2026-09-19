@@ -21,3 +21,6 @@ extend-ignore-re = [
 
 [default.extend-words]
 "arange" = "arange"
+# Gravitational-wave jargon: the analysed time a search or a detector actually accumulated,
+# as distinct from the calendar span it was accumulated over. Not "lifetime".
+"livetime" = "livetime"

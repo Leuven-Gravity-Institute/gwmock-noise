@@ -44,6 +44,14 @@ that injects real O3 glitch reconstructions.
 
 ::: gwmock_noise.glitches
 
+## Glitch populations
+
+Registered glitch populations: a named, serializable, digestible set of glitch
+classes, with an expected-count decomposition and a reusable seeded realization
+that paired arms of a comparison share.
+
+::: gwmock_noise.populations
+
 ## Simulators
 
 Simulator implementations, the `NoiseSimulator` protocol,

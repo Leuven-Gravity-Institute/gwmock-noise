@@ -156,11 +156,15 @@ models = [
 ]
 ```
 
-Every glitch model runs an independent Poisson process per detector, so event
-times and waveforms are uncorrelated between detectors and `rate` is the event
-rate seen by each individual detector. The metadata sidecar reports, for each
-model, the total number of injected events (`count`) plus a per-detector
-breakdown (`count_by_detector`).
+By default every glitch model runs an independent Poisson process per detector,
+so event times and waveforms are uncorrelated between detectors and `rate` is
+the event rate seen by each individual detector. A model given a `network`
+specification instead shares one process, and one waveform per event, across the
+detectors it applies to — see
+[Network-coherent glitches](#network-coherent-glitches), where `rate` means
+something different. The metadata sidecar reports, for each model, the total
+number of injected events (`count`) plus a per-detector breakdown
+(`count_by_detector`).
 
 A glitch whose waveform runs past the end of a streamed chunk has its remainder
 carried into the next chunk and replayed in event order, so the injected glitch
@@ -482,11 +486,11 @@ models = [
 With the default `amplitude_distribution` mean of 1.0 and std of 0.0 the target
 SNR is met exactly; a non-zero std adds multiplicative SNR scatter. Events are
 placed by the same Poisson `rate` process as the other glitch models, run
-independently per detector: each detector receives its own event times and
-waveform draws, and `rate` is the event rate seen by each detector. Note that
-resampling below 4096 Hz uses linear interpolation without an anti-aliasing
-filter, which aliases high-frequency content (the SNR calibration itself is
-unaffected).
+independently per detector unless the model is given a `network` specification:
+each detector then receives its own event times and waveform draws, and `rate`
+is the event rate seen by each detector. Note that resampling below 4096 Hz uses
+linear interpolation without an anti-aliasing filter, which aliases
+high-frequency content (the SNR calibration itself is unaffected).
 
 The dataset is cached by `huggingface_hub` after the first download, so later
 runs reuse the cached files. Each run contacts the Hub first to validate the
@@ -503,6 +507,127 @@ commit SHA, and that SHA is what the run metadata records (not the branch name
 you asked for). Replaying a run from its metadata therefore fetches the exact
 commit that produced it, so glitch generation stays bit-reproducible for a fixed
 (version, config, seed) even as the upstream dataset moves.
+
+## Network-coherent glitches
+
+Every glitch model runs an independent Poisson process and an independent random
+stream in each interferometer, so two interferometers never carry the same
+transient. That is the right default, and it is what the one measurement of the
+question says for widely separated sites: over O1 and O2 the LIGO blip
+population produced no coincidences inside the ±15 ms window an astrophysical
+signal can occupy.
+
+It is not what a network of **co-located** interferometers is expected to do.
+Three instruments sharing a site, a vacuum system and a seismic environment see
+a common environmental transient in all three at once — and a coincidence veto,
+or a null stream, assumes exactly the incoherence such an event breaks. A model
+given a `network` specification runs **one** Poisson process for the whole
+network, draws **one** waveform per event, and offers it to each interferometer
+the model applies to:
+
+```toml
+[[components]]
+simulator = "glitches"
+models = [
+  { kind = "scattered_light", rate = 2.7743e-3, duration = 1.75, peak_frequency = 26.0, psd_file = "ET_10_full_cryo_psd", low_frequency_cutoff = 10.0, high_frequency_cutoff = 120.0, amplitude_distribution = { distribution = "lognormal", mean = 1.0, std = 0.0 }, snr = { distribution = "power_law", minimum = 7.5, alpha = 1.4184, maximum = 601.24 }, network = { participation_probability = 1.0, amplitude_ratio_std = 0.0 } },
+]
+```
+
+`rate` on such a model is the rate of the **network** process, not the rate each
+interferometer sees; each of them sees it times `participation_probability`.
+`amplitude_ratio_std` gives each participating interferometer a lognormal
+multiplier with linear mean 1.0 on the shared waveform, and is zero by default,
+which injects the identical strain into all of them.
+
+Two properties are worth knowing because a campaign is likely to depend on them.
+
+**Participation is never conditioned on multiplicity.** "Keep only events that
+land in at least two interferometers" is the obvious way to write a coincident
+population and the wrong one: it makes what one interferometer's strain contains
+depend on which _other_ interferometers the run includes, so the same channel
+stops being reproducible between a three-interferometer run and a
+two-interferometer one. An event that lands nowhere simply lands nowhere, and
+the multiplicity comes out Binomial rather than being imposed.
+
+**What an interferometer receives does not depend on the interferometer list.**
+Its events, their waveforms, and whether it took each one are all derived from
+the seed, the model, its own name and the event's ordinal. Adding or removing
+another interferometer — or adding one part-way through a stream — leaves every
+other interferometer's strain bit-for-bit unchanged. Paired-geometry comparisons
+rest on this.
+
+Rows of the truth catalogue belonging to one shared event carry the same
+`network_event_id`, and each carries the `amplitude_ratio` applied to it; both
+are `null` for a model whose interferometers are independent.
+
+## Registered glitch populations
+
+A glitch model says how one class of transient is drawn. A **population** says
+which classes a campaign injects, at what rates, into which interferometers,
+under one name and one digest — so that every arm of the campaign can be _shown_
+to have used the same model rather than asserted to have:
+
+```python
+from gwmock_noise import available_glitch_populations, get_glitch_population
+
+available_glitch_populations()  # ['et-o3-anchored-v1']
+
+population = get_glitch_population("et-o3-anchored-v1")
+population.digest()  # 'sha256:58fb23aef4b4dd0d0038ebdae09da51bdaf638821aca0df97ead74dcbc1dc3b0'
+```
+
+`et-o3-anchored-v1` registers two classes for a network of co-located
+interferometers, anchored to the measured Advanced LIGO O3 glitch phenomenology:
+a short, broadband, single-channel class drawn from the Blip population, and a
+longer, low-frequency, network-coherent class drawn from the Scattered Light
+population. Its short class is supported to 780 Hz, so it needs a sampling
+frequency of at least 1560 Hz; a lower one is refused rather than quietly
+narrowed.
+
+Three things a population adds over a bare list of models.
+
+**A digest.** `digest()` is a SHA-256 over the canonical serialization of every
+registered quantity _and_ every prose field, so a population that has been
+edited — even only in what it claims to mean — cannot present itself as the one
+a finished run used. It travels between machines because the noise curve is
+named rather than pathed.
+
+**An expected-count decomposition.** `expected_counts()` returns the rate, the
+livetime, the detector participation and the selection factor separately,
+alongside their product, so a total that comes out wrong is traceable to the
+factor that is wrong:
+
+```python
+for row in population.expected_counts(livetime_seconds=2048.0, detectors=["E1", "E2", "E3"], snr_threshold=10.0):
+    print(row.glitch_class, row.detector, row.rate_hz, row.participation, row.selection, row.expected)
+```
+
+**A reusable realization.** `realize()` returns the glitch strain on its own,
+with nothing under it, plus its truth catalogue and a stamp carrying the
+population name, the digest, the package version and the seed:
+
+```python
+realization = population.realize(
+    detectors=["E1", "E2", "E3"],
+    duration=2048.0,
+    sampling_frequency=4096.0,
+    seed=20260919,
+)
+```
+
+Paired arms of a comparison — a signal arm and a rates-zero arm, two geometries,
+two detection thresholds, two ranking statistics — add **that array**, so their
+glitch content is bit-identical by construction rather than by two generators
+agreeing. The realization does not depend on the base noise, on the other
+interferometers in the run, or on whether it was generated in one call or
+streamed.
+
+**Read the population's `unanchored` field.** It lists, in the population
+itself, every quantity that could not be anchored to a published measurement —
+for `et-o3-anchored-v1` that includes the network coherence of its second class,
+which is the population's central extrapolation. `docs/dev/glitch_population.md`
+is the full record of what each number was measured from, what it was
+cross-checked against, and what it is not.
 
 ## Schumann-resonance correlated noise
 

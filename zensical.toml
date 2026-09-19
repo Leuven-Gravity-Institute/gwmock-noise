@@ -57,6 +57,7 @@ nav = [
     { "Code Quality" = "dev/code_quality.md" },
     { "Adding Simulation Types" = "dev/adding_simulators.md" },
     { "Anchored Quantities" = "dev/anchored_quantities.md" },
+    { "Glitch Population" = "dev/glitch_population.md" },
     { "Troubleshooting" = "dev/troubleshooting.md" },
   ] },
   { "Security" = "security.md" },
