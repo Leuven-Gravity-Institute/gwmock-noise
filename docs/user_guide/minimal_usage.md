@@ -524,6 +524,7 @@ freqs, psd = estimate_psd(clean["H1"][0].value, sampling_frequency=4096.0)
 # different spacing is rejected instead of silently reinterpreted. The array is
 # used as given — no interpolation and no edge taper — with out-of-band bins
 # zeroed exactly as for a file path.
+# Every bin must be finite: a NaN or infinite value is rejected.
 window_size = round(64.0 * 4096.0)  # default window_duration is 64 s
 grid = np.fft.rfftfreq(window_size, d=1.0 / 4096.0)
 target = np.interp(grid, freqs, psd, left=0.0, right=0.0)

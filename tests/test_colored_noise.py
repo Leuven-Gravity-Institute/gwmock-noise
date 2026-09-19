@@ -654,6 +654,74 @@ def test_psd_array_path_rejects_non_1d_input() -> None:
         )
 
 
+@pytest.mark.parametrize("bad_value", [np.nan, np.inf, -np.inf])
+def test_psd_array_path_rejects_non_finite_values(bad_value: float) -> None:
+    """A NaN or infinite bin is rejected instead of reaching the simulator.
+
+    Neither the out-of-band zeroing nor the non-negative clip removes an
+    in-band NaN or ``+inf``, and the inverse transform then spreads it over
+    every sample of the realization, so the whole output is non-finite.
+    """
+    sampling_frequency = 256.0
+    window_duration = 4.0
+    grid = np.fft.rfftfreq(round(window_duration * sampling_frequency), d=1.0 / sampling_frequency)
+    target = np.full(grid.size, 1.0e-3)
+    target[grid.size // 2] = bad_value
+
+    with pytest.raises(ValueError, match="psd_array must contain only finite values"):
+        ColoredNoiseSimulator(
+            psd_array=target,
+            frequencies=grid,
+            detectors=["H1"],
+            sampling_frequency=sampling_frequency,
+            window_duration=window_duration,
+            low_frequency_cutoff=0.0,
+        )
+
+
+def test_psd_array_path_rejects_non_finite_values_outside_the_band() -> None:
+    """The rejection covers out-of-band bins too, before they are zeroed."""
+    sampling_frequency = 128.0
+    window_duration = 4.0
+    grid = np.fft.rfftfreq(round(window_duration * sampling_frequency), d=1.0 / sampling_frequency)
+    target = np.full(grid.size, 5.0e-4)
+    target[0] = np.nan
+
+    with pytest.raises(ValueError, match="psd_array must contain only finite values"):
+        ColoredNoiseSimulator(
+            psd_array=target,
+            frequencies=grid,
+            detectors=["H1"],
+            sampling_frequency=sampling_frequency,
+            window_duration=window_duration,
+            low_frequency_cutoff=10.0,
+            high_frequency_cutoff=40.0,
+        )
+
+
+def test_psd_array_path_yields_a_finite_realization() -> None:
+    """A finite target still passes and produces a finite realization."""
+    sampling_frequency = 256.0
+    window_duration = 4.0
+    grid = np.fft.rfftfreq(round(window_duration * sampling_frequency), d=1.0 / sampling_frequency)
+
+    simulator = ColoredNoiseSimulator(
+        psd_array=np.full(grid.size, 1.0e-3),
+        frequencies=grid,
+        detectors=["H1"],
+        sampling_frequency=sampling_frequency,
+        window_duration=window_duration,
+        duration=window_duration,
+        low_frequency_cutoff=0.0,
+        seed=11,
+    )
+
+    strain = simulator.generate(window_duration, sampling_frequency, ["H1"], seed=11)["H1"]
+
+    assert np.all(np.isfinite(simulator._psd))
+    assert np.all(np.isfinite(strain))
+
+
 def test_psd_array_path_is_mutually_exclusive_with_other_sources(tmp_path: Path) -> None:
     """An array target cannot be combined with a file or a schedule."""
     psd_path = _write_psd_file(tmp_path / "array_mixed.txt")

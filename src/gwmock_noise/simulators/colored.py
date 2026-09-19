@@ -75,6 +75,55 @@ def _resolve_taper_alpha(masked_frequencies: np.ndarray) -> float:
     return 2.0 * PSD_WINDOW_WIDTH_HZ / (f_high_hz - f_low_hz)
 
 
+def _validate_array_target(
+    *,
+    psd_array: np.ndarray | None,
+    frequencies: np.ndarray | None,
+    delta_frequency: float | None,
+) -> None:
+    """Validate an in-memory PSD target and its declared frequency axis.
+
+    These checks are shape and value checks only; the axis is compared with the
+    simulator's own grid later, once that grid exists.
+
+    Args:
+        psd_array: The in-memory PSD target, or ``None`` for a file or schedule.
+        frequencies: The declared frequency axis, or ``None``.
+        delta_frequency: The declared frequency spacing in Hz, or ``None``.
+
+    Raises:
+        ValueError: If an axis is declared without an array, if an array is
+            declared without an axis, if either is not one-dimensional or the
+            two disagree in length, if the array holds a non-finite value, or
+            if the spacing is not positive.
+    """
+    if psd_array is None and (frequencies is not None or delta_frequency is not None):
+        raise ValueError("frequencies and delta_frequency describe a psd_array and are only valid with it.")
+    if psd_array is not None and frequencies is None and delta_frequency is None:
+        raise ValueError(
+            "psd_array requires its frequency axis: pass frequencies or delta_frequency, so an array built at a "
+            "different spacing is rejected instead of silently reinterpreted on this simulator's grid."
+        )
+    if psd_array is not None and np.asarray(psd_array).ndim != 1:
+        raise ValueError("psd_array must be one-dimensional on the simulator's frequency grid.")
+    if psd_array is not None and not np.all(np.isfinite(np.asarray(psd_array, dtype=float))):
+        raise ValueError(
+            "psd_array must contain only finite values: a NaN or infinite bin inside the band survives the "
+            "out-of-band zeroing and the non-negative clip, and the inverse transform spreads it over every "
+            "sample of the realization."
+        )
+    if frequencies is not None and np.asarray(frequencies).ndim != 1:
+        raise ValueError("frequencies must be one-dimensional.")
+    if (
+        frequencies is not None
+        and psd_array is not None
+        and np.asarray(frequencies).shape != np.asarray(psd_array).shape
+    ):
+        raise ValueError("frequencies must have one value per psd_array bin.")
+    if delta_frequency is not None and delta_frequency <= 0:
+        raise ValueError(f"delta_frequency must be positive, got {delta_frequency!r}.")
+
+
 class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
     """Generate colored detector noise from an input PSD."""
 
@@ -104,25 +153,7 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
             raise ValueError("psd_file, psd_schedule and psd_array are mutually exclusive.")
         if psd_schedule is not None and not psd_schedule:
             raise ValueError("psd_schedule must contain at least one anchor.")
-        if psd_array is None and (frequencies is not None or delta_frequency is not None):
-            raise ValueError("frequencies and delta_frequency describe a psd_array and are only valid with it.")
-        if psd_array is not None and frequencies is None and delta_frequency is None:
-            raise ValueError(
-                "psd_array requires its frequency axis: pass frequencies or delta_frequency, so an array built at a "
-                "different spacing is rejected instead of silently reinterpreted on this simulator's grid."
-            )
-        if psd_array is not None and np.asarray(psd_array).ndim != 1:
-            raise ValueError("psd_array must be one-dimensional on the simulator's frequency grid.")
-        if frequencies is not None and np.asarray(frequencies).ndim != 1:
-            raise ValueError("frequencies must be one-dimensional.")
-        if (
-            frequencies is not None
-            and psd_array is not None
-            and np.asarray(frequencies).shape != np.asarray(psd_array).shape
-        ):
-            raise ValueError("frequencies must have one value per psd_array bin.")
-        if delta_frequency is not None and delta_frequency <= 0:
-            raise ValueError(f"delta_frequency must be positive, got {delta_frequency!r}.")
+        _validate_array_target(psd_array=psd_array, frequencies=frequencies, delta_frequency=delta_frequency)
         if psd_schedule is not None:
             offsets = [float(gps_offset_seconds) for gps_offset_seconds, _ in psd_schedule]
             if offsets != sorted(offsets):
