@@ -386,6 +386,27 @@ def summarize(triggers: dict[tuple[str, str], Triggers], livetime: dict[str, flo
     return summary
 
 
+def render_summary(summary: dict[str, Any]) -> str:
+    """Render the bundled summary exactly as the repository's formatter wants it.
+
+    Four-space indentation and sorted keys, which is what Prettier at this repository's
+    ``tabWidth`` produces for JSON. The first version of this harness wrote two-space
+    indentation, and the difference was invisible until the file was committed: the
+    pre-commit hooks enumerate files from the git index, so an *untracked* new file is not
+    formatted and not checked, and the gate only failed for the next person to run it. A
+    writer that already agrees with the formatter cannot reopen that gap, and
+    ``test_the_bundled_summary_is_written_the_way_the_formatter_wants_it`` asserts the
+    agreement rather than leaving it to be rediscovered.
+
+    Args:
+        summary: The measured summary.
+
+    Returns:
+        The file contents, newline-terminated.
+    """
+    return json.dumps(summary, indent=4, sort_keys=True) + "\n"
+
+
 def report(summary: dict[str, Any]) -> None:
     """Print every number the anchor page quotes."""
     livetime = summary["livetime_seconds"]
@@ -460,7 +481,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if arguments.write_summary:
         SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
-        SUMMARY_PATH.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+        SUMMARY_PATH.write_text(render_summary(summary))
         print(f"\nwrote {SUMMARY_PATH.relative_to(REPO_ROOT)}")
     return 0
 

@@ -604,7 +604,9 @@ for row in population.expected_counts(livetime_seconds=2048.0, detectors=["E1", 
 
 **A reusable realization.** `realize()` returns the glitch strain on its own,
 with nothing under it, plus its truth catalogue and a stamp carrying the
-population name, the digest, the package version and the seed:
+population name, the digest, the package version and the seed — of which the
+**digest** is the value to pin, the package version being
+version-control-derived and so different on every commit:
 
 ```python
 realization = population.realize(

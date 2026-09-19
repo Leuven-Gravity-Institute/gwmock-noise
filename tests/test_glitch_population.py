@@ -22,7 +22,9 @@ the interferometer list, and of whether it was generated in one call or streamed
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -103,6 +105,22 @@ def test_the_bundled_summary_is_internally_consistent(summary: dict) -> None:
         for key in ("H1", "L1", "pooled"):
             assert block["rate_hz"][key] == pytest.approx(block["counts"][key] / livetime[key], rel=1e-12)
         assert block["counts"]["pooled"] == block["counts"]["H1"] + block["counts"]["L1"]
+
+
+def test_the_bundled_summary_is_written_the_way_the_formatter_wants_it() -> None:
+    """The file on disk is byte-for-byte what the harness's writer produces.
+
+    Two things at once. It pins that a re-measurement leaves the repository's formatter
+    with nothing to do -- the first version of this harness wrote two-space JSON that
+    Prettier rewrites, which went unnoticed because the pre-commit hooks enumerate files
+    from the git index and the file was still untracked when the gate was run. And it pins
+    that the committed file has not been hand-edited into a shape the harness would not
+    reproduce, which is the other way a generated artifact stops being generated.
+    """
+    from measure_glitch_population_anchors import SUMMARY_PATH, render_summary
+
+    on_disk = SUMMARY_PATH.read_text(encoding="utf-8")
+    assert render_summary(json.loads(on_disk)) == on_disk
 
 
 @pytest.mark.parametrize(
@@ -366,15 +384,115 @@ def test_a_class_refuses_a_blank_field(population: GlitchPopulation) -> None:
 # ---------------------------------------------------------------------------------------
 
 
-def test_the_expected_count_is_the_product_of_the_factors_it_reports(population: GlitchPopulation) -> None:
-    """The decomposition is not a commentary on the total; it is the total."""
+#: The four factors whose product is the expected count, in the order the row reports them.
+DECOMPOSITION_FACTORS = ("rate_hz", "livetime_seconds", "participation", "selection")
+
+
+def test_the_expected_count_is_the_product_of_every_factor_it_reports() -> None:
+    """The decomposition is not a commentary on the total; it is the total -- all of it.
+
+    **The fixture runs at participation 0.5 rather than at the registered 1.0, and that is
+    the whole point of it.** A factor of one is invisible in a product, so at the registered
+    participation this assertion holds just as well for an implementation that never
+    multiplied by participation at all -- a review found exactly that, by dropping the
+    factor from the product and watching the earlier version of this test pass. Every factor
+    here therefore differs from one, and the loop below asserts that omitting *any* of them
+    changes the answer, so the test states its own non-tautology rather than relying on the
+    reader to check it.
+    """
+    population = et_o3_anchored_population(participation_probability=0.5)
     rows = population.expected_counts(livetime_seconds=2048.0, detectors=["E1", "E2", "E3"], snr_threshold=10.0)
     assert len(rows) == 6
+
+    discriminating = [row for row in rows if row.glitch_class == "network_coherent"]
+    assert discriminating, "the coherent class is the one carrying a participation below one."
+
     for row in rows:
-        assert row.expected == pytest.approx(
-            row.rate_hz * row.livetime_seconds * row.participation * row.selection, rel=1e-12
-        )
+        factors = {name: getattr(row, name) for name in DECOMPOSITION_FACTORS}
+        assert row.expected == pytest.approx(math.prod(factors.values()), rel=1e-12)
         assert row.network_events == pytest.approx(row.expected / row.participation, rel=1e-12)
+
+    for row in discriminating:
+        factors = {name: getattr(row, name) for name in DECOMPOSITION_FACTORS}
+        assert all(value != pytest.approx(1.0) for value in factors.values()), factors
+        for omitted in DECOMPOSITION_FACTORS:
+            partial = math.prod(value for name, value in factors.items() if name != omitted)
+            assert partial != pytest.approx(row.expected, rel=1e-9), (
+                f"dropping {omitted} leaves the product unchanged, so this fixture cannot tell an "
+                f"implementation that uses it from one that does not."
+            )
+
+
+#: The worked case ``docs/dev/glitch_population.md`` tabulates. Changing it here without
+#: changing the page, or the other way round, fails
+#: :func:`test_the_documented_decomposition_is_the_one_the_code_returns`.
+DOCUMENTED_DECOMPOSITION = {"livetime_seconds": 2048.0, "detectors": ("E1", "E2", "E3"), "snr_threshold": 10.0}
+
+#: Where the page tabulates it, and which numbered section the table is in.
+ANCHOR_PAGE = Path(__file__).resolve().parents[1] / "docs" / "dev" / "glitch_population.md"
+DECOMPOSITION_SECTION = 6
+
+
+def _documented_decomposition_rows() -> dict[str, dict[str, float]]:
+    """Parse the anchor page's expected-count table into ``{class: {column: value}}``.
+
+    Parsed rather than restated. A test carrying its own copy of the page's numbers pins
+    the copy, not the page, and the page is what a campaign reads: the review that prompted
+    this test found a table quoting the *naive* exponents the same page argues against,
+    with every number in the code correct and nothing to catch the gap.
+
+    Returns:
+        One entry per tabulated class, keyed by the code's own field names.
+
+    Raises:
+        AssertionError: If the page no longer carries exactly the two tabulated rows, which
+            means the table moved and this parser has to move with it.
+    """
+    columns = ("rate_hz", "livetime_seconds", "participation", "selection", "expected", "network_events")
+    page = ANCHOR_PAGE.read_text(encoding="utf-8")
+    # Scoped to the decomposition section: the class names label rows in more than one table
+    # on this page, and the others are counts of a realization rather than the factors.
+    start = page.index(f"## {DECOMPOSITION_SECTION}.")
+    finish = page.index(f"## {DECOMPOSITION_SECTION + 1}.", start)
+    rows: dict[str, dict[str, float]] = {}
+    for line in page[start:finish].splitlines():
+        if not line.startswith("| `"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        # Cell 1 is the interferometer column, which is prose rather than a number.
+        rows[cells[0].strip("`")] = dict(zip(columns, (float(cell) for cell in cells[2:]), strict=True))
+    assert set(rows) == {"short_single_channel", "network_coherent"}, (
+        f"the anchor page's expected-count table is no longer where this parser looks: found {sorted(rows)}."
+    )
+    return rows
+
+
+def test_the_documented_decomposition_is_the_one_the_code_returns(population: GlitchPopulation) -> None:
+    """Every number in the anchor page's worked table, against ``expected_counts()``.
+
+    The page is what a campaign copies from when it wants a count without instantiating the
+    population, so a table derived from a superseded exponent is a wrong number in a public
+    document with a correct implementation behind it. Tolerances are the page's own printed
+    precision -- four decimals on the dimensionless factors, five significant figures on the
+    rates -- so a genuine change to a registered quantity fails here until the page is
+    rewritten, and rounding alone does not.
+    """
+    documented = _documented_decomposition_rows()
+    rows = population.expected_counts(
+        livetime_seconds=DOCUMENTED_DECOMPOSITION["livetime_seconds"],
+        detectors=list(DOCUMENTED_DECOMPOSITION["detectors"]),
+        snr_threshold=DOCUMENTED_DECOMPOSITION["snr_threshold"],
+    )
+    assert {row.glitch_class for row in rows} == set(documented)
+
+    for row in rows:
+        quoted = documented[row.glitch_class]
+        assert row.rate_hz == pytest.approx(quoted["rate_hz"], rel=1e-4), row.glitch_class
+        assert row.livetime_seconds == pytest.approx(quoted["livetime_seconds"]), row.glitch_class
+        assert row.participation == pytest.approx(quoted["participation"], abs=5e-5), row.glitch_class
+        assert row.selection == pytest.approx(quoted["selection"], abs=5e-5), row.glitch_class
+        assert row.expected == pytest.approx(quoted["expected"], abs=5e-5), row.glitch_class
+        assert row.network_events == pytest.approx(quoted["network_events"], abs=5e-5), row.glitch_class
 
 
 def test_the_selection_factor_is_the_survival_of_the_registered_amplitude_law(
@@ -610,7 +728,11 @@ def test_the_stamp_identifies_the_population_and_the_realization(population: Gli
     assert stamp["detectors"] == ["E1", "E2"]
     assert stamp["gps_start"] == 1e9
     assert stamp["event_count"] == len(realization.events)
+    # Present, and deliberately not pinned: it is derived from the version-control
+    # description and moves on every commit, so a manifest comparing it for equality would
+    # reject a rerun of the same population from a later commit. The digest is the pin.
     assert stamp["gwmock_noise_version"]
+    assert stamp["digest"] == population.digest()
 
 
 # ---------------------------------------------------------------------------------------

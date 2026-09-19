@@ -1,152 +1,152 @@
 {
-  "classes": {
-    "Blip": {
-      "bandwidth_hz": {
-        "median": 913.146606445312
-      },
-      "central_frequency_hz": {
-        "median": 536.20263671875
-      },
-      "counts": {
-        "H1": 7457,
-        "L1": 4739,
-        "pooled": 12196
-      },
-      "duration_seconds": {
-        "median": 0.125,
-        "percentiles": {
-          "p1": 0.00780999986454844,
-          "p25": 0.0390600003302097,
-          "p5": 0.0117199998348951,
-          "p50": 0.125,
-          "p75": 0.26452500373125076,
-          "p95": 0.594300001859665,
-          "p99": 1.5
-        }
-      },
-      "peak_frequency_hz": {
-        "median": 217.740966796875,
-        "percentiles": {
-          "p1": 75.2629928588867,
-          "p25": 142.362854003906,
-          "p5": 93.0793228149414,
-          "p50": 217.740966796875,
-          "p75": 333.030212402344,
-          "p95": 509.362640380859,
-          "p99": 779.059387207031
-        }
-      },
-      "rate_hz": {
-        "H1": 0.00035197988093007274,
-        "L1": 0.00021771493952196891,
-        "pooled": 0.00028393915050835375
-      },
-      "snr": {
-        "count_above_published_ceiling": 8,
-        "hill_alpha": 1.3762693544389364,
-        "hill_alpha_stderr": 0.01246220042712016,
-        "hill_by_threshold": {
-          "10": 1.4799999060494078,
-          "15": 1.721554722751372,
-          "20": 2.032912896378668,
-          "30": 2.5594901645083064,
-          "7.5": 1.3762693544389364
+    "classes": {
+        "Blip": {
+            "bandwidth_hz": {
+                "median": 913.146606445312
+            },
+            "central_frequency_hz": {
+                "median": 536.20263671875
+            },
+            "counts": {
+                "H1": 7457,
+                "L1": 4739,
+                "pooled": 12196
+            },
+            "duration_seconds": {
+                "median": 0.125,
+                "percentiles": {
+                    "p1": 0.00780999986454844,
+                    "p25": 0.0390600003302097,
+                    "p5": 0.0117199998348951,
+                    "p50": 0.125,
+                    "p75": 0.26452500373125076,
+                    "p95": 0.594300001859665,
+                    "p99": 1.5
+                }
+            },
+            "peak_frequency_hz": {
+                "median": 217.740966796875,
+                "percentiles": {
+                    "p1": 75.2629928588867,
+                    "p25": 142.362854003906,
+                    "p5": 93.0793228149414,
+                    "p50": 217.740966796875,
+                    "p75": 333.030212402344,
+                    "p95": 509.362640380859,
+                    "p99": 779.059387207031
+                }
+            },
+            "rate_hz": {
+                "H1": 0.00035197988093007274,
+                "L1": 0.00021771493952196891,
+                "pooled": 0.00028393915050835375
+            },
+            "snr": {
+                "count_above_published_ceiling": 8,
+                "hill_alpha": 1.3762693544389364,
+                "hill_alpha_stderr": 0.01246220042712016,
+                "hill_by_threshold": {
+                    "10": 1.4799999060494078,
+                    "15": 1.721554722751372,
+                    "20": 2.032912896378668,
+                    "30": 2.5594901645083064,
+                    "7.5": 1.3762693544389364
+                },
+                "hill_of_truncated_draws": 1.3762693544387772,
+                "maximum": 344.380798339844,
+                "median": 13.41426515579225,
+                "percentiles": {
+                    "p1": 7.5653600692749,
+                    "p25": 9.5822377204895,
+                    "p5": 7.85300016403198,
+                    "p50": 13.41426515579225,
+                    "p75": 22.443302154541026,
+                    "p95": 47.84745407104489,
+                    "p99": 74.4978637695312
+                },
+                "truncated_pareto_alpha": 1.33329449521496
+            }
         },
-        "hill_of_truncated_draws": 1.3762693544387772,
-        "maximum": 344.380798339844,
-        "median": 13.41426515579225,
-        "percentiles": {
-          "p1": 7.5653600692749,
-          "p25": 9.5822377204895,
-          "p5": 7.85300016403198,
-          "p50": 13.41426515579225,
-          "p75": 22.443302154541026,
-          "p95": 47.84745407104489,
-          "p99": 74.4978637695312
-        },
-        "truncated_pareto_alpha": 1.33329449521496
-      }
+        "Scattered_Light": {
+            "bandwidth_hz": {
+                "median": 4007.736328125
+            },
+            "central_frequency_hz": {
+                "median": 2021.330078125
+            },
+            "counts": {
+                "H1": 68175,
+                "L1": 50987,
+                "pooled": 119162
+            },
+            "duration_seconds": {
+                "median": 1.75,
+                "percentiles": {
+                    "p1": 0.75,
+                    "p25": 1.4375,
+                    "p5": 1.0,
+                    "p50": 1.75,
+                    "p75": 2.5,
+                    "p95": 5.154129195213311,
+                    "p99": 10.829860258102428
+                }
+            },
+            "peak_frequency_hz": {
+                "median": 25.9656505584717,
+                "percentiles": {
+                    "p1": 18.5024604797363,
+                    "p25": 23.5145606994629,
+                    "p5": 19.1743602752686,
+                    "p50": 25.9656505584717,
+                    "p75": 29.4933605194092,
+                    "p95": 34.0033302307129,
+                    "p99": 40.2812805175781
+                }
+            },
+            "rate_hz": {
+                "H1": 0.003217946678611735,
+                "L1": 0.0023423995824871555,
+                "pooled": 0.0027742503323119425
+            },
+            "snr": {
+                "count_above_published_ceiling": 433,
+                "hill_alpha": 1.436252454228502,
+                "hill_alpha_stderr": 0.004160656783730316,
+                "hill_by_threshold": {
+                    "10": 1.4720445174435544,
+                    "15": 1.3915535554848117,
+                    "20": 1.507361083132962,
+                    "30": 1.9097295451668812,
+                    "7.5": 1.436252454228502
+                },
+                "hill_of_truncated_draws": 1.436252454228557,
+                "maximum": 601.241821289062,
+                "median": 11.971954822540301,
+                "percentiles": {
+                    "p1": 7.574816136360165,
+                    "p25": 9.33563041687012,
+                    "p5": 7.869051027297973,
+                    "p50": 11.971954822540301,
+                    "p75": 20.3936266899109,
+                    "p95": 58.1492614746094,
+                    "p99": 111.292343139648
+                },
+                "truncated_pareto_alpha": 1.4184236943220132
+            }
+        }
     },
-    "Scattered_Light": {
-      "bandwidth_hz": {
-        "median": 4007.736328125
-      },
-      "central_frequency_hz": {
-        "median": 2021.330078125
-      },
-      "counts": {
-        "H1": 68175,
-        "L1": 50987,
-        "pooled": 119162
-      },
-      "duration_seconds": {
-        "median": 1.75,
-        "percentiles": {
-          "p1": 0.75,
-          "p25": 1.4375,
-          "p5": 1.0,
-          "p50": 1.75,
-          "p75": 2.5,
-          "p95": 5.154129195213311,
-          "p99": 10.829860258102428
-        }
-      },
-      "peak_frequency_hz": {
-        "median": 25.9656505584717,
-        "percentiles": {
-          "p1": 18.5024604797363,
-          "p25": 23.5145606994629,
-          "p5": 19.1743602752686,
-          "p50": 25.9656505584717,
-          "p75": 29.4933605194092,
-          "p95": 34.0033302307129,
-          "p99": 40.2812805175781
-        }
-      },
-      "rate_hz": {
-        "H1": 0.003217946678611735,
-        "L1": 0.0023423995824871555,
-        "pooled": 0.0027742503323119425
-      },
-      "snr": {
-        "count_above_published_ceiling": 433,
-        "hill_alpha": 1.436252454228502,
-        "hill_alpha_stderr": 0.004160656783730316,
-        "hill_by_threshold": {
-          "10": 1.4720445174435544,
-          "15": 1.3915535554848117,
-          "20": 1.507361083132962,
-          "30": 1.9097295451668812,
-          "7.5": 1.436252454228502
-        },
-        "hill_of_truncated_draws": 1.436252454228557,
-        "maximum": 601.241821289062,
-        "median": 11.971954822540301,
-        "percentiles": {
-          "p1": 7.574816136360165,
-          "p25": 9.33563041687012,
-          "p5": 7.869051027297973,
-          "p50": 11.971954822540301,
-          "p75": 20.3936266899109,
-          "p95": 58.1492614746094,
-          "p99": 111.292343139648
-        },
-        "truncated_pareto_alpha": 1.4184236943220132
-      }
+    "description": "Measured reference statistics for the et-o3-anchored-v1 glitch population. Regenerated by scripts/measure_glitch_population_anchors.py; quoted by docs/dev/glitch_population.md; asserted against by tests/test_glitch_population.py.",
+    "livetime_seconds": {
+        "H1": 21185870.0,
+        "L1": 21766995.0,
+        "pooled": 42952865.0
+    },
+    "selection": {
+        "confidence_minimum": 0.9,
+        "snr_minimum": 7.5
+    },
+    "sources": {
+        "classifications": "doi:10.5281/zenodo.5649212 (Gravity Spy machine-learning classifications, O1-O3b)",
+        "livetime": "Gravitational Wave Open Science Center O3 observing segments (H1_DATA, L1_DATA)"
     }
-  },
-  "description": "Measured reference statistics for the et-o3-anchored-v1 glitch population. Regenerated by scripts/measure_glitch_population_anchors.py; quoted by docs/dev/glitch_population.md; asserted against by tests/test_glitch_population.py.",
-  "livetime_seconds": {
-    "H1": 21185870.0,
-    "L1": 21766995.0,
-    "pooled": 42952865.0
-  },
-  "selection": {
-    "confidence_minimum": 0.9,
-    "snr_minimum": 7.5
-  },
-  "sources": {
-    "classifications": "doi:10.5281/zenodo.5649212 (Gravity Spy machine-learning classifications, O1-O3b)",
-    "livetime": "Gravitational Wave Open Science Center O3 observing segments (H1_DATA, L1_DATA)"
-  }
 }

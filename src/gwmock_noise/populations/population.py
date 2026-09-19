@@ -54,9 +54,16 @@ class GlitchRealization(NamedTuple):
             two arms is what makes their glitch content bit-identical.
         events: The per-event truth catalogue, in time order. See
             :data:`gwmock_noise.simulators.glitches.GLITCH_CATALOGUE_COLUMNS`.
-        stamp: What a campaign manifest pins -- the population's name and digest, the
+        stamp: What identifies this realization: the population's name and digest, the
             package version, and the generation parameters. Enough to reproduce ``strain``
             and to prove another run used the same population.
+
+            **The pinned value is ``digest``, not the whole stamp.** ``gwmock_noise_version``
+            is derived from the version-control description and therefore changes on every
+            commit, including commits that touch nothing this population depends on; it is a
+            provenance record of what produced a realization, and a manifest that compares
+            it for equality would reject a rerun of the same population from a later commit.
+            Pin ``population`` and ``digest``, record the rest.
     """
 
     strain: dict[str, np.ndarray]
@@ -397,7 +404,8 @@ class GlitchPopulation:
         statistic must not differ in their glitches, and the way to guarantee that is for
         every arm to add *the same array* rather than to re-run a generator and trust it to
         agree. The returned stamp carries the population digest and the seed, so an arm can
-        record which realization it added.
+        record which realization it added -- and the digest is the field to pin, for the
+        reason :class:`GlitchRealization` gives.
 
         The realization is reproducible for a fixed (package version, population, seed) and
         does not depend on the base noise, on the other interferometers in the run, or on
