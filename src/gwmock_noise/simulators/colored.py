@@ -31,6 +31,12 @@ logger = logging.getLogger(LOGGER_NAME)
 PSD_WINDOW_WIDTH_HZ = 1.0
 MIN_TAPER_BINS = 2
 
+#: Relative tolerance for a supplied psd_array frequency axis against the
+#: simulator's own grid. It is tight on purpose: the array must be declared on
+#: the simulator's exact grid, and an equal-length array from a different
+#: spacing is an error rather than a silent reinterpretation.
+FREQUENCY_RELATIVE_TOLERANCE = 1e-9
+
 
 def _tukey_window(length: int, alpha: float) -> np.ndarray:
     """Return a Tukey window without depending on SciPy."""
@@ -69,6 +75,55 @@ def _resolve_taper_alpha(masked_frequencies: np.ndarray) -> float:
     return 2.0 * PSD_WINDOW_WIDTH_HZ / (f_high_hz - f_low_hz)
 
 
+def _validate_array_target(
+    *,
+    psd_array: np.ndarray | None,
+    frequencies: np.ndarray | None,
+    delta_frequency: float | None,
+) -> None:
+    """Validate an in-memory PSD target and its declared frequency axis.
+
+    These checks are shape and value checks only; the axis is compared with the
+    simulator's own grid later, once that grid exists.
+
+    Args:
+        psd_array: The in-memory PSD target, or ``None`` for a file or schedule.
+        frequencies: The declared frequency axis, or ``None``.
+        delta_frequency: The declared frequency spacing in Hz, or ``None``.
+
+    Raises:
+        ValueError: If an axis is declared without an array, if an array is
+            declared without an axis, if either is not one-dimensional or the
+            two disagree in length, if the array holds a non-finite value, or
+            if the spacing is not positive.
+    """
+    if psd_array is None and (frequencies is not None or delta_frequency is not None):
+        raise ValueError("frequencies and delta_frequency describe a psd_array and are only valid with it.")
+    if psd_array is not None and frequencies is None and delta_frequency is None:
+        raise ValueError(
+            "psd_array requires its frequency axis: pass frequencies or delta_frequency, so an array built at a "
+            "different spacing is rejected instead of silently reinterpreted on this simulator's grid."
+        )
+    if psd_array is not None and np.asarray(psd_array).ndim != 1:
+        raise ValueError("psd_array must be one-dimensional on the simulator's frequency grid.")
+    if psd_array is not None and not np.all(np.isfinite(np.asarray(psd_array, dtype=float))):
+        raise ValueError(
+            "psd_array must contain only finite values: a NaN or infinite bin inside the band survives the "
+            "out-of-band zeroing and the non-negative clip, and the inverse transform spreads it over every "
+            "sample of the realization."
+        )
+    if frequencies is not None and np.asarray(frequencies).ndim != 1:
+        raise ValueError("frequencies must be one-dimensional.")
+    if (
+        frequencies is not None
+        and psd_array is not None
+        and np.asarray(frequencies).shape != np.asarray(psd_array).shape
+    ):
+        raise ValueError("frequencies must have one value per psd_array bin.")
+    if delta_frequency is not None and delta_frequency <= 0:
+        raise ValueError(f"delta_frequency must be positive, got {delta_frequency!r}.")
+
+
 class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
     """Generate colored detector noise from an input PSD."""
 
@@ -79,6 +134,9 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         *,
         psd_file: str | Path | None = None,
         psd_schedule: list[tuple[float, str | Path]] | None = None,
+        psd_array: np.ndarray | None = None,
+        frequencies: np.ndarray | None = None,
+        delta_frequency: float | None = None,
         detectors: list[str] | None = None,
         sampling_frequency: float = 4096.0,
         duration: float = 4.0,
@@ -88,12 +146,14 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         window_duration: float = DEFAULT_WINDOW_DURATION,
     ) -> None:
         """Initialize the simulator."""
-        if psd_file is None and psd_schedule is None:
-            raise ValueError("Either psd_file or psd_schedule must be provided.")
-        if psd_file is not None and psd_schedule is not None:
-            raise ValueError("psd_file and psd_schedule are mutually exclusive.")
+        sources = [psd_file, psd_schedule, psd_array]
+        if all(source is None for source in sources):
+            raise ValueError("Exactly one of psd_file, psd_schedule or psd_array must be provided.")
+        if sum(source is not None for source in sources) > 1:
+            raise ValueError("psd_file, psd_schedule and psd_array are mutually exclusive.")
         if psd_schedule is not None and not psd_schedule:
             raise ValueError("psd_schedule must contain at least one anchor.")
+        _validate_array_target(psd_array=psd_array, frequencies=frequencies, delta_frequency=delta_frequency)
         if psd_schedule is not None:
             offsets = [float(gps_offset_seconds) for gps_offset_seconds, _ in psd_schedule]
             if offsets != sorted(offsets):
@@ -110,6 +170,9 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
             if psd_schedule is not None
             else None
         )
+        self.psd_array = None if psd_array is None else np.asarray(psd_array, dtype=float).copy()
+        self.frequencies = None if frequencies is None else np.asarray(frequencies, dtype=float).copy()
+        self.delta_frequency = None if delta_frequency is None else float(delta_frequency)
         self.detectors = list(detectors) if detectors is not None else ["H1", "L1"]
         self.duration = duration
         self.sampling_frequency = sampling_frequency
@@ -216,12 +279,85 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
 
     def _load_psd_anchors(self) -> list[tuple[float, np.ndarray]]:
         """Load all configured PSD anchors onto the current simulator grid."""
+        if self.psd_array is not None:
+            return [(0.0, self._array_psd_on_grid())]
         anchors = self.psd_schedule or [(0.0, self.psd_file)]
         return [
             (gps_offset_seconds, self._load_psd_on_grid(psd_path))
             for gps_offset_seconds, psd_path in anchors
             if psd_path is not None
         ]
+
+    def _array_psd_on_grid(self) -> np.ndarray:
+        """Return the supplied PSD array on the simulator grid, untapered.
+
+        The array path exists for targets that are defined analytically on the
+        window's own frequency grid rather than loaded from a table. It applies
+        no interpolation and no Tukey taper --- either would change the target
+        --- and zeroes the bins outside the configured band, exactly as the
+        file path does after its interpolation.
+
+        The array's frequency axis is checked against the simulator's own grid
+        before the array is accepted, so an equal-length array built at a
+        different spacing raises instead of being reinterpreted.
+
+        Returns:
+            The one-sided PSD on ``self._frequency_grid``.
+
+        Raises:
+            ValueError: If the array's length differs from the frequency grid's,
+                or if its declared frequency axis does not match the grid.
+        """
+        if self.psd_array.shape != self._frequency_grid.shape:
+            raise ValueError(
+                f"psd_array must have one value per frequency grid bin: expected shape "
+                f"{self._frequency_grid.shape}, got {self.psd_array.shape}."
+            )
+        self._validate_array_frequency_axis()
+        psd = self.psd_array.copy()
+        psd[~self._frequency_mask] = 0.0
+        return np.clip(psd, a_min=0.0, a_max=None)
+
+    def _validate_array_frequency_axis(self) -> None:
+        """Check the supplied psd_array frequency axis against the simulator grid.
+
+        The contract is that the array is handed over on the simulator's own
+        grid, ``sampling_frequency / window_size``. A declared axis --- the
+        full ``frequencies`` grid or a scalar ``delta_frequency`` --- is
+        compared with that grid within :data:`FREQUENCY_RELATIVE_TOLERANCE`,
+        and a disagreement is an error naming both sides.
+
+        Raises:
+            ValueError: If the declared frequencies are negative or not
+                strictly increasing, or if the declared axis does not match the
+                simulator's grid.
+        """
+        expected = self._delta_frequency
+        if self.frequencies is not None:
+            supplied = self.frequencies
+            if supplied.shape != self._frequency_grid.shape:
+                raise ValueError(
+                    f"frequencies must have one value per frequency grid bin: expected shape "
+                    f"{self._frequency_grid.shape}, got {supplied.shape}."
+                )
+            if np.any(supplied < 0.0):
+                raise ValueError(f"frequencies must be non-negative, got a minimum of {float(np.min(supplied))} Hz.")
+            if np.any(np.diff(supplied) <= 0.0):
+                raise ValueError("frequencies must be strictly increasing.")
+            if not np.allclose(supplied, self._frequency_grid, rtol=FREQUENCY_RELATIVE_TOLERANCE, atol=0.0):
+                supplied_spacing = float(np.median(np.diff(supplied))) if supplied.size > 1 else float("nan")
+                raise ValueError(
+                    f"frequencies do not match the simulator frequency grid: supplied spacing "
+                    f"{supplied_spacing!r} Hz, expected {expected!r} Hz "
+                    f"(sampling_frequency / window_size)."
+                )
+        if self.delta_frequency is not None and not np.isclose(
+            self.delta_frequency, expected, rtol=FREQUENCY_RELATIVE_TOLERANCE, atol=0.0
+        ):
+            raise ValueError(
+                f"delta_frequency {self.delta_frequency!r} Hz does not match the simulator frequency grid spacing "
+                f"{expected!r} Hz (sampling_frequency / window_size)."
+            )
 
     def _interpolate_psd(self, t: float) -> np.ndarray:
         """Interpolate the PSD schedule log-linearly at frame midpoint time ``t``."""
@@ -430,6 +566,7 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
             "seed": self.seed,
             "colored_noise": {
                 "psd_file": str(self.psd_file) if self.psd_file is not None else None,
+                "psd_array": None if self.psd_array is None else int(self.psd_array.size),
                 "psd_schedule": [
                     {"gps_offset_seconds": gps_offset_seconds, "psd_file": str(psd_path)}
                     for gps_offset_seconds, psd_path in (self.psd_schedule or [])

@@ -508,8 +508,6 @@ simulator** — lets you generate synthetic noise that mimics real detector
 behaviour.
 
 ```python
-from pathlib import Path
-
 import numpy as np
 from gwmock_noise.gwosc import GwoscNoiseConfig, GwoscNoiseFetcher
 from gwmock_noise.diagnostics import estimate_psd
@@ -520,9 +518,20 @@ fetcher = GwoscNoiseFetcher(config)
 clean = fetcher.fetch_clean()
 freqs, psd = estimate_psd(clean["H1"][0].value, sampling_frequency=4096.0)
 
-# ColoredNoiseSimulator.psd_file is a str | Path (or URL str), not in-memory arrays —
-# write the (frequency, PSD) columns from estimate_psd(), then pass that path.
-psd_path = Path("estimated_psd.txt")
-np.savetxt(psd_path, np.column_stack((freqs, psd)))
-sim = ColoredNoiseSimulator(psd_file=psd_path, detectors=["H1"], sampling_frequency=4096.0)
+# ColoredNoiseSimulator also accepts an in-memory target. The array must be on
+# the simulator's own frequency grid (sampling_frequency / window_size), and its
+# axis must be declared (frequencies or delta_frequency) so a grid built at a
+# different spacing is rejected instead of silently reinterpreted. The array is
+# used as given — no interpolation and no edge taper — with out-of-band bins
+# zeroed exactly as for a file path.
+# Every bin must be finite: a NaN or infinite value is rejected.
+window_size = round(64.0 * 4096.0)  # default window_duration is 64 s
+grid = np.fft.rfftfreq(window_size, d=1.0 / 4096.0)
+target = np.interp(grid, freqs, psd, left=0.0, right=0.0)
+sim = ColoredNoiseSimulator(
+    psd_array=target,
+    frequencies=grid,
+    detectors=["H1"],
+    sampling_frequency=4096.0,
+)
 ```
