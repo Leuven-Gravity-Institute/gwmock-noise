@@ -474,8 +474,8 @@ def test_colored_simulator_rejects_empty_psd_schedule() -> None:
 
 
 def test_colored_simulator_requires_psd_source() -> None:
-    """Either psd_file or psd_schedule must be configured."""
-    with pytest.raises(ValueError, match="Either psd_file or psd_schedule must be provided"):
+    """Exactly one PSD source (file, schedule or array) must be configured."""
+    with pytest.raises(ValueError, match="Exactly one of psd_file, psd_schedule or psd_array must be provided"):
         ColoredNoiseSimulator(detectors=["H1"], sampling_frequency=256.0)
 
 
@@ -562,4 +562,98 @@ def test_colored_simulator_rejects_wrong_psd_shape(tmp_path: Path) -> None:
             psd_file=psd_path,
             detectors=["H1"],
             sampling_frequency=256.0,
+        )
+
+
+def test_psd_array_path_is_bit_identical_to_the_file_path(tmp_path: Path) -> None:
+    """A target handed as an array reproduces the file path bit for bit."""
+    psd_path = _write_psd_file(tmp_path / "array_equivalence.txt")
+    settings = {
+        "detectors": ["H1"],
+        "sampling_frequency": 256.0,
+        "duration": 4.0,
+        "window_duration": 4.0,
+        "low_frequency_cutoff": 2.0,
+    }
+    from_file = ColoredNoiseSimulator(psd_file=psd_path, seed=7, **settings)
+    from_array = ColoredNoiseSimulator(psd_array=from_file._psd.copy(), seed=7, **settings)
+
+    file_output = from_file.generate(4.0, 256.0, ["H1"], seed=7)
+    array_output = from_array.generate(4.0, 256.0, ["H1"], seed=7)
+
+    assert np.array_equal(file_output["H1"], array_output["H1"])
+    assert np.array_equal(from_file._psd, from_array._psd)
+
+
+def test_psd_array_path_preserves_the_supplied_target() -> None:
+    """The array path applies no interpolation or taper to the target."""
+    sampling_frequency = 256.0
+    window_duration = 4.0
+    window_size = round(window_duration * sampling_frequency)
+    frequencies = np.fft.rfftfreq(window_size, d=1.0 / sampling_frequency)
+    target = 1.0e-3 + 2.0e-3 * np.cos(np.pi * frequencies / sampling_frequency)
+
+    simulator = ColoredNoiseSimulator(
+        psd_array=target,
+        detectors=["H1"],
+        sampling_frequency=sampling_frequency,
+        window_duration=window_duration,
+        low_frequency_cutoff=0.0,
+    )
+
+    assert np.array_equal(simulator._psd, target)
+
+
+def test_psd_array_path_zeroes_bins_outside_the_band() -> None:
+    """Bins outside the configured band are zeroed, as the file path does."""
+    sampling_frequency = 128.0
+    window_duration = 4.0
+    window_size = round(window_duration * sampling_frequency)
+    grid = np.fft.rfftfreq(window_size, d=1.0 / sampling_frequency)
+    target = np.full(grid.size, 5.0e-4)
+
+    simulator = ColoredNoiseSimulator(
+        psd_array=target,
+        detectors=["H1"],
+        sampling_frequency=sampling_frequency,
+        window_duration=window_duration,
+        low_frequency_cutoff=10.0,
+        high_frequency_cutoff=40.0,
+    )
+
+    mask = (grid >= 10.0) & (grid <= 40.0)
+    assert np.all(simulator._psd[mask] == 5.0e-4)
+    assert np.all(simulator._psd[~mask] == 0.0)
+
+
+def test_psd_array_path_rejects_wrong_length() -> None:
+    """The array must carry one value per simulator frequency bin."""
+    with pytest.raises(ValueError, match="psd_array must have one value per frequency grid bin"):
+        ColoredNoiseSimulator(
+            psd_array=np.ones(16),
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            window_duration=4.0,
+        )
+
+
+def test_psd_array_path_rejects_non_1d_input() -> None:
+    """The array must be one-dimensional."""
+    with pytest.raises(ValueError, match="psd_array must be one-dimensional"):
+        ColoredNoiseSimulator(
+            psd_array=np.ones((4, 4)),
+            detectors=["H1"],
+            sampling_frequency=256.0,
+            window_duration=4.0,
+        )
+
+
+def test_psd_array_path_is_mutually_exclusive_with_other_sources(tmp_path: Path) -> None:
+    """An array target cannot be combined with a file or a schedule."""
+    psd_path = _write_psd_file(tmp_path / "array_mixed.txt")
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        ColoredNoiseSimulator(psd_file=psd_path, psd_array=np.ones(4), detectors=["H1"], sampling_frequency=256.0)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        ColoredNoiseSimulator(
+            psd_schedule=[(0.0, psd_path)], psd_array=np.ones(4), detectors=["H1"], sampling_frequency=256.0
         )

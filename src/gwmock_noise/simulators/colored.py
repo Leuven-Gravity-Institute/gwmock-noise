@@ -79,6 +79,7 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         *,
         psd_file: str | Path | None = None,
         psd_schedule: list[tuple[float, str | Path]] | None = None,
+        psd_array: np.ndarray | None = None,
         detectors: list[str] | None = None,
         sampling_frequency: float = 4096.0,
         duration: float = 4.0,
@@ -88,12 +89,15 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         window_duration: float = DEFAULT_WINDOW_DURATION,
     ) -> None:
         """Initialize the simulator."""
-        if psd_file is None and psd_schedule is None:
-            raise ValueError("Either psd_file or psd_schedule must be provided.")
-        if psd_file is not None and psd_schedule is not None:
-            raise ValueError("psd_file and psd_schedule are mutually exclusive.")
+        sources = [psd_file, psd_schedule, psd_array]
+        if all(source is None for source in sources):
+            raise ValueError("Exactly one of psd_file, psd_schedule or psd_array must be provided.")
+        if sum(source is not None for source in sources) > 1:
+            raise ValueError("psd_file, psd_schedule and psd_array are mutually exclusive.")
         if psd_schedule is not None and not psd_schedule:
             raise ValueError("psd_schedule must contain at least one anchor.")
+        if psd_array is not None and np.asarray(psd_array).ndim != 1:
+            raise ValueError("psd_array must be one-dimensional on the simulator's frequency grid.")
         if psd_schedule is not None:
             offsets = [float(gps_offset_seconds) for gps_offset_seconds, _ in psd_schedule]
             if offsets != sorted(offsets):
@@ -110,6 +114,7 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
             if psd_schedule is not None
             else None
         )
+        self.psd_array = None if psd_array is None else np.asarray(psd_array, dtype=float).copy()
         self.detectors = list(detectors) if detectors is not None else ["H1", "L1"]
         self.duration = duration
         self.sampling_frequency = sampling_frequency
@@ -216,12 +221,38 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
 
     def _load_psd_anchors(self) -> list[tuple[float, np.ndarray]]:
         """Load all configured PSD anchors onto the current simulator grid."""
+        if self.psd_array is not None:
+            return [(0.0, self._array_psd_on_grid())]
         anchors = self.psd_schedule or [(0.0, self.psd_file)]
         return [
             (gps_offset_seconds, self._load_psd_on_grid(psd_path))
             for gps_offset_seconds, psd_path in anchors
             if psd_path is not None
         ]
+
+    def _array_psd_on_grid(self) -> np.ndarray:
+        """Return the supplied PSD array on the simulator grid, untapered.
+
+        The array path exists for targets that are defined analytically on the
+        window's own frequency grid rather than loaded from a table. It applies
+        no interpolation and no Tukey taper --- either would change the target
+        --- and zeroes the bins outside the configured band, exactly as the
+        file path does after its interpolation.
+
+        Returns:
+            The one-sided PSD on ``self._frequency_grid``.
+
+        Raises:
+            ValueError: If the array's length differs from the frequency grid's.
+        """
+        if self.psd_array.shape != self._frequency_grid.shape:
+            raise ValueError(
+                f"psd_array must have one value per frequency grid bin: expected shape "
+                f"{self._frequency_grid.shape}, got {self.psd_array.shape}."
+            )
+        psd = self.psd_array.copy()
+        psd[~self._frequency_mask] = 0.0
+        return np.clip(psd, a_min=0.0, a_max=None)
 
     def _interpolate_psd(self, t: float) -> np.ndarray:
         """Interpolate the PSD schedule log-linearly at frame midpoint time ``t``."""
@@ -430,6 +461,7 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
             "seed": self.seed,
             "colored_noise": {
                 "psd_file": str(self.psd_file) if self.psd_file is not None else None,
+                "psd_array": None if self.psd_array is None else int(self.psd_array.size),
                 "psd_schedule": [
                     {"gps_offset_seconds": gps_offset_seconds, "psd_file": str(psd_path)}
                     for gps_offset_seconds, psd_path in (self.psd_schedule or [])
