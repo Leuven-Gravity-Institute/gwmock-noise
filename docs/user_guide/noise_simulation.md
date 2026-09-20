@@ -486,11 +486,14 @@ models = [
 With the default `amplitude_distribution` mean of 1.0 and std of 0.0 the target
 SNR is met exactly; a non-zero std adds multiplicative SNR scatter. Events are
 placed by the same Poisson `rate` process as the other glitch models, run
-independently per detector unless the model is given a `network` specification:
-each detector then receives its own event times and waveform draws, and `rate`
-is the event rate seen by each detector. Note that resampling below 4096 Hz uses
-linear interpolation without an anti-aliasing filter, which aliases
-high-frequency content (the SNR calibration itself is unaffected).
+independently per detector: each detector receives its own event times and
+waveform draws, and `rate` is the event rate seen by each detector. A `network`
+specification instead shares one event process, and one waveform per event,
+across the detectors the model applies to, and `rate` is then the rate of that
+network process — see [Network-coherent glitches](#network-coherent-glitches).
+Note that resampling below 4096 Hz uses linear interpolation without an
+anti-aliasing filter, which aliases high-frequency content (the SNR calibration
+itself is unaffected).
 
 The dataset is cached by `huggingface_hub` after the first download, so later
 runs reuse the cached files. Each run contacts the Hub first to validate the
