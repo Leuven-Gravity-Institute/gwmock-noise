@@ -9,13 +9,18 @@ from typing import Any
 
 import numpy as np
 
-from gwmock_noise.glitches.models import GlitchDraw, GlitchModel, validate_glitch_detector_coverage
+from gwmock_noise.glitches.models import (
+    GlitchDraw,
+    GlitchModel,
+    NetworkCoherence,
+    validate_glitch_detector_coverage,
+)
 from gwmock_noise.simulators.protocol import NoiseSimulator
 
 #: Schema version of the per-event glitch truth catalogue. Bumped when the meaning of a
 #: column changes, including when the shape does not -- a consumer has nothing else to
 #: read the change from.
-GLITCH_CATALOGUE_SCHEMA_VERSION = "1.0.0"
+GLITCH_CATALOGUE_SCHEMA_VERSION = "1.1.0"
 
 #: Which instant each time column refers to, stated rather than left to be inferred. The
 #: Poisson process draws the time the waveform *starts*, so for a 2 s DeepExtractor sample
@@ -34,9 +39,20 @@ GLITCH_CATALOGUE_TIME_CONVENTION = (
 #: describes its own columns.
 GLITCH_CATALOGUE_COLUMNS: dict[str, str] = {
     "event_id": (
-        "Stable identifier, '<detector>-<model_index>-<ordinal>', where ordinal counts this "
-        "(model, detector) pair's events from zero. Reproducible for a fixed "
-        "(version, config, seed)."
+        "Stable identifier, '<detector>-<model_index>-<ordinal>'. For a model with no network "
+        "coherence the ordinal counts this (model, detector) pair's events from zero. For a "
+        "network-coherent model it is the ordinal of the shared network event, so a detector "
+        "that skipped an event skips its ordinal and the numbering is not contiguous per "
+        "detector. Reproducible either way for a fixed (version, config, seed)."
+    ),
+    "network_event_id": (
+        "Identifier of the shared network event, '<model_index>-<ordinal>', for a "
+        "network-coherent model; null for a model whose detectors are independent. Rows "
+        "sharing it are the same transient seen in different interferometers."
+    ),
+    "amplitude_ratio": (
+        "Per-interferometer multiplier applied to a network-coherent event's shared waveform; "
+        "null for a model whose detectors are independent."
     ),
     "detector": "Interferometer the glitch was injected into.",
     "model_index": "Position of the glitch model in the configured model list.",
@@ -67,6 +83,17 @@ GLITCH_CATALOGUE_COLUMNS: dict[str, str] = {
     ),
     "amplitude": "Amplitude multiplier drawn from the model's amplitude distribution.",
 }
+
+
+#: Spawn-key slot for a network-coherent model's shared arrival-and-waveform stream. It sits
+#: one past the top of the CRC-32 range the per-detector streams are keyed by, so a network
+#: stream can never collide with an interferometer's own stream however the name hashes.
+NETWORK_STREAM_KEY = 1 << 32
+
+#: Spawn-key tag for the per-(event, interferometer) participation stream of a
+#: network-coherent model. Also outside the CRC-32 range, and it sits in a third slot, so a
+#: participation stream is distinct from both of the above.
+NETWORK_PARTICIPATION_KEY = (1 << 32) + 1
 
 
 class _ZeroNoiseSimulator:
@@ -132,16 +159,24 @@ class _ZeroNoiseSimulator:
 class InjectGlitches:
     """Wrap a base simulator and inject transient glitches additively.
 
-    Each glitch model runs an independent Poisson process per detector, so
-    every detector receives its own event times and waveform realizations.
-    ``GlitchModel.rate`` is therefore the event rate seen by each individual
-    detector.
-
-    Every ``(model, detector)`` pair draws from its own random generator,
+    A glitch model with no ``network`` coherence runs an independent Poisson process
+    per detector, so every detector receives its own event times and waveform
+    realizations, and ``GlitchModel.rate`` is the event rate seen by each individual
+    detector. Every ``(model, detector)`` pair draws from its own random generator,
     derived from the top-level seed and the detector name via an independent
-    ``SeedSequence`` stream. A detector's realization is therefore reproducible
-    and independent of which other detectors are present or the order in which
-    they are requested.
+    ``SeedSequence`` stream.
+
+    A model carrying a :class:`~gwmock_noise.glitches.models.NetworkCoherence` runs
+    **one** Poisson process for the whole network and draws **one** waveform per
+    event, offering it to every detector it applies to. ``GlitchModel.rate`` is then
+    the *network* event rate, not the per-detector one, and each detector sees it
+    times the coherence's participation probability. Arrival times and waveforms come
+    from a stream keyed by the model alone; each detector's participation and
+    amplitude ratio come from a stream keyed by its own name and the event's ordinal.
+
+    Either way, **a detector's realization is reproducible and independent of which
+    other detectors are present or the order in which they are requested** -- which is
+    what lets two runs over different networks be compared on the channels they share.
 
     A glitch whose waveform extends past the end of a chunk has its remainder
     carried into the next chunk and replayed in event order, so the injected
@@ -198,6 +233,13 @@ class InjectGlitches:
         self._events: list[dict[str, Any]] = []
         self._segment_events: list[dict[str, Any]] = []
         self._contiguous_gps_start: float | None = None
+        self._network_rngs: dict[int, np.random.Generator] = {}
+        self._network_next_event_times: dict[int, float] = {}
+        self._network_event_counts: dict[int, int] = {}
+        # Every (model, interferometer) pair the run has reached, network-coherent or not.
+        # `metadata` reports counts over this rather than over the per-pair Poisson clocks,
+        # which a network-coherent model does not have: it has one clock for the network.
+        self._seen_pairs: set[tuple[int, str]] = set()
 
     def _initialize_process(self, seed: int | None) -> None:
         """Reset the per-model, per-detector Poisson-process state.
@@ -222,6 +264,10 @@ class InjectGlitches:
         self._events = []
         self._segment_events = []
         self._contiguous_gps_start = None
+        self._network_rngs = {}
+        self._network_next_event_times = {}
+        self._network_event_counts = {}
+        self._seen_pairs = set()
 
     def _add_pending_tail(self, key: tuple[int, str], tail: np.ndarray) -> None:
         """Queue a waveform tail to inject at the start of the next chunk.
@@ -257,6 +303,78 @@ class InjectGlitches:
             self._rngs[key] = rng
         return rng
 
+    def _network_rng_for(self, model_index: int) -> np.random.Generator:
+        """Return the shared arrival-and-waveform generator for one network-coherent model.
+
+        Keyed by the model alone. A network-coherent event belongs to the network rather
+        than to any one interferometer, so its time and its waveform have to be drawn from a
+        stream that does not know which interferometers the run contains -- otherwise the
+        same seed would produce different transients in a three-interferometer run and in
+        the two-interferometer one it is being compared against, and the comparison would be
+        measuring the generator rather than the geometry.
+        """
+        rng = self._network_rngs.get(model_index)
+        if rng is None:
+            if self._seed_sequence is None:
+                raise RuntimeError("glitch RNG was not initialized.")
+            child = np.random.SeedSequence(
+                entropy=self._seed_sequence.entropy,
+                spawn_key=(model_index, NETWORK_STREAM_KEY),
+            )
+            rng = np.random.default_rng(child)
+            self._network_rngs[model_index] = rng
+        return rng
+
+    def _network_share(
+        self,
+        model_index: int,
+        detector: str,
+        ordinal: int,
+        coherence: NetworkCoherence,
+    ) -> float | None:
+        """Decide whether one interferometer takes a network event, and how loudly.
+
+        The generator is derived from the seed, the model, the interferometer name and the
+        network event's own ordinal, and is used once and discarded. That costs a
+        ``SeedSequence`` spawn per (event, interferometer) -- microseconds, against a drawn
+        and colored waveform -- and buys the property the pairing rests on: one
+        interferometer's decisions depend on nothing but its own name and the event's index,
+        so adding or removing another interferometer, or joining one part-way through a
+        stream, leaves every other interferometer's strain bit-for-bit unchanged. A single
+        long-lived per-interferometer stream advanced once per event would have the same
+        property only while every event advanced it, which a mid-stream join breaks.
+
+        Args:
+            model_index: Position of the model in the configured list.
+            detector: The interferometer being offered the event.
+            ordinal: Index of the network event, counted from zero across the whole run.
+            coherence: The model's coherence specification.
+
+        Returns:
+            The multiplier to apply to the shared waveform, or ``None`` when this
+            interferometer does not take this event.
+
+        Raises:
+            RuntimeError: If the wrapper's seed sequence was never initialized.
+        """
+        if self._seed_sequence is None:
+            raise RuntimeError("glitch RNG was not initialized.")
+        child = np.random.SeedSequence(
+            entropy=self._seed_sequence.entropy,
+            spawn_key=(
+                model_index,
+                zlib.crc32(detector.encode("utf-8")),
+                NETWORK_PARTICIPATION_KEY,
+                ordinal,
+            ),
+        )
+        rng = np.random.default_rng(child)
+        # `random()` is uniform on [0, 1), so a probability of 1.0 always participates and a
+        # probability of 0.0 never does -- both without a special case.
+        if rng.random() >= coherence.participation_probability:
+            return None
+        return coherence.amplitude_ratio(rng)
+
     @staticmethod
     def _draw_interarrival(rate: float, rng: np.random.Generator) -> float:
         """Draw the next waiting time for one glitch process."""
@@ -275,6 +393,8 @@ class InjectGlitches:
         sample_index: int,
         segment_gps_start: float,
         sampling_frequency: float,
+        network_event_id: str | None = None,
+        amplitude_ratio: float | None = None,
     ) -> None:
         """Append one catalogue row for a glitch that reached the strain.
 
@@ -297,12 +417,21 @@ class InjectGlitches:
         streamed run and a single call over the same span, which nothing else about the
         catalogue does. A waveform is genuinely cut only where the generated data ends,
         which is the caveat the column's own description carries.
+
+        ``amplitude_ratio`` scales it. A network-coherent event is drawn once and offered
+        to several interferometers, so the draw's own figure describes the shared waveform
+        and not what any one of them received; SNR is linear in amplitude, so the row
+        reports the drawn figure times this interferometer's ratio. The ratio is kept in its
+        own column rather than folded into ``amplitude``, which is the model's own
+        amplitude-distribution draw and is shared by every interferometer taking the event.
         """
         waveform = draw.waveform
         gps_start_time = segment_gps_start + (sample_index / sampling_frequency)
         peak_offset = int(np.argmax(np.abs(waveform))) / sampling_frequency
         record = {
             "event_id": f"{detector}-{model_index}-{ordinal}",
+            "network_event_id": network_event_id,
+            "amplitude_ratio": None if amplitude_ratio is None else float(amplitude_ratio),
             "detector": detector,
             "model_index": model_index,
             "kind": model.kind,
@@ -314,7 +443,11 @@ class InjectGlitches:
             "segment_index": int(self._segment_index),
             "sample_index": int(sample_index),
             "target_snr": None if draw.target_snr is None else float(draw.target_snr),
-            "realized_snr": None if draw.realized_snr is None else float(draw.realized_snr),
+            "realized_snr": (
+                None
+                if draw.realized_snr is None
+                else float(draw.realized_snr if amplitude_ratio is None else draw.realized_snr * amplitude_ratio)
+            ),
             "amplitude": None if draw.amplitude is None else float(draw.amplitude),
         }
         # Appended to the segment's list only; `generate` sorts that list and extends the
@@ -469,6 +602,214 @@ class InjectGlitches:
             combined[detector] = base_strain.copy()
         return combined
 
+    def _lay_pending_tails(self, key: tuple[int, str], strain: np.ndarray, n_samples: int) -> None:
+        """Replay the waveform fragments carried over from the previous chunk.
+
+        Laid down before this chunk's own events, so a glitch straddling a chunk boundary is
+        continuous rather than truncated. Fragments are replayed in their original event
+        order; anything still overflowing this chunk is re-queued, again in order, for the
+        next one.
+        """
+        for tail in self._pending_tails.pop(key, []):
+            stop = min(n_samples, tail.size)
+            strain[:stop] += tail[:stop]
+            if tail.size > n_samples:
+                self._add_pending_tail(key, tail[n_samples:])
+
+    def _inject_independent(  # noqa: PLR0913
+        self,
+        *,
+        model: GlitchModel,
+        model_index: int,
+        detectors: list[str],
+        combined: dict[str, np.ndarray],
+        n_samples: int,
+        segment_start: float,
+        segment_end: float,
+        segment_gps_start: float,
+        sampling_frequency: float,
+    ) -> None:
+        """Inject one model whose interferometers glitch independently of one another.
+
+        Each interferometer runs its own Poisson process and draws from its own stream, so
+        ``model.rate`` is the rate each of them sees and no two of them carry the same
+        transient.
+        """
+        for detector in detectors:
+            key = (model_index, detector)
+            rng = self._rng_for(model_index, detector)
+            self._lay_pending_tails(key, combined[detector], n_samples)
+
+            if key not in self._next_event_times:
+                # A pair first seen mid-stream (e.g. a detector added between
+                # chunks) starts its Poisson clock at the current segment start.
+                self._next_event_times[key] = segment_start + self._draw_interarrival(model.rate, rng)
+            event_time = self._next_event_times[key]
+            while event_time < segment_end:
+                sample_index = int((event_time - segment_start) * sampling_frequency)
+                draw = model.draw(sampling_frequency, rng=rng)
+                ordinal = self._event_counts.get(key, 0)
+                if self._place_waveform(
+                    strain=combined[detector],
+                    waveform=draw.waveform,
+                    sample_index=sample_index,
+                    n_samples=n_samples,
+                    key=key,
+                ):
+                    self._event_counts[key] = ordinal + 1
+                    self._record_event(
+                        model=model,
+                        model_index=model_index,
+                        detector=detector,
+                        ordinal=ordinal,
+                        draw=draw,
+                        sample_index=sample_index,
+                        segment_gps_start=segment_gps_start,
+                        sampling_frequency=sampling_frequency,
+                    )
+                event_time += self._draw_interarrival(model.rate, rng)
+            self._next_event_times[key] = event_time
+
+    def _inject_network_coherent(  # noqa: PLR0913
+        self,
+        *,
+        model: GlitchModel,
+        model_index: int,
+        detectors: list[str],
+        combined: dict[str, np.ndarray],
+        n_samples: int,
+        segment_start: float,
+        segment_end: float,
+        segment_gps_start: float,
+        sampling_frequency: float,
+    ) -> None:
+        """Inject one model whose events are shared across the interferometers it reaches.
+
+        One Poisson process for the whole network -- ``model.rate`` is the *network* event
+        rate, not the per-interferometer one -- and one waveform per event, offered to each
+        scoped interferometer at the same sample index. Both the arrival times and the
+        waveforms come from a stream keyed by the model alone, and each interferometer's
+        participation from a stream keyed by its own name and the event's ordinal, so what
+        an interferometer receives does not depend on which others are in the run.
+
+        The event's ordinal counts *network* events, including ones no interferometer took,
+        for the same reason: an ordinal that counted only the events some interferometer
+        received would depend on the run's interferometer list, and the participation stream
+        is keyed by it.
+        """
+        for detector in detectors:
+            self._lay_pending_tails((model_index, detector), combined[detector], n_samples)
+
+        coherence = model.network
+        if coherence is None:  # pragma: no cover - the caller selects this branch
+            raise RuntimeError("_inject_network_coherent requires a model with network coherence.")
+        rng = self._network_rng_for(model_index)
+        if model_index not in self._network_next_event_times:
+            self._network_next_event_times[model_index] = segment_start + self._draw_interarrival(model.rate, rng)
+        event_time = self._network_next_event_times[model_index]
+        while event_time < segment_end:
+            sample_index = int((event_time - segment_start) * sampling_frequency)
+            draw = model.draw(sampling_frequency, rng=rng)
+            ordinal = self._network_event_counts.get(model_index, 0)
+            self._network_event_counts[model_index] = ordinal + 1
+            network_event_id = f"{model_index}-{ordinal}"
+            for detector in detectors:
+                ratio = self._network_share(model_index, detector, ordinal, coherence)
+                if ratio is None:
+                    continue
+                key = (model_index, detector)
+                waveform = draw.waveform if ratio == 1.0 else ratio * draw.waveform
+                if self._place_waveform(
+                    strain=combined[detector],
+                    waveform=waveform,
+                    sample_index=sample_index,
+                    n_samples=n_samples,
+                    key=key,
+                ):
+                    self._event_counts[key] = self._event_counts.get(key, 0) + 1
+                    self._record_event(
+                        model=model,
+                        model_index=model_index,
+                        detector=detector,
+                        ordinal=ordinal,
+                        draw=draw,
+                        sample_index=sample_index,
+                        segment_gps_start=segment_gps_start,
+                        sampling_frequency=sampling_frequency,
+                        network_event_id=network_event_id,
+                        amplitude_ratio=ratio,
+                    )
+            event_time += self._draw_interarrival(model.rate, rng)
+        self._network_next_event_times[model_index] = event_time
+
+    def _refuse_a_band_the_sampling_rate_cannot_carry(self, sampling_frequency: float) -> None:
+        """Refuse a run whose rate cannot represent a model's configured frequency support.
+
+        Coloring already raises on a band above the Nyquist frequency, but it raises on the
+        *first drawn waveform*, and a class configured at a realistic rate draws its first
+        waveform hours into a campaign -- so a run that could never have been valid
+        generates and writes data until it happens to fire. Asked and answered here instead,
+        before the base simulator runs, for the same reason the coverage check is: a
+        configuration that cannot be honoured should not start.
+
+        Narrowing the band to the Nyquist frequency instead would be worse than either: the
+        run would then inject a class that is not the configured one while reporting the
+        configuration it was asked for.
+
+        Args:
+            sampling_frequency: The rate this segment is being generated at.
+
+        Raises:
+            ValueError: If any model's ``high_frequency_cutoff`` exceeds the Nyquist
+                frequency. The message names the models and the rate that would carry them.
+        """
+        nyquist = sampling_frequency / 2.0
+        offenders = [
+            (index, float(cutoff))
+            for index, model in enumerate(self.glitch_models)
+            if (cutoff := getattr(model, "high_frequency_cutoff", None)) is not None and cutoff > nyquist
+        ]
+        if not offenders:
+            return
+        details = "; ".join(f"model {index} is supported to {cutoff:g} Hz" for index, cutoff in offenders)
+        required = 2.0 * max(cutoff for _, cutoff in offenders)
+        raise ValueError(
+            f"glitch models are configured above the Nyquist frequency of {nyquist:g} Hz: {details}. "
+            f"Generate at {required:g} Hz or above, or lower the models' high_frequency_cutoff -- "
+            f"narrowing it here would inject a different class than the one configured."
+        )
+
+    def _place_waveform(
+        self,
+        *,
+        strain: np.ndarray,
+        waveform: np.ndarray,
+        sample_index: int,
+        n_samples: int,
+        key: tuple[int, str],
+    ) -> bool:
+        """Add one waveform to a chunk and queue whatever overflows it.
+
+        Args:
+            strain: The interferometer's strain for this chunk, added to in place.
+            waveform: The waveform to inject.
+            sample_index: Where in the chunk its first sample lands.
+            n_samples: The chunk's length.
+            key: The ``(model index, interferometer)`` pair whose tail queue the overflow
+                belongs to.
+
+        Returns:
+            Whether any of the waveform reached the strain. ``False`` means the chunk had no
+            room for it at all, and it is therefore not recorded either.
+        """
+        stop_index = min(n_samples, sample_index + waveform.size)
+        if stop_index <= sample_index:
+            return False
+        strain[sample_index:stop_index] += waveform[: stop_index - sample_index]
+        # Carry the part that overflows this chunk into the next one.
+        self._add_pending_tail(key, waveform[stop_index - sample_index :])
+        return True
+
     def generate(
         self,
         duration: float,
@@ -484,6 +825,7 @@ class InjectGlitches:
         # so the question is settled against them rather than against whatever set
         # the models were built beside.
         validate_glitch_detector_coverage(self.glitch_models, runtime_detectors)
+        self._refuse_a_band_the_sampling_rate_cannot_carry(sampling_frequency)
         base_result = self.base.generate(duration, sampling_frequency, runtime_detectors, seed=seed)
 
         self.duration = duration
@@ -510,49 +852,32 @@ class InjectGlitches:
             # Only the interferometers this model is scoped to. A model the run does
             # not reach here draws nothing and consumes no stream, so the detectors it
             # does reach realize exactly what they would have without the selector.
-            for detector in filter(model.applies_to, runtime_detectors):
-                key = (index, detector)
-                rng = self._rng_for(index, detector)
-
-                # Lay down any waveform tails carried over from the previous chunk
-                # before processing this chunk's events, so a glitch straddling a
-                # chunk boundary is continuous rather than truncated. Fragments are
-                # replayed in their original event order; anything still overflowing
-                # this chunk is re-queued (again in order) for the next one.
-                for tail in self._pending_tails.pop(key, []):
-                    stop = min(n_samples, tail.size)
-                    combined[detector][:stop] += tail[:stop]
-                    if tail.size > n_samples:
-                        self._add_pending_tail(key, tail[n_samples:])
-
-                if key not in self._next_event_times:
-                    # A pair first seen mid-stream (e.g. a detector added between
-                    # chunks) starts its Poisson clock at the current segment start.
-                    self._next_event_times[key] = segment_start + self._draw_interarrival(model.rate, rng)
-                event_time = self._next_event_times[key]
-                while event_time < segment_end:
-                    sample_index = int((event_time - segment_start) * sampling_frequency)
-                    draw = model.draw(sampling_frequency, rng=rng)
-                    waveform = draw.waveform
-                    stop_index = min(n_samples, sample_index + waveform.size)
-                    if stop_index > sample_index:
-                        combined[detector][sample_index:stop_index] += waveform[: stop_index - sample_index]
-                        ordinal = self._event_counts.get(key, 0)
-                        self._event_counts[key] = ordinal + 1
-                        self._record_event(
-                            model=model,
-                            model_index=index,
-                            detector=detector,
-                            ordinal=ordinal,
-                            draw=draw,
-                            sample_index=sample_index,
-                            segment_gps_start=segment_gps_start,
-                            sampling_frequency=sampling_frequency,
-                        )
-                        # Carry the part that overflows this chunk into the next one.
-                        self._add_pending_tail(key, waveform[stop_index - sample_index :])
-                    event_time += self._draw_interarrival(model.rate, rng)
-                self._next_event_times[key] = event_time
+            scoped = [detector for detector in runtime_detectors if model.applies_to(detector)]
+            self._seen_pairs.update((index, detector) for detector in scoped)
+            if model.network is None:
+                self._inject_independent(
+                    model=model,
+                    model_index=index,
+                    detectors=scoped,
+                    combined=combined,
+                    n_samples=n_samples,
+                    segment_start=segment_start,
+                    segment_end=segment_end,
+                    segment_gps_start=segment_gps_start,
+                    sampling_frequency=sampling_frequency,
+                )
+            else:
+                self._inject_network_coherent(
+                    model=model,
+                    model_index=index,
+                    detectors=scoped,
+                    combined=combined,
+                    n_samples=n_samples,
+                    segment_start=segment_start,
+                    segment_end=segment_end,
+                    segment_gps_start=segment_gps_start,
+                    sampling_frequency=sampling_frequency,
+                )
 
         self._elapsed_time = segment_end
         self._segment_index += 1
@@ -587,7 +912,7 @@ class InjectGlitches:
         for index, model in enumerate(self.glitch_models):
             count_by_detector = {
                 detector: int(self._event_counts.get((model_index, detector), 0))
-                for model_index, detector in sorted(self._next_event_times)
+                for model_index, detector in sorted(self._seen_pairs)
                 if model_index == index
             }
             counts.append(

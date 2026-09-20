@@ -120,6 +120,10 @@ class SNRDistribution:
         """Draw one target SNR."""
         raise NotImplementedError
 
+    def survival(self, threshold: float) -> float:
+        """Return the fraction of draws at or above ``threshold``."""
+        raise NotImplementedError
+
     def serialize(self) -> dict[str, Any]:
         """Return the mapping that reconstructs this distribution."""
         raise NotImplementedError
@@ -217,6 +221,31 @@ class PowerLawSNRDistribution(SNRDistribution):
         survival_at_maximum = (self.maximum / self.minimum) ** (-self.alpha)
         return float(self.minimum * (1.0 - uniform * (1.0 - survival_at_maximum)) ** (-1.0 / self.alpha))
 
+    def survival(self, threshold: float) -> float:
+        """Return the fraction of draws at or above ``threshold``.
+
+        The selection factor of a recording or detection cut applied to this class: how
+        much of the configured population a search at that threshold would ever see. Read
+        off the distribution in closed form rather than estimated from a realization, so an
+        expected-count decomposition is exact rather than Monte-Carlo.
+
+        Args:
+            threshold: The SNR cut.
+
+        Returns:
+            One at or below ``minimum``, zero above ``maximum`` where the tail is truncated,
+            and the survival function in between.
+        """
+        if threshold <= self.minimum:
+            return 1.0
+        tail = (threshold / self.minimum) ** (-self.alpha)
+        if self.maximum is None:
+            return float(tail)
+        if threshold > self.maximum:
+            return 0.0
+        truncated = (self.maximum / self.minimum) ** (-self.alpha)
+        return float((tail - truncated) / (1.0 - truncated))
+
     def _unrepresentable_draw_message(self, verb: str) -> str:
         """Explain a draw that runs off the top of the float range.
 
@@ -290,6 +319,10 @@ class EmpiricalSNRDistribution(SNRDistribution):
     def sample(self, rng: np.random.Generator) -> float:
         """Draw one target SNR uniformly from the table, with replacement."""
         return float(self._values[int(rng.integers(0, self._values.size))])
+
+    def survival(self, threshold: float) -> float:
+        """Return the fraction of the supplied table at or above ``threshold``."""
+        return float(np.mean(self._values >= threshold))
 
     def serialize(self) -> dict[str, Any]:
         """Return the mapping that reconstructs this distribution.
@@ -382,6 +415,27 @@ def draw_target_snr(specification: float | SNRDistribution, rng: np.random.Gener
     if isinstance(specification, SNRDistribution):
         return specification.sample(rng)
     return float(specification)
+
+
+def snr_survival(specification: float | SNRDistribution | None, threshold: float) -> float:
+    """Return the fraction of one class's events whose target SNR reaches ``threshold``.
+
+    The selection factor in an expected-count decomposition. A model with no target SNR at
+    all has nothing to select on, and reports ``1.0`` rather than guessing: its loudness is
+    set by the amplitude distribution in units the threshold is not expressed in.
+
+    Args:
+        specification: A fixed target SNR, a distribution to draw it from, or ``None``.
+        threshold: The SNR cut.
+
+    Returns:
+        The surviving fraction, between zero and one.
+    """
+    if specification is None:
+        return 1.0
+    if isinstance(specification, SNRDistribution):
+        return specification.survival(threshold)
+    return 1.0 if float(specification) >= threshold else 0.0
 
 
 def serialize_snr(specification: float | SNRDistribution | None) -> Any:
