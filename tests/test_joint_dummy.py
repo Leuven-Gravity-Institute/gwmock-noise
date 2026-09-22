@@ -11,7 +11,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from gwmock_noise.simulators.joint_dummy import DEFAULT_SAMPLE_VARIANCE, JointDummyCorrelatedSimulator
+from gwmock_noise.simulators.joint_dummy import (
+    COVARIANCE_GRID_SIZE,
+    DEFAULT_SAMPLE_VARIANCE,
+    JointDummyCorrelatedSimulator,
+)
 from gwmock_noise.simulators.joint_protocol import ChannelDomain, ChannelKind
 
 
@@ -185,12 +189,22 @@ def test_covariance_matrix_is_hermitian_at_every_frequency() -> None:
 
 
 def test_covariance_frequency_grid_matches_rfftfreq_convention() -> None:
-    """The frequency grid is the one-sided, non-negative numpy.fft.rfftfreq grid."""
+    """The frequency grid is exactly the one-sided numpy.fft.rfftfreq grid.
+
+    This asserts the full array, not just its endpoints and monotonicity:
+    those weaker properties are also satisfied by many grids that use the
+    wrong spacing or convention (e.g. an evenly perturbed interior), so only
+    a full-array comparison against an independently constructed
+    ``rfftfreq`` array is a genuine guard on the grid's construction. The
+    sample count is read from the same :data:`COVARIANCE_GRID_SIZE` constant
+    ``covariance()`` uses, and the sampling frequency is read off the
+    simulator instance actually under test, rather than duplicating either
+    number as a bare literal.
+    """
     simulator = _make_simulator(sampling_frequency=64.0)
     covariance = simulator.covariance()
-    assert covariance.frequencies[0] == 0.0
-    assert covariance.frequencies[-1] == pytest.approx(32.0)
-    assert np.all(np.diff(covariance.frequencies) > 0)
+    expected_frequencies = np.fft.rfftfreq(2 * (COVARIANCE_GRID_SIZE - 1), d=1.0 / simulator.sampling_frequency)
+    np.testing.assert_array_equal(covariance.frequencies, expected_frequencies)
 
 
 def test_covariance_matches_the_exact_closed_form_value() -> None:

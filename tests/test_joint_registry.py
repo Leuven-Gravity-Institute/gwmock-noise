@@ -74,6 +74,15 @@ def test_load_joint_backend_resolves_the_registered_class() -> None:
 
 
 def test_load_joint_backend_raises_for_unknown_name() -> None:
-    """An unregistered name raises with the available names listed."""
-    with pytest.raises(KeyError, match="Unknown joint backend"):
+    """An unregistered name raises, naming the backends that ARE registered.
+
+    The message's actionability is asserted directly -- not just that it
+    complains, but that it lists the registered name(s) under an
+    ``Available:`` clause -- so a typo'd backend name produces an error a
+    caller can act on.
+    """
+    with pytest.raises(KeyError, match="Unknown joint backend") as exc_info:
         load_joint_backend("does_not_exist")
+    message = str(exc_info.value)
+    assert "Available:" in message
+    assert "dummy_correlated" in message
