@@ -56,6 +56,8 @@ new config schema.
 If the new simulation type should work through `NoiseConfig` and
 `DefaultNoiseSimulator`, the usual steps are:
 
+<!-- prettier-ignore-start -->
+
 1. **Add the simulator implementation**
 
     Put the runtime logic in `src/gwmock_noise/simulators/<name>.py`.
@@ -64,6 +66,7 @@ If the new simulation type should work through `NoiseConfig` and
 
     Make the simulator a concrete subclass of
     `gwmock_noise.simulators.ConfigurableNoiseSimulator` and implement:
+
     - `simulator_name`
     - `from_component(cls, component, config)`
 
@@ -91,10 +94,13 @@ If the new simulation type should work through `NoiseConfig` and
 6. **Test it**
 
     Add:
+
     - unit tests for validation and constructor behavior
     - simulator tests for output shape, determinism, and metadata
     - streaming tests if `generate_stream(...)` maintains state
     - slow/statistical tests when spectral or distributional correctness matters
+
+<!-- prettier-ignore-end -->
 
 ## What good tests look like here
 
