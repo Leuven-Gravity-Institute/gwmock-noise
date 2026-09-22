@@ -54,9 +54,10 @@ that paired arms of a comparison share.
 
 ## Simulators
 
-Simulator implementations, the `NoiseSimulator` protocol,
-`ConfigurableNoiseSimulator`, `SimulationResult`, and streaming helpers such as
-`open_stream` and `take`.
+Simulator implementations, the `NoiseSimulator` protocol, the optional
+`JointStrainWitnessSimulator` protocol and its public
+`JointDummyCorrelatedSimulator` backend, `ConfigurableNoiseSimulator`,
+`SimulationResult`, and streaming helpers such as `open_stream` and `take`.
 
 ::: gwmock_noise.simulators
 

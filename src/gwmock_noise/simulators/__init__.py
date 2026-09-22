@@ -26,6 +26,21 @@ from gwmock_noise.simulators.glitches import (
     InjectGlitches,
     apply_segment_gps_start,
 )
+from gwmock_noise.simulators.joint_dummy import JointDummyCorrelatedSimulator
+from gwmock_noise.simulators.joint_protocol import (
+    ChannelDomain,
+    ChannelKind,
+    ChannelMetadata,
+    JointCovariance,
+    JointRealization,
+    JointStrainWitnessSimulator,
+)
+from gwmock_noise.simulators.joint_registry import (
+    JOINT_BACKEND_ENTRY_POINT_GROUP,
+    available_joint_backend_names,
+    discover_joint_backends,
+    load_joint_backend,
+)
 from gwmock_noise.simulators.matrix_factorization import whittle_levinson_factorization
 from gwmock_noise.simulators.multichannel import MultichannelNoiseSimulator
 from gwmock_noise.simulators.overlap_save import OverlapSaveFirSimulator
@@ -40,11 +55,15 @@ __all__ = [
     "GLITCH_CATALOGUE_COLUMNS",
     "GLITCH_CATALOGUE_SCHEMA_VERSION",
     "GLITCH_CATALOGUE_TIME_CONVENTION",
+    "JOINT_BACKEND_ENTRY_POINT_GROUP",
     "ARMANoiseSimulator",
     "ARNoiseSimulator",
     "AddLines",
     "BaseNoiseSimulator",
     "BlipGlitch",
+    "ChannelDomain",
+    "ChannelKind",
+    "ChannelMetadata",
     "ColoredNoiseSimulator",
     "CompositeNoiseSimulator",
     "ConfigurableNoiseSimulator",
@@ -57,6 +76,10 @@ __all__ = [
     "GlitchNoiseSimulator",
     "GwoscNoiseSimulator",
     "InjectGlitches",
+    "JointCovariance",
+    "JointDummyCorrelatedSimulator",
+    "JointRealization",
+    "JointStrainWitnessSimulator",
     "LogNormalAmplitudeDistribution",
     "MultichannelNoiseSimulator",
     "NoiseSimulator",
@@ -69,6 +92,9 @@ __all__ = [
     "TimeVaryingColoredNoiseSimulator",
     "WhiteNoiseSimulator",
     "apply_segment_gps_start",
+    "available_joint_backend_names",
+    "discover_joint_backends",
+    "load_joint_backend",
     "open_stream",
     "take",
     "whittle_levinson_factorization",
