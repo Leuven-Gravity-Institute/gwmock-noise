@@ -136,6 +136,40 @@ def test_theoretical_coherence_matches_reference_value(tmp_path: Path) -> None:
     )
 
 
+def test_regularized_cholesky_tracks_a_physically_small_target_at_schumann_scale(tmp_path: Path) -> None:
+    """The Cholesky factor must track the target diagonal's own scale, not a fixed absolute floor.
+
+    The existing fixtures' coupling value (``1.0e-3``) sits well above the
+    regularization epsilon's implicit scale, so they cannot exercise the
+    regularization path at all. A published LIGO magnetic-field-to-strain
+    coupling function is of order ``1e-23`` strain/pT (Coughlin et al., Phys.
+    Rev. D 104, 122006 (2021)), which puts the Schumann spectral matrix's
+    diagonal at Schumann-relevant scales (~1e-46 or below) far below that
+    scale, where a ``max(diagonal, 1.0)`` floor turns the regularization
+    epsilon into an absolute floor that overwrites the physical scale.
+    """
+    coupling_value = 1.0e-23
+    coupling_path = _write_coupling_file(tmp_path / "H1_coupling.txt", value=coupling_value)
+
+    simulator = SchumannNoiseSimulator(
+        detectors=["H1"],
+        positions={"H1": HANFORD_POSITION},
+        coupling_files={"H1": coupling_path},
+        sampling_frequency=256.0,
+        low_frequency_cutoff=2.0,
+        high_frequency_cutoff=40.0,
+        seed=1,
+        window_duration=8.0,
+    )
+
+    expected_diagonal = simulator._schumann_psd * (coupling_value**2) * (0.5 / simulator._delta_frequency)
+    observed_diagonal = np.real(np.sum(np.abs(simulator._cholesky_factors[:, 0, :]) ** 2, axis=1))
+
+    # Exclude the taper's zeroed band edges, where the target itself is (correctly) zero.
+    band = expected_diagonal > (expected_diagonal.max() * 1.0e-6)
+    assert observed_diagonal[band] == pytest.approx(expected_diagonal[band], rel=1.0e-6, abs=0.0)
+
+
 def test_configure_spectral_factors_uses_absolute_width_taper(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
