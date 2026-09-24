@@ -51,6 +51,9 @@ release = ["git-cliff>=2.14.2"]
 [project.scripts]
 gwmock-noise = "gwmock_noise.cli.main:app"
 
+[project.entry-points."gwmock_noise.joint_backends"]
+dummy_correlated = "gwmock_noise.simulators.joint_dummy:JointDummyCorrelatedSimulator"
+
 [project.urls]
 Documentation = "https://leuven-gravity-institute.github.io/gwmock-noise/"
 Source = "https://github.com/Leuven-Gravity-Institute/gwmock-noise"

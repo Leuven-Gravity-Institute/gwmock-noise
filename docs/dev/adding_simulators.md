@@ -5,8 +5,7 @@ to `gwmock-noise`.
 
 ## Start here
 
-Before writing code, decide which of these two contribution paths fits your
-work:
+Before writing code, decide which of these contribution paths fits your work:
 
 1. **Standalone simulator** — implement the public `NoiseSimulator` protocol so
    the simulator works with `open_stream(...)` and other public helpers, but do
@@ -14,6 +13,12 @@ work:
 2. **Built-in simulator** — implement a concrete `ConfigurableNoiseSimulator`.
    It will be discovered automatically and can be selected by
    `DefaultNoiseSimulator().run(config)`.
+3. **Joint strain+witness backend** — implement the optional
+   `JointStrainWitnessSimulator` protocol described in
+   [Joint strain and witness channels](../user_guide/joint_strain_witness.md) if
+   the backend generates auxiliary/witness channels alongside strain. Register
+   it for external discovery via the `gwmock_noise.joint_backends` entry-point
+   group rather than importing it from this package.
 
 If you only need a reusable simulator class, start with the standalone path.
 Choose the built-in path only when the new backend should become part of the
