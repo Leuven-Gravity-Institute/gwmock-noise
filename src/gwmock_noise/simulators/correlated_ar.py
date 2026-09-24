@@ -15,6 +15,7 @@ from gwmock_noise.simulators._spectral import load_spectral_series
 from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
 from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
 from gwmock_noise.simulators.correlated import parse_csd_file_map
+from gwmock_noise.spectral import regularized_cholesky
 
 if TYPE_CHECKING:
     from gwmock_noise.config.models import NoiseComponentConfig, NoiseConfig
@@ -157,20 +158,7 @@ class CorrelatedARNoiseSimulator(ConfigurableNoiseSimulator):
 
     def _regularized_cholesky(self, spectral_matrix: np.ndarray) -> np.ndarray:
         """Return a numerically stable spectral factor."""
-        hermitian_matrix = 0.5 * (spectral_matrix + spectral_matrix.conj().T)
-        diagonal_scale = max(float(np.max(np.real(np.diag(hermitian_matrix)))), 1.0)
-        epsilon = self.regularization_epsilon * diagonal_scale
-        minimum_eigenvalue = float(np.min(np.linalg.eigvalsh(hermitian_matrix)))
-
-        regularized = hermitian_matrix
-        if minimum_eigenvalue < epsilon:
-            regularized = regularized + np.eye(hermitian_matrix.shape[0]) * (epsilon - minimum_eigenvalue)
-
-        try:
-            return np.linalg.cholesky(regularized)
-        except np.linalg.LinAlgError:
-            diagonal = np.clip(np.real(np.diag(hermitian_matrix)), a_min=0.0, a_max=None)
-            return np.diag(np.sqrt(diagonal + epsilon))
+        return regularized_cholesky(spectral_matrix, regularization_epsilon=self.regularization_epsilon)
 
     def _load_fit_grid_size(self) -> int:
         """Determine a uniform FFT size covering all spectral inputs."""
