@@ -10,6 +10,8 @@ autocovariance are the independent anchor; no simulator is involved here.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -256,3 +258,32 @@ def test_matrix_band_fit_residual_skips_a_zero_target_band() -> None:
     residual = matrix_band_fit_residual(frequencies, target, target, low_frequency=1.0, high_frequency=9.0, n_bands=2)
     assert residual["band_count"] == 0
     assert residual["worst_relative_error"] == 0.0
+
+
+def test_matrix_band_fit_residual_excludes_a_zeroed_edge_bin_from_the_per_bin_error() -> None:
+    """A single bin whose target is exactly zero is excluded from the per-bin error.
+
+    A Tukey edge taper zeroes the first in-band target bin exactly, while a
+    fitted model has no reason to vanish there too. Comparing that bin's model
+    value against a zero target has no well-defined *relative* error, so the
+    bin must be excluded the way a whole band with a zero target sum already
+    is -- not compared against a numerical-epsilon floor, which turns any
+    physically-scaled model value into a division that overflows to ``inf``.
+    """
+    frequencies = np.linspace(1.0, 8.0, 8)
+    target = np.zeros((8, 2, 2), dtype=np.complex128)
+    target[0] = 0.0  # the taper-zeroed edge bin
+    target[1:, 0, 0] = 1.0
+    target[1:, 1, 1] = 1.0
+    model = np.zeros((8, 2, 2), dtype=np.complex128)
+    model[:, 0, 0] = 1.0
+    model[:, 1, 1] = 1.0
+    model[0, 0, 0] = 500.0  # the fitted model's non-zero value at the zeroed bin
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        residual = matrix_band_fit_residual(
+            frequencies, target, model, low_frequency=1.0, high_frequency=8.0, n_bands=1
+        )
+
+    assert residual["bands"][0]["max_bin_relative_error"] == pytest.approx(0.0)
