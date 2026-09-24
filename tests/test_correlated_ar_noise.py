@@ -122,6 +122,36 @@ def test_generated_psd_and_csd_match_inputs_within_tolerance(tmp_path: Path) -> 
     assert np.median(np.abs(mean_csd.imag[band])) < 0.25 * FLAT_CSD
 
 
+def test_output_scale_tracks_a_physically_small_target_psd(tmp_path: Path) -> None:
+    """The generated variance must track the target PSD's own scale, not a fixed floor.
+
+    ``FLAT_PSD`` above (2e-3) sits well above the regularization epsilon's
+    implicit scale, so it cannot exercise the regularization path at all. Real
+    strain PSDs are of order 1e-46, far below that scale, and the
+    regularization must still track the target there.
+    """
+    detector = "H1"
+    sampling_frequency = 256.0
+    strain_psd = 4.0e-46
+    psd_path = _write_psd_file(tmp_path / "small_h1.txt", value=strain_psd)
+
+    simulator = CorrelatedARNoiseSimulator(
+        psd_files={detector: psd_path},
+        detectors=[detector],
+        sampling_frequency=sampling_frequency,
+        seed=1,
+        order=64,
+        low_frequency_cutoff=8.0,
+        high_frequency_cutoff=96.0,
+    )
+    realization = simulator.generate(duration=8.0, sampling_frequency=sampling_frequency, detectors=[detector])
+
+    expected_variance = strain_psd * sampling_frequency / 2.0
+    observed_variance = float(np.var(realization[detector]))
+
+    assert observed_variance == pytest.approx(expected_variance, rel=3.0, abs=0.0)
+
+
 @pytest.mark.parametrize("detectors", [["H1"], ["H1", "L1"], ["H1", "L1", "V1"]])
 def test_correlated_ar_simulator_supports_one_two_and_three_detectors(
     tmp_path: Path,
