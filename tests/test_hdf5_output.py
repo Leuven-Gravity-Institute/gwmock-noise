@@ -235,10 +235,10 @@ def test_gwpy_reads_what_h5py_wrote(tmp_path: Path) -> None:
     The attributes it records are GWpy's own, so a reader with GWpy installed must not be able to tell --
     if that ever stops being true, the format has quietly forked.
 
-    **This skips where GWpy is absent, and CI has one leg that installs it.** A guard that skips
-    everywhere is indistinguishable from one that passes, which is exactly how this test spent a review
-    round broken. `GWMOCK_NOISE_REQUIRE_GWPY` is set on that leg, and turns the skip into a failure, so
-    losing the leg is loud rather than silent.
+    **This skips where GWpy is absent, and CI has two legs that install it** -- one at the newest GWpy,
+    one at the declared floor. A guard that skips everywhere is indistinguishable from one that passes,
+    which is exactly how this test spent a review round broken. `GWMOCK_NOISE_REQUIRE_GWPY` is set on
+    those legs, and turns the skip into a failure, so losing either leg is loud rather than silent.
     """
     _require_gwpy_or_skip()
     from gwpy.timeseries import TimeSeries

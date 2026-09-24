@@ -22,8 +22,12 @@ jobs:
                     - os: ubuntu-latest
                       python-version: '3.12'
                       resolution: lowest-direct
-                    # One leg installs the `gwpy` extra, so the test asserting that GWpy reads the
-                    # HDF5 files this package writes actually runs. It is one test, and GWpy brings
+                      # The floor leg installs the `gwpy` extra too, so the GWpy compatibility test
+                      # runs against the declared `gwpy>=` floor and not only the newest release.
+                      extras: gwpy
+                    # Two legs install the `gwpy` extra, so the test asserting that GWpy reads the
+                    # HDF5 files this package writes actually runs: this one at the newest GWpy, the
+                    # lowest-direct leg above at the declared floor. It is one test, and GWpy brings
                     # astropy and matplotlib with it, so it does not belong on all ten legs -- but a
                     # compatibility guard that skips everywhere is indistinguishable from one that
                     # passes, which is how it stayed broken through a whole review round.
@@ -59,7 +63,7 @@ jobs:
 
             - name: Run tests with pytest
               env:
-                  # On the leg that installed GWpy, the compatibility test must run rather than skip:
+                  # On the legs that installed GWpy, the compatibility test must run rather than skip:
                   # it is the only check that the HDF5 files here stay readable by GWpy.
                   GWMOCK_NOISE_REQUIRE_GWPY:
                       ${{ matrix.extras == 'gwpy' && '1' || '' }}
