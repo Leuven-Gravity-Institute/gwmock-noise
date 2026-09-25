@@ -21,6 +21,7 @@ from gwmock_noise.simulators._stitching import (
 )
 from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
 from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
+from gwmock_noise.spectral import regularized_cholesky
 from gwmock_noise.utils.log import LOGGER_NAME
 
 if TYPE_CHECKING:
@@ -284,20 +285,10 @@ class SchumannNoiseSimulator(ConfigurableNoiseSimulator):
 
     def _regularized_cholesky(self, spectral_matrix: np.ndarray) -> np.ndarray:
         """Return a numerically stable Cholesky-like factor."""
-        hermitian_matrix = 0.5 * (spectral_matrix + spectral_matrix.conj().T)
-        diagonal_scale = max(float(np.max(np.real(np.diag(hermitian_matrix)))), 1.0)
-        epsilon = self.schumann_params.regularization_epsilon * diagonal_scale
-        minimum_eigenvalue = float(np.min(np.linalg.eigvalsh(hermitian_matrix)))
-
-        regularized = hermitian_matrix
-        if minimum_eigenvalue < epsilon:
-            regularized = regularized + np.eye(hermitian_matrix.shape[0]) * (epsilon - minimum_eigenvalue)
-
-        try:
-            return np.linalg.cholesky(regularized)
-        except np.linalg.LinAlgError:
-            diagonal = np.clip(np.real(np.diag(hermitian_matrix)), a_min=0.0, a_max=None)
-            return np.diag(np.sqrt(diagonal + epsilon))
+        return regularized_cholesky(
+            spectral_matrix,
+            regularization_epsilon=self.schumann_params.regularization_epsilon,
+        )
 
     def _initialize_generator(self, seed: int | None) -> None:
         """Initialize the shared random-number generator."""
