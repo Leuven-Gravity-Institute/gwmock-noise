@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from importlib import import_module
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from gwmock_noise.config import NoiseComponentConfig, NoiseConfig, OutputConfig, load_config
 from gwmock_noise.gaussian import SpectralLine
@@ -51,6 +51,7 @@ from gwmock_noise.simulators import (
     DefaultNoiseSimulator,
     FitError,
     GlitchNoiseSimulator,
+    GwoscNoiseSimulator,
     InjectGlitches,
     JointCovariance,
     JointDummyCorrelatedSimulator,
@@ -97,13 +98,26 @@ from gwmock_noise.version import __version__
 # call setup_logger() again to adjust the level or add a log file.
 setup_logger()
 
+if TYPE_CHECKING:
+    # Static-only imports so type checkers and code scanners can resolve the
+    # lazily loaded names listed in __all__; at runtime they are resolved by
+    # __getattr__ below, keeping the optional dependencies off the import path.
+    from gwmock_noise.diagnostics import DiagnosticResult, compare_psd, estimate_psd, run_diagnostics
+    from gwmock_noise.gwosc import (
+        FilterType,
+        GwoscFilterConfig,
+        GwoscNoiseConfig,
+        GwoscNoiseFetcher,
+        GwoscSegmentFilter,
+    )
+    from gwmock_noise.output import FrameWriter, GWpyAdapter
+
 _OPTIONAL_EXPORTS = {
     "DiagnosticResult": "gwmock_noise.diagnostics",
     "FilterType": "gwmock_noise.gwosc",
     "GwoscFilterConfig": "gwmock_noise.gwosc",
     "GwoscNoiseConfig": "gwmock_noise.gwosc",
     "GwoscNoiseFetcher": "gwmock_noise.gwosc",
-    "GwoscNoiseSimulator": "gwmock_noise.simulators",
     "GwoscSegmentFilter": "gwmock_noise.gwosc",
     "compare_psd": "gwmock_noise.diagnostics",
     "estimate_psd": "gwmock_noise.diagnostics",
