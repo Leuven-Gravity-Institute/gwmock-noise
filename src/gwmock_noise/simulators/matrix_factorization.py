@@ -299,7 +299,11 @@ def matrix_band_fit_residual(  # noqa: PLR0913
     The primary number per band is the relative Frobenius error of the band sum,
     ``||sum(model) - sum(target)||_F / ||sum(target)||_F``, which penalises power
     and coherence errors together at the level a simulator has to get right. The
-    largest per-bin relative error is recorded alongside it.
+    largest per-bin relative error is recorded alongside it, over the bins whose
+    target is non-zero; a bin where the target itself is exactly zero (e.g. an
+    edge taper's zeroed sample) has no well-defined *relative* error against it
+    and is excluded rather than compared against a floor value, matching the
+    band-level skip when a whole band's target sum is zero.
 
     Args:
         frequencies: Frequencies of the target and model samples.
@@ -331,11 +335,17 @@ def matrix_band_fit_residual(  # noqa: PLR0913
         if reference <= 0.0:
             continue
         relative_error = float(np.linalg.norm(band_model - band_target)) / reference
-        per_bin = float(
-            np.max(
-                np.linalg.norm(selected_model - selected_target, axis=(-2, -1))
-                / np.maximum(np.linalg.norm(selected_target, axis=(-2, -1)), np.finfo(float).tiny)
+        target_norms = np.linalg.norm(selected_target, axis=(-2, -1))
+        positive = target_norms > 0.0
+        per_bin = (
+            float(
+                np.max(
+                    np.linalg.norm(selected_model[positive] - selected_target[positive], axis=(-2, -1))
+                    / target_norms[positive]
+                )
             )
+            if np.any(positive)
+            else float("nan")
         )
         bands.append(
             {
