@@ -20,15 +20,15 @@ requires-python = ">=3.12"
 dynamic = ["version"]
 dependencies = [
   "numpy>=2.2.0",
-  "h5py>=3.12.1",
-  "pydantic>=2.9.0",
+  "h5py>=3.13.0",
+  "pydantic>=2.10.0",
   "scipy>=1.15.0",
   "pyyaml>=6.0",
   "typer>=0.16.0",   # click 8.2 compatibility; the SPEC 0 floor (0.13) predates it
 ]
 
 [project.optional-dependencies]
-deepextractor = ["huggingface_hub>=0.25.0"]
+deepextractor = ["huggingface_hub>=0.26.0"]
 frame = ["gwpy>=4.0.0", "lalsuite>=7.24"]
 gengli = ["gengli>=0.2.0"]
 gwpy = ["gwpy>=4.0.0"]
