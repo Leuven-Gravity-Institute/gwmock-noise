@@ -91,3 +91,40 @@ from gwmock_noise import available_joint_backend_names, load_joint_backend
 available_joint_backend_names()  # e.g. ("dummy_correlated",)
 backend_class = load_joint_backend("dummy_correlated")
 ```
+
+## Conformance suite for your backend
+
+`gwmock_noise.testing.joint_conformance` ships the contract tests gwmock-noise
+runs against its own dummy backend, so a downstream package can hold its backend
+to exactly the same checks under its own test runner. Subclass
+`JointBackendConformance` under a `Test`-prefixed name and provide a
+`joint_backend` fixture yielding `JointBackendCase` instances:
+
+```python
+import pytest
+from gwmock_noise import load_joint_backend
+from gwmock_noise.testing.joint_conformance import (
+    JointBackendCase,
+    JointBackendConformance,
+)
+
+
+def build(seed):
+    return load_joint_backend("my_backend")(sampling_frequency=64.0, seed=seed)
+
+
+@pytest.fixture(params=[JointBackendCase("my_backend", build, 64.0, "my_backend")])
+def joint_backend(request):
+    return request.param
+
+
+class TestMyBackendConformance(JointBackendConformance):
+    pass
+```
+
+The suite checks realization shapes and channel metadata, seeded determinism,
+stream continuity, a Hermitian positive-semidefinite covariance over exactly the
+realized channels, JSON-native provenance and metadata, refusal of an unknown
+channel, and that no witness is disguised as a strain channel or stored as an
+array in metadata. It requires `pytest`, which gwmock-noise does not install at
+runtime.
