@@ -61,6 +61,13 @@ Simulator implementations, the `NoiseSimulator` protocol, the optional
 
 ::: gwmock_noise.simulators
 
+## Joint-backend conformance suite
+
+The shared contract tests a `JointStrainWitnessSimulator` backend runs under its
+own package's test runner (requires `pytest`).
+
+::: gwmock_noise.testing.joint_conformance
+
 ## Parallel execution
 
 `ParallelAdapter` runs independent-detector simulators across threads or
