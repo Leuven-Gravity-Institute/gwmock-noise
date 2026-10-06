@@ -212,8 +212,8 @@ class GlitchDraw(NamedTuple):
             assume one from the other.** A model that calibrates against its own
             coloring PSD -- ``BlipGlitch``, ``ScatteredLightGlitch``,
             ``DeepExtractorGlitch`` -- realizes ``amplitude * target_snr``.
-            ``GengliBlipGlitch`` does not: its target is sampled from a
-            population and imposed by gengli on the *whitened* waveform, while
+            ``GengliBlipGlitch`` does not: its target -- from a population file or
+            its ``snr`` specification -- is imposed by gengli on the *whitened* waveform, while
             the realized figure is measured on the colored, amplitude-scaled
             result, so the two are independent numbers rather than one restated.
     """

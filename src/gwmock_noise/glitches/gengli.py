@@ -12,10 +12,20 @@ import numpy as np
 
 from gwmock_noise.glitches._coloring import ColoredWaveform, color_whitened_waveform, optimal_snr
 from gwmock_noise.glitches.models import GlitchDraw, GlitchModel
+from gwmock_noise.glitches.snr import (
+    SNRDistribution,
+    draw_target_snr,
+    is_snr_distribution_mapping,
+    normalize_snr,
+    serialize_snr,
+)
 from gwmock_noise.simulators._spectral import load_spectral_series
 
 POPULATION_SNR_DATASET = "snr"
 UINT32_EXCLUSIVE_MAX = 2**32
+#: The one Gravity Spy class gengli generates, and so the only key a per-class
+#: ``snr`` mapping can name.
+GENGLI_GLITCH_CLASS = "Blip"
 
 
 def _load_gengli() -> Any:
@@ -83,15 +93,38 @@ def write_blip_population_file(
 
 @dataclass(slots=True)
 class GengliBlipGlitch(GlitchModel):
-    """File-backed gengli blip generator colored against a target PSD."""
+    """Gengli blip generator colored against a target PSD.
 
-    population_file: Path
-    psd_file: Path
+    Each event's target SNR comes from exactly one of two sources:
+
+    - ``population_file`` -- an HDF5 table with an ``snr`` dataset, drawn from
+      uniformly with replacement. This is the model's original configuration and
+      it draws exactly what it always has.
+    - ``snr`` -- the same specifications the PSD-calibrated models accept: a
+      number, a distribution (``power_law`` or ``empirical``, see
+      :mod:`gwmock_noise.glitches.snr`), or a per-class mapping of either. gengli
+      generates only ``Blip``, so a per-class mapping names exactly that one class.
+      A number consumes nothing from the random stream; a distribution draws one
+      target per event from it, in the position the population draw occupies.
+
+    Whichever source supplies it, the target means the same thing: it is the SNR
+    handed to gengli, which imposes it on the *whitened* waveform. It is not a
+    calibration against ``psd_file`` -- the realized SNR of the colored strain scales
+    linearly with it, by a factor set by the drawn waveform's spectrum and the
+    coloring, rather than equal to it.
+
+    ``psd_file`` is required; it carries a default only so that ``population_file``
+    can be omitted without reordering the positional parameters.
+    """
+
+    population_file: Path | None = None
+    psd_file: Path | None = None
     gengli_detector: str = "L1"
     low_frequency_cutoff: float = 2.0
     high_frequency_cutoff: float | None = None
+    snr: float | SNRDistribution | dict[str, Any] | None = None
     kind: Literal["gengli_blip"] = field(init=False, default="gengli_blip")
-    _population_snrs: np.ndarray = field(init=False, repr=False)
+    _population_snrs: np.ndarray | None = field(init=False, default=None, repr=False)
     _psd_frequencies: np.ndarray = field(init=False, repr=False)
     _psd_values: np.ndarray = field(init=False, repr=False)
     _generator: Any = field(init=False, default=None, repr=False)
@@ -99,7 +132,10 @@ class GengliBlipGlitch(GlitchModel):
     def __post_init__(self) -> None:
         """Validate configured files and preload the population/PSD tables."""
         GlitchModel.__post_init__(self)
-        self.population_file = Path(self.population_file)
+        if self.psd_file is None:
+            raise TypeError("GengliBlipGlitch requires a psd_file.")
+        if (self.population_file is None) == (self.snr is None):
+            raise ValueError("GengliBlipGlitch requires exactly one of 'population_file' or 'snr'.")
         self.psd_file = Path(self.psd_file)
         if not self.gengli_detector:
             raise ValueError("gengli_detector must be a non-empty string.")
@@ -108,7 +144,11 @@ class GengliBlipGlitch(GlitchModel):
         if self.high_frequency_cutoff is not None and self.high_frequency_cutoff <= self.low_frequency_cutoff:
             raise ValueError("high_frequency_cutoff must be greater than low_frequency_cutoff.")
 
-        self._population_snrs = read_blip_population_file(self.population_file)
+        if self.population_file is not None:
+            self.population_file = Path(self.population_file)
+            self._population_snrs = read_blip_population_file(self.population_file)
+        else:
+            self._normalize_snr()
         self._psd_frequencies, self._psd_values = load_spectral_series(self.psd_file, kind="PSD")
         if not np.all(np.isfinite(self._psd_values)):
             raise ValueError("PSD file contains non-finite values.")
@@ -130,10 +170,30 @@ class GengliBlipGlitch(GlitchModel):
             self._generator = _load_gengli().glitch_generator(self.gengli_detector)
         return self._generator
 
+    def _normalize_snr(self) -> None:
+        """Normalize the scalar, per-class, or sampled target-SNR configuration.
+
+        A mapping is a distribution when it carries a ``distribution`` key and a
+        per-class table otherwise, as for ``DeepExtractorGlitch``.
+        """
+        if isinstance(self.snr, dict) and not is_snr_distribution_mapping(self.snr):
+            if set(self.snr) != {GENGLI_GLITCH_CLASS}:
+                raise ValueError(
+                    f"snr mapping must name exactly the '{GENGLI_GLITCH_CLASS}' class gengli generates; "
+                    f"got {', '.join(sorted(map(str, self.snr))) or 'no classes'}."
+                )
+            self.snr = {name: normalize_snr(value, f"snr['{name}']") for name, value in self.snr.items()}
+            return
+        self.snr = normalize_snr(self.snr)
+
     def _draw_snr(self, rng: np.random.Generator) -> float:
-        """Sample one target SNR from the preloaded population table."""
-        index = int(rng.integers(0, self._population_snrs.size))
-        return float(self._population_snrs[index])
+        """Draw one target SNR from the population table or the ``snr`` specification."""
+        if self._population_snrs is not None:
+            index = int(rng.integers(0, self._population_snrs.size))
+            return float(self._population_snrs[index])
+        if isinstance(self.snr, dict):
+            return draw_target_snr(self.snr[GENGLI_GLITCH_CLASS], rng)
+        return draw_target_snr(self.snr, rng)
 
     def _color_glitch(self, white_glitch: np.ndarray, *, sampling_frequency: float) -> ColoredWaveform:
         """Color a whitened gengli waveform using the configured PSD."""
@@ -161,8 +221,8 @@ class GengliBlipGlitch(GlitchModel):
     ) -> GlitchDraw:
         """Draw one colored gengli blip and the parameters that produced it.
 
-        The target SNR is the value sampled from the population file and handed
-        to gengli, which imposes it on the *whitened* waveform; the realized SNR
+        The target SNR is the value drawn from the population file or the ``snr``
+        specification and handed to gengli, which imposes it on the *whitened* waveform; the realized SNR
         is measured on the colored, amplitude-scaled result against the
         configured PSD, so the two are independent numbers rather than one
         restated.
@@ -172,7 +232,7 @@ class GengliBlipGlitch(GlitchModel):
 
         generator = np.random.default_rng() if rng is None else rng
         # Drawn in this order because it is the order the stream was already in: the
-        # gengli seed first, then the population SNR. Naming `target_snr` before the
+        # gengli seed first, then the target SNR. Naming `target_snr` before the
         # call would read better and would permute the two draws, changing every
         # realization this model has ever produced.
         gengli_seed = int(generator.integers(0, UINT32_EXCLUSIVE_MAX))
@@ -181,29 +241,41 @@ class GengliBlipGlitch(GlitchModel):
             seed=gengli_seed,
             snr=target_snr,
             srate=sampling_frequency,
-            glitch_type="Blip",
+            glitch_type=GENGLI_GLITCH_CLASS,
         )
         white_glitch = np.asarray(raw_glitch, dtype=float).reshape(-1)
         if white_glitch.size == 0:
-            return GlitchDraw(waveform=white_glitch, glitch_class="Blip", target_snr=target_snr)
+            return GlitchDraw(waveform=white_glitch, glitch_class=GENGLI_GLITCH_CLASS, target_snr=target_snr)
 
         amplitude = self.amplitude_distribution.sample(generator)
         colored = self._color_glitch(white_glitch, sampling_frequency=sampling_frequency)
         return GlitchDraw(
             waveform=amplitude * colored.time_series,
             amplitude=amplitude,
-            glitch_class="Blip",
+            glitch_class=GENGLI_GLITCH_CLASS,
             target_snr=target_snr,
             realized_snr=amplitude * optimal_snr(colored, sampling_frequency=sampling_frequency),
         )
 
     def serialize(self) -> dict[str, Any]:
-        """Return metadata-friendly model parameters."""
-        return GlitchModel.serialize(self) | {
-            "population_file": str(self.population_file),
+        """Return metadata-friendly model parameters.
+
+        A population-file model reports the file and its size, as it always has;
+        an ``snr``-configured one reports the specification in the form that
+        configures it, so either replays from its own metadata.
+        """
+        parameters = GlitchModel.serialize(self) | {
+            "population_file": None if self.population_file is None else str(self.population_file),
             "psd_file": str(self.psd_file),
             "gengli_detector": self.gengli_detector,
             "low_frequency_cutoff": self.low_frequency_cutoff,
             "high_frequency_cutoff": self.high_frequency_cutoff,
-            "population_size": int(self._population_snrs.size),
         }
+        if self._population_snrs is not None:
+            return parameters | {"population_size": int(self._population_snrs.size)}
+        snr = (
+            {name: serialize_snr(value) for name, value in self.snr.items()}
+            if isinstance(self.snr, dict)
+            else serialize_snr(self.snr)
+        )
+        return parameters | {"snr": snr}
