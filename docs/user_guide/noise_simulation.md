@@ -453,6 +453,25 @@ The model samples an SNR from the population table for each injected event,
 generates one whitened gengli blip, and colors it against the configured PSD
 before additive injection through `InjectGlitches`.
 
+Instead of a population file, the target can come from `snr`, which takes the
+same forms as for the PSD-calibrated models: a number, a `power_law` or
+`empirical` distribution, or a per-class mapping (gengli generates only `Blip`,
+so the mapping names that one class). Configure exactly one of the two:
+
+```python
+GengliBlipGlitch(
+    rate=0.25,
+    psd_file=Path("noise_psd.txt"),
+    snr={"distribution": "power_law", "minimum": 10.0, "alpha": 1.34, "maximum": 600.0},
+    amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+)
+```
+
+Either way the target is the SNR handed to gengli, which imposes it on the
+whitened waveform. The colored strain's SNR against `psd_file` scales linearly
+with it, by a factor set by each waveform's spectrum and the coloring, rather
+than equal to it.
+
 ## DeepExtractor glitches
 
 `gwmock-noise[deepextractor]` adds a `DeepExtractorGlitch` model that injects
