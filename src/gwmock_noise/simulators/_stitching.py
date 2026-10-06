@@ -255,7 +255,23 @@ class OverlapAddStitcher:
         n_samples: int,
         chunk_generator: Callable[[], dict[str, np.ndarray]],
     ) -> dict[str, np.ndarray]:
-        """Generate a continuous realization with overlap-add stitching."""
+        """Generate a continuous realization with overlap-add stitching.
+
+        Chunks are drawn until every returned sample lies in a fully blended
+        region. The fade-out of the last drawn chunk has no successor to blend
+        with, so it is never returned: the output keeps the process variance up
+        to its final sample instead of fading to zero.
+
+        Args:
+            n_samples: Number of samples to return per detector.
+            chunk_generator: Callable returning one chunk per detector.
+
+        Returns:
+            One array of ``n_samples`` samples per detector.
+
+        Raises:
+            ValueError: If ``n_samples`` is not positive or a chunk map is invalid.
+        """
         if n_samples <= 0:
             raise ValueError("n_samples must be positive.")
 
@@ -280,7 +296,10 @@ class OverlapAddStitcher:
         extension_step = self.window_size - self.overlap_size
         current_size = self.window_size
 
-        while current_size - self.window_size < n_samples:
+        # The last ``overlap_size`` samples of the buffer are faded out but not yet
+        # blended with a successor chunk; keep drawing until the requested window
+        # ``[window_size, window_size + n_samples)`` ends before that region.
+        while current_size - self.overlap_size - self.window_size < n_samples:
             raw_new_chunks = self.draw_chunk(chunk_generator)
 
             for detector in self.detectors:

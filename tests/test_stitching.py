@@ -89,3 +89,33 @@ def test_stitcher_rejects_non_positive_sample_request() -> None:
     stitcher = OverlapAddStitcher(detectors=["H1"], window_size=8, overlap_size=4)
     with pytest.raises(ValueError, match="n_samples must be positive"):
         stitcher.stitch(n_samples=0, chunk_generator=lambda: {"H1": np.zeros(8)})
+
+
+@pytest.mark.parametrize(("overlap_size", "n_samples"), [(32, 320), (32, 300), (32, 32), (16, 280)])
+def test_stitch_tail_keeps_process_variance(overlap_size: int, n_samples: int) -> None:
+    """The last ``overlap_size`` output samples are blended, not faded to zero.
+
+    Unit-variance white chunks give unit variance everywhere in a correctly
+    blended output, so the tail must match the interior instead of decaying.
+    """
+    window_size = 64
+    trials = 2000
+    rng = np.random.default_rng(2024)
+
+    def generator() -> dict[str, np.ndarray]:
+        return {"H1": rng.standard_normal(window_size)}
+
+    realizations = np.array(
+        [
+            OverlapAddStitcher(["H1"], window_size=window_size, overlap_size=overlap_size).stitch(
+                n_samples=n_samples, chunk_generator=generator
+            )["H1"]
+            for _ in range(trials)
+        ]
+    )
+    variance = np.var(realizations, axis=0)
+
+    assert realizations.shape == (trials, n_samples)
+    np.testing.assert_allclose(variance[-overlap_size:].mean(), 1.0, rtol=0.05, atol=0.0)
+    assert variance[-overlap_size:].min() > 0.85
+    assert variance[-1] > 0.85
