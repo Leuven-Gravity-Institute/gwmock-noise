@@ -121,6 +121,30 @@ def test_default_simulator_generate_returns_reproducible_white_noise() -> None:
     np.testing.assert_allclose(first["L1"], second["L1"])
 
 
+def test_default_simulator_stream_is_reproducible_past_the_first_chunk() -> None:
+    """A seeded stream reproduces every chunk across independent runs, not only chunk 0."""
+    detectors = ["H1", "L1"]
+
+    def run() -> list[dict[str, np.ndarray]]:
+        stream = DefaultNoiseSimulator().generate_stream(
+            chunk_duration=2.0, sampling_frequency=8.0, detectors=detectors, seed=7
+        )
+        return [next(stream) for _ in range(3)]
+
+    first, second = run(), run()
+
+    for index in range(3):
+        for detector in detectors:
+            np.testing.assert_array_equal(first[index][detector], second[index][detector])
+    # The first chunk is what a one-shot generate() with the same seed returns.
+    one_shot = DefaultNoiseSimulator().generate(duration=2.0, sampling_frequency=8.0, detectors=detectors, seed=7)
+    for detector in detectors:
+        np.testing.assert_array_equal(first[0][detector], one_shot[detector])
+    # The chunks are successive draws, not one chunk repeated.
+    assert not np.array_equal(first[0]["H1"], first[1]["H1"])
+    assert not np.array_equal(first[1]["H1"], first[2]["H1"])
+
+
 def test_default_simulator_run_uses_frame_writer_for_gwf_output(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

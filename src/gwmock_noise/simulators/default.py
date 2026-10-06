@@ -76,12 +76,22 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         seed: int | None = None,
     ) -> dict[str, np.ndarray]:
         """Return Gaussian white-noise strain arrays."""
+        return self._draw(np.random.default_rng(seed), duration, sampling_frequency, detectors, seed)
+
+    def _draw(
+        self,
+        rng: np.random.Generator,
+        duration: float,
+        sampling_frequency: float,
+        detectors: list[str],
+        seed: int | None,
+    ) -> dict[str, np.ndarray]:
+        """Record the request and draw one chunk of white noise per detector from ``rng``."""
         self.duration = duration
         self.sampling_frequency = sampling_frequency
         self.detectors = list(detectors)
         self.seed = seed
         self._active_metadata = None
-        rng = np.random.default_rng(seed)
         n_samples = round(duration * sampling_frequency)
         return {detector: rng.standard_normal(n_samples).astype(float, copy=False) for detector in detectors}
 
@@ -92,10 +102,16 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         detectors: list[str],
         seed: int | None = None,
     ) -> Iterator[dict[str, np.ndarray]]:
-        """Yield white-noise strain chunks lazily."""
+        """Yield white-noise strain chunks lazily.
+
+        One generator serves the whole stream and each chunk continues where the last one stopped, so a
+        seeded stream reproduces every chunk, and its first chunk equals ``generate(..., seed)``.
+        Re-seeding per chunk would not: ``generate`` builds its generator from ``seed``, and a later chunk
+        has no seed of its own to give it -- passing ``None`` drew those chunks from fresh system entropy.
+        """
+        rng = np.random.default_rng(seed)
         while True:
-            yield self.generate(chunk_duration, sampling_frequency, detectors, seed)
-            seed = None
+            yield self._draw(rng, chunk_duration, sampling_frequency, detectors, seed)
 
     def _configure_simulator(self, config: NoiseConfig) -> NoiseSimulator:
         """Build the runtime simulator implied by the validated component config."""
