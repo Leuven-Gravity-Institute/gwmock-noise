@@ -260,9 +260,12 @@ class GengliBlipGlitch(GlitchModel):
     def serialize(self) -> dict[str, Any]:
         """Return metadata-friendly model parameters.
 
-        A population-file model reports the file and its size, as it always has;
-        an ``snr``-configured one reports the specification in the form that
-        configures it, so either replays from its own metadata.
+        A population-file model reports the file and its size, as it always has.
+        The size is derived rather than configured, so that dictionary is a record
+        and not a configuration: it does not replay through
+        :func:`~gwmock_noise.glitches.models.normalize_glitch_models` as it stands.
+        An ``snr``-configured model reports the specification in the form that
+        configures it, and its metadata replays into an equivalent model.
         """
         parameters = GlitchModel.serialize(self) | {
             "population_file": None if self.population_file is None else str(self.population_file),
