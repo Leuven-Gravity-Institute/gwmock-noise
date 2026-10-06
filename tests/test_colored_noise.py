@@ -178,6 +178,26 @@ def test_consecutive_generate_calls_are_continuous(tmp_path: Path) -> None:
     assert boundary_jump <= np.quantile(jumps, 0.995)
 
 
+@pytest.mark.parametrize(("window_size", "n_samples"), [(1025, 4100), (129, 1040)])
+def test_odd_window_length_returns_the_requested_sample_count(tmp_path: Path, window_size: int, n_samples: int) -> None:
+    """An odd synthesis window must not shorten the returned series."""
+    sampling_frequency = 256.0
+    simulator = ColoredNoiseSimulator(
+        psd_file=_write_psd_file(tmp_path / "odd_window_psd.txt"),
+        detectors=["H1"],
+        sampling_frequency=sampling_frequency,
+        window_duration=window_size / sampling_frequency,
+        seed=1234,
+    )
+    assert simulator._window_size == window_size
+
+    strain = simulator.generate(
+        duration=n_samples / sampling_frequency, sampling_frequency=sampling_frequency, detectors=["H1"]
+    )["H1"]
+
+    assert strain.size == n_samples
+
+
 def test_time_varying_consecutive_generate_calls_are_continuous(tmp_path: Path) -> None:
     """Time-varying PSD updates preserve overlap-add continuity across calls."""
     start_psd_path = _write_psd_file(tmp_path / "tv_start_psd.txt", value=2.0e-3)

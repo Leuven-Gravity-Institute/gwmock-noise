@@ -410,6 +410,10 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
             next_raw = self._stitcher.draw_chunk(chunk_generator)
 
             for detector in self.detectors:
+                # An odd window leaves samples between the two crossfades that
+                # belong to neither overlap; emit them so each frame contributes
+                # exactly ``frame_step`` samples. Empty for even windows.
+                emitted_segments[detector].append(current_raw[detector][overlap_size:-overlap_size])
                 blended_overlap = (
                     (current_raw[detector][-overlap_size:] * self._stitcher._window_out)
                     + (next_raw[detector][:overlap_size] * self._stitcher._window_in)
