@@ -31,6 +31,7 @@ from gwmock_noise.simulators import (
     SchumannParams,
     SimulationResult,
     SpectralLineSimulator,
+    WhiteNoiseSimulator,
     take,
 )
 from gwmock_noise.simulators.registry import available_simulator_names, discover_configurable_simulators
@@ -143,6 +144,37 @@ def test_default_simulator_stream_is_reproducible_past_the_first_chunk() -> None
     # The chunks are successive draws, not one chunk repeated.
     assert not np.array_equal(first[0]["H1"], first[1]["H1"])
     assert not np.array_equal(first[1]["H1"], first[2]["H1"])
+
+
+@pytest.mark.parametrize("simulator_class", [DefaultNoiseSimulator, WhiteNoiseSimulator])
+@pytest.mark.parametrize("detectors", [["H1"], ["H1", "L1"], ["H1", "L1", "V1"]])
+def test_white_noise_stream_is_the_tail_of_one_seeded_generate(
+    simulator_class: type[DefaultNoiseSimulator | WhiteNoiseSimulator], detectors: list[str]
+) -> None:
+    """Concatenated seeded chunks equal one seeded generate() over the combined duration, per detector.
+
+    Drawing each detector's full array in turn held this for one detector only: with two, the second
+    chunk's first detector began where the one-shot call's second detector began.
+    """
+    n_chunks, chunk_duration, sampling_frequency, seed = 3, 2.0, 8.0, 11
+    stream = simulator_class().generate_stream(chunk_duration, sampling_frequency, detectors, seed=seed)
+    chunks = [next(stream) for _ in range(n_chunks)]
+    one_shot = simulator_class().generate(n_chunks * chunk_duration, sampling_frequency, detectors, seed=seed)
+
+    for detector in detectors:
+        np.testing.assert_array_equal(np.concatenate([chunk[detector] for chunk in chunks]), one_shot[detector])
+    # Each detector gets its own noise, not a copy of another's.
+    for index, detector in enumerate(detectors[1:], start=1):
+        assert not np.array_equal(one_shot[detector], one_shot[detectors[index - 1]])
+
+
+@pytest.mark.parametrize("simulator_class", [DefaultNoiseSimulator, WhiteNoiseSimulator])
+def test_single_detector_white_noise_is_the_generator_sequence(
+    simulator_class: type[DefaultNoiseSimulator | WhiteNoiseSimulator],
+) -> None:
+    """A seeded single-detector draw is the seed's own normal sequence, so its values stay stable."""
+    strain = simulator_class().generate(2.0, 8.0, ["H1"], seed=11)["H1"]
+    np.testing.assert_array_equal(strain, np.random.default_rng(11).standard_normal(16))
 
 
 def test_default_simulator_run_uses_frame_writer_for_gwf_output(
