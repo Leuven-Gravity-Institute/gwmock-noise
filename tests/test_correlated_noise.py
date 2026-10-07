@@ -201,6 +201,77 @@ def test_consecutive_generate_calls_are_continuous_across_detectors(tmp_path: Pa
         assert boundary_jump <= np.quantile(jumps, 0.995)
 
 
+@pytest.mark.parametrize(
+    ("window_size", "n_samples"),
+    [(1025, 4100), (129, 1040), (1024, 4100)],
+)
+def test_window_length_returns_the_requested_sample_count(tmp_path: Path, window_size: int, n_samples: int) -> None:
+    """Odd and even synthesis windows both return exactly the requested series length."""
+    sampling_frequency = 256.0
+    detectors = ["H1", "L1"]
+    psd_files, csd_files = _build_spectral_inputs(tmp_path, detectors)
+    simulator = CorrelatedNoiseSimulator(
+        psd_files=psd_files,
+        csd_files=csd_files,
+        detectors=detectors,
+        sampling_frequency=sampling_frequency,
+        window_duration=window_size / sampling_frequency,
+        seed=1234,
+    )
+    assert simulator._window_size == window_size
+
+    realization = simulator.generate(
+        duration=n_samples / sampling_frequency, sampling_frequency=sampling_frequency, detectors=detectors
+    )
+
+    for detector in detectors:
+        assert realization[detector].size == n_samples
+
+
+def test_odd_window_emits_the_unblended_core_of_each_chunk(tmp_path: Path) -> None:
+    """The sample between the two crossfades of an odd window is emitted verbatim, not replaced."""
+    sampling_frequency = 256.0
+    window_size = 1025
+    n_samples = 4100
+    detectors = ["H1", "L1"]
+    psd_files, csd_files = _build_spectral_inputs(tmp_path, detectors)
+    simulator = CorrelatedNoiseSimulator(
+        psd_files=psd_files,
+        csd_files=csd_files,
+        detectors=detectors,
+        sampling_frequency=sampling_frequency,
+        window_duration=window_size / sampling_frequency,
+        seed=1234,
+    )
+    chunks: list[dict[str, np.ndarray]] = []
+
+    def _labelled_chunk() -> dict[str, np.ndarray]:
+        # Every sample of every chunk carries a distinct, non-zero value.
+        offset = (len(chunks) + 1) * 10 * window_size
+        chunk = {
+            detector: offset + index * window_size + np.arange(window_size, dtype=float)
+            for index, detector in enumerate(detectors)
+        }
+        # Record copies: the simulator rebinds entries of the dict it is handed.
+        chunks.append({detector: values.copy() for detector, values in chunk.items()})
+        return chunk
+
+    simulator._generate_realization_chunk = _labelled_chunk
+    realization = simulator.generate(
+        duration=n_samples / sampling_frequency, sampling_frequency=sampling_frequency, detectors=detectors
+    )
+
+    overlap_size = simulator._stitcher.overlap_size
+    frame_step = window_size - overlap_size
+    assert window_size - 2 * overlap_size == 1
+    # chunks[0] is the warm-up draw; frame j starts with the core of chunks[j + 1].
+    frame_starts = range(0, n_samples, frame_step)
+    for detector in detectors:
+        assert realization[detector].size == n_samples
+        for frame, start in enumerate(frame_starts):
+            assert realization[detector][start] == chunks[frame + 1][detector][overlap_size]
+
+
 def test_near_singular_spectral_matrices_are_regularized(tmp_path: Path) -> None:
     """Near-singular spectra do not raise during initialization or generation."""
     detectors = ["H1", "L1", "V1"]
