@@ -132,6 +132,41 @@ def test_empirical_distribution_draws_from_the_supplied_table() -> None:
         assert np.count_nonzero(draws == value) == pytest.approx(1000, abs=120)
 
 
+def test_empirical_distribution_accepts_a_numpy_array() -> None:
+    """An array of observed SNRs builds the same distribution as the equivalent list.
+
+    An array is what a caller holds after reading a table, so it is accepted as it
+    comes -- float or integer -- and stored as the list a configuration would carry.
+    """
+    table = np.array([8.0, 16.0, 64.0])
+    from_array = EmpiricalSNRDistribution(samples=table)
+    from_list = EmpiricalSNRDistribution(samples=[8.0, 16.0, 64.0])
+
+    assert from_array == from_list
+    assert from_array.serialize() == from_list.serialize()
+    assert EmpiricalSNRDistribution(samples=np.array([8, 16, 64])) == from_list
+    first = np.random.default_rng(2)
+    second = np.random.default_rng(2)
+    assert [from_array.sample(first) for _ in range(50)] == [from_list.sample(second) for _ in range(50)]
+
+    # The stored table is a copy: changing the caller's array afterwards changes nothing.
+    table[0] = 1000.0
+    assert from_array == from_list
+
+    # An array is validated exactly as a list is.
+    with pytest.raises(ValueError, match="must be one-dimensional"):
+        EmpiricalSNRDistribution(samples=np.ones((2, 3)))
+    with pytest.raises(ValueError, match="at least one SNR sample"):
+        EmpiricalSNRDistribution(samples=np.array([]))
+    with pytest.raises(ValueError, match="greater than zero"):
+        EmpiricalSNRDistribution(samples=np.array([5.0, -1.0]))
+    with pytest.raises(ValueError, match="only finite SNR samples"):
+        EmpiricalSNRDistribution(samples=np.array([5.0, np.nan]))
+    for non_numeric in (np.array([True, False]), np.array(["loud"]), np.array([5.0], dtype=object)):
+        with pytest.raises(TypeError, match="sequence of numbers"):
+            EmpiricalSNRDistribution(samples=non_numeric)
+
+
 def test_empirical_distribution_reads_text_and_hdf5_tables(tmp_path: Path) -> None:
     """A table of observed SNRs can be supplied as a file instead of inline."""
     text_file = tmp_path / "snrs.txt"
@@ -309,6 +344,54 @@ def test_blip_glitch_strain_carries_the_configured_tail_index(tmp_path: Path) ->
 
     assert recovered.min() >= MEASURED_THRESHOLD
     assert tail_index(recovered, MEASURED_THRESHOLD) == pytest.approx(MEASURED_TAIL_INDEX["Fast_Scattering"], rel=0.1)
+
+
+def test_blip_glitch_strain_recovers_an_empirical_tail(tmp_path: Path) -> None:
+    """An empirical model's *generated strain* reproduces the table's tail.
+
+    The table is a heavy-tailed one, drawn once from numpy's Pareto sampler at the
+    heaviest measured index, so most of its weight sits in a few loud entries. The
+    SNR of each event is recomputed off its waveform and the survival of that
+    recovered sample is compared with the table's own at quantiles from the median
+    to the top percent, so a model that drew from the table and then calibrated to
+    a different loudness -- or drew from only part of it -- would fail here.
+
+    Each comparison is a binomial fraction, so the tolerance is four of its standard
+    errors at the batch size drawn: about 0.045 at the median and 0.009 at the top
+    percent for 2000 events.
+    """
+    psd_file = tmp_path / "psd.txt"
+    _write_flat_psd(psd_file)
+    table_rng = np.random.default_rng(23)
+    table = MEASURED_THRESHOLD * (1.0 + table_rng.pareto(MEASURED_TAIL_INDEX["Koi_Fish"], size=400))
+    distribution = EmpiricalSNRDistribution(samples=table.tolist())
+    model = BlipGlitch(
+        rate=0.5,
+        amplitude_distribution=LogNormalAmplitudeDistribution(mean=1.0, std=0.0),
+        width=0.01,
+        psd_file=psd_file,
+        snr=distribution,
+    )
+
+    rng = np.random.default_rng(29)
+    n_events = 2000
+    recovered = np.array(
+        [_optimal_snr(model.generate_waveform(4096.0, rng=rng), psd_file, 4096.0) for _ in range(n_events)]
+    )
+
+    assert recovered.min() >= table.min() * (1.0 - 1e-8)
+    assert recovered.max() <= table.max() * (1.0 + 1e-8)
+    ordered = np.sort(table)
+    for quantile in (0.5, 0.75, 0.9, 0.95, 0.99):
+        # Midway between two neighbouring table values, so a recomputed SNR that
+        # differs from its target only by rounding cannot cross the threshold.
+        index = int(quantile * ordered.size)
+        threshold = 0.5 * (ordered[index - 1] + ordered[index])
+        expected = distribution.survival(threshold)
+
+        assert np.mean(recovered >= threshold) == pytest.approx(
+            expected, abs=4.0 * _binomial_standard_error(expected, n_events)
+        )
 
 
 def test_scattered_light_glitch_records_the_drawn_target(tmp_path: Path) -> None:

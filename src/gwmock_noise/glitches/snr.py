@@ -286,6 +286,11 @@ class EmpiricalSNRDistribution(SNRDistribution):
     about its shape. Supply the values inline as ``samples`` or point ``file``
     at a table on disk -- exactly one of the two.
 
+    ``samples`` may be a sequence of numbers or a one-dimensional NumPy array of
+    integers or floats, the shape a table already read into memory comes in. An
+    array is stored as the equivalent list of floats, so the two spellings of one
+    table build equal distributions and serialize identically.
+
     Attributes:
         samples: Observed SNRs given inline, or ``None`` when ``file`` is used.
         file: Path to a table of observed SNRs, or ``None`` when ``samples`` is
@@ -293,7 +298,7 @@ class EmpiricalSNRDistribution(SNRDistribution):
         distribution: Discriminator naming this shape in a configuration.
     """
 
-    samples: Sequence[float] | None = None
+    samples: Sequence[float] | np.ndarray | None = None
     file: str | Path | None = None
     distribution: str = "empirical"
     _values: np.ndarray = field(init=False, repr=False, compare=False)
@@ -306,6 +311,12 @@ class EmpiricalSNRDistribution(SNRDistribution):
             raise ValueError("The empirical snr distribution requires exactly one of 'samples' or 'file'.")
         if self.file is not None:
             self._values = load_snr_samples(self.file)
+            return
+        if isinstance(self.samples, np.ndarray):
+            if self.samples.dtype.kind not in "iuf":
+                raise TypeError("snr distribution samples must be a sequence of numbers.")
+            self._values = _validate_snr_samples(self.samples.astype(float), "The empirical snr distribution 'samples'")
+            self.samples = self._values.tolist()
             return
         if isinstance(self.samples, (str, bytes)) or not isinstance(self.samples, Sequence):
             raise TypeError("snr distribution samples must be a sequence of numbers.")
