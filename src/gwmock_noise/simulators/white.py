@@ -13,6 +13,19 @@ if TYPE_CHECKING:
     from gwmock_noise.config.models import NoiseComponentConfig, NoiseConfig
 
 
+def draw_white_noise(rng: np.random.Generator, n_samples: int, detectors: list[str]) -> dict[str, np.ndarray]:
+    """Draw ``n_samples`` of standard-normal noise per detector from one shared generator.
+
+    The draw is time-major -- all detectors' sample ``k`` before any detector's sample ``k + 1`` -- so
+    consecutive calls on one generator concatenate into the same per-detector arrays one longer call
+    returns, which is what a stream's continuation needs. Drawing each detector's full array in turn
+    held that for a single detector only. A single detector's values are the generator's own sequence
+    either way.
+    """
+    draws = rng.standard_normal((n_samples, len(detectors)))
+    return {detector: np.ascontiguousarray(draws[:, index]) for index, detector in enumerate(detectors)}
+
+
 class WhiteNoiseSimulator(ConfigurableNoiseSimulator):
     """Generate Gaussian white noise as a composable component."""
 
@@ -65,7 +78,7 @@ class WhiteNoiseSimulator(ConfigurableNoiseSimulator):
         n_samples = round(duration * sampling_frequency)
         if n_samples < 1:
             raise ValueError("duration and sampling_frequency must produce at least one sample.")
-        return {detector: rng.standard_normal(n_samples).astype(float, copy=False) for detector in detectors}
+        return draw_white_noise(rng, n_samples, detectors)
 
     def generate_stream(
         self,

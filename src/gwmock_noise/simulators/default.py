@@ -22,6 +22,7 @@ from gwmock_noise.simulators.composite import CompositeNoiseSimulator
 from gwmock_noise.simulators.glitches import _ZeroNoiseSimulator
 from gwmock_noise.simulators.protocol import NoiseSimulator
 from gwmock_noise.simulators.registry import build_component_simulator
+from gwmock_noise.simulators.white import draw_white_noise
 
 if TYPE_CHECKING:
     from gwmock_noise.config.models import NoiseConfig
@@ -93,7 +94,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         self.seed = seed
         self._active_metadata = None
         n_samples = round(duration * sampling_frequency)
-        return {detector: rng.standard_normal(n_samples).astype(float, copy=False) for detector in detectors}
+        return draw_white_noise(rng, n_samples, detectors)
 
     def generate_stream(
         self,
