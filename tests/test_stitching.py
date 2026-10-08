@@ -27,11 +27,23 @@ def test_stitcher_validates_positive_overlap_size(overlap_size: int) -> None:
         OverlapAddStitcher(detectors=["H1"], window_size=8, overlap_size=overlap_size)
 
 
-@pytest.mark.parametrize("overlap_size", [8, 9])
-def test_stitcher_validates_overlap_smaller_than_window(overlap_size: int) -> None:
-    """OverlapAddStitcher requires overlap_size < window_size."""
-    with pytest.raises(ValueError, match="overlap_size must be smaller than window_size"):
-        OverlapAddStitcher(detectors=["H1"], window_size=8, overlap_size=overlap_size)
+@pytest.mark.parametrize(("window_size", "overlap_size"), [(8, 5), (8, 7), (8, 8), (8, 9), (9, 5), (64, 48)])
+def test_stitcher_validates_overlap_at_most_half_window(window_size: int, overlap_size: int) -> None:
+    """OverlapAddStitcher rejects overlaps longer than half the window.
+
+    Beyond half a window the overlap regions of consecutive chunks cover each
+    sample three times, and the pairwise blend normalisation then damps the
+    whole output instead of preserving the process variance.
+    """
+    with pytest.raises(ValueError, match="overlap_size must be at most half of window_size"):
+        OverlapAddStitcher(detectors=["H1"], window_size=window_size, overlap_size=overlap_size)
+
+
+@pytest.mark.parametrize(("window_size", "overlap_size"), [(2, 1), (8, 4), (9, 4), (64, 32)])
+def test_stitcher_accepts_overlap_up_to_half_window(window_size: int, overlap_size: int) -> None:
+    """An overlap of up to half the window (rounded down) is accepted."""
+    stitcher = OverlapAddStitcher(detectors=["H1"], window_size=window_size, overlap_size=overlap_size)
+    assert stitcher.overlap_size == overlap_size
 
 
 def test_stitcher_accepts_valid_sizes() -> None:
