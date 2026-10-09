@@ -357,8 +357,17 @@ def test_blip_glitch_strain_recovers_an_empirical_tail(tmp_path: Path) -> None:
     a different loudness -- or drew from only part of it -- would fail here.
 
     Each comparison is a binomial fraction, so the tolerance is four of its standard
-    errors at the batch size drawn: about 0.045 at the median and 0.009 at the top
-    percent for 2000 events.
+    errors at the batch size drawn: about 0.016 at the median and 0.0031 at the top
+    percent for 16000 events. The batch is sized for the top percent, where the
+    expected survival is 0.01: a pass band of 0.0069-0.0131 misses a halved or a
+    doubled top-percent mass less than once in a thousand runs, where 2000 events
+    gave 0.0011-0.0189 and missed a halving almost always.
+
+    The loudness of the events above the top-percent threshold is checked
+    separately, by their mean log-excess over that threshold -- the reciprocal of
+    the Hill index -- against the table's own. Survival alone cannot see it: halving
+    the top percent of this table leaves three of its four entries above the
+    threshold, which moves the survival only to 0.0075.
     """
     psd_file = tmp_path / "psd.txt"
     _write_flat_psd(psd_file)
@@ -374,7 +383,7 @@ def test_blip_glitch_strain_recovers_an_empirical_tail(tmp_path: Path) -> None:
     )
 
     rng = np.random.default_rng(29)
-    n_events = 2000
+    n_events = 16000
     recovered = np.array(
         [_optimal_snr(model.generate_waveform(4096.0, rng=rng), psd_file, 4096.0) for _ in range(n_events)]
     )
@@ -392,6 +401,16 @@ def test_blip_glitch_strain_recovers_an_empirical_tail(tmp_path: Path) -> None:
         assert np.mean(recovered >= threshold) == pytest.approx(
             expected, abs=4.0 * _binomial_standard_error(expected, n_events)
         )
+
+    # The loop leaves ``threshold`` at the top percent. Each recovered exceedance is
+    # a uniform draw from the table's entries above it, so the mean log-excess has
+    # the table's own as its expectation and their spread over the root of the
+    # count as its standard error.
+    table_excess = np.log(ordered[ordered >= threshold] / threshold)
+    recovered_excess = np.log(recovered[recovered >= threshold] / threshold)
+    assert recovered_excess.mean() == pytest.approx(
+        table_excess.mean(), abs=4.0 * table_excess.std() / np.sqrt(recovered_excess.size)
+    )
 
 
 def test_scattered_light_glitch_records_the_drawn_target(tmp_path: Path) -> None:
