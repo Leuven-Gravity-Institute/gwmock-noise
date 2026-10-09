@@ -180,7 +180,7 @@ def test_consecutive_generate_calls_are_continuous(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(("window_size", "n_samples"), [(1025, 4100), (129, 1040)])
 def test_odd_window_length_returns_the_requested_sample_count(tmp_path: Path, window_size: int, n_samples: int) -> None:
-    """An odd synthesis window must not shorten the returned series."""
+    """An odd synthesis window must neither shorten the series nor drop the core sample of a frame."""
     sampling_frequency = 256.0
     simulator = ColoredNoiseSimulator(
         psd_file=_write_psd_file(tmp_path / "odd_window_psd.txt"),
@@ -190,12 +190,34 @@ def test_odd_window_length_returns_the_requested_sample_count(tmp_path: Path, wi
         seed=1234,
     )
     assert simulator._window_size == window_size
+    raw_chunks: list[np.ndarray] = []
+    draw_chunk = simulator._generate_realization_chunk
+
+    def _recorded_chunk() -> dict[str, np.ndarray]:
+        chunk = draw_chunk()
+        raw_chunks.append(chunk["H1"].copy())
+        return chunk
+
+    simulator._generate_realization_chunk = _recorded_chunk
 
     strain = simulator.generate(
         duration=n_samples / sampling_frequency, sampling_frequency=sampling_frequency, detectors=["H1"]
     )["H1"]
 
     assert strain.size == n_samples
+    overlap_size = simulator._stitcher.overlap_size
+    frame_step = window_size - overlap_size
+    assert window_size - 2 * overlap_size == 1
+    # The crossfades end on the incoming chunk and start on the outgoing one, so at each
+    # frame junction the core sample must sit between its two neighbours in the raw chunk
+    # it came from. raw_chunks[0] is the warm-up draw, whose core opens frame 0.
+    for frame, start in enumerate(range(frame_step, n_samples - 1, frame_step), start=1):
+        assert np.allclose(
+            strain[start - 1 : start + 2],
+            raw_chunks[frame][overlap_size - 1 : overlap_size + 2],
+            rtol=1e-9,
+            atol=0.0,
+        )
 
 
 def test_time_varying_consecutive_generate_calls_are_continuous(tmp_path: Path) -> None:
