@@ -117,8 +117,11 @@ class OverlapAddStitcher:
             raise ValueError("window_size must be a positive integer.")
         if self.overlap_size <= 0:
             raise ValueError("overlap_size must be a positive integer.")
-        if self.overlap_size >= self.window_size:
-            raise ValueError("overlap_size must be smaller than window_size.")
+        # The pairwise blend preserves the process variance only while each sample
+        # lies in at most two chunks; a longer overlap triple-covers samples and
+        # damps the whole output.
+        if 2 * self.overlap_size > self.window_size:
+            raise ValueError("overlap_size must be at most half of window_size.")
         self.previous_strain: dict[str, np.ndarray] = {}
         self.chunk_counter = 0
         self._rngs: dict[str, np.random.Generator] | None = None
