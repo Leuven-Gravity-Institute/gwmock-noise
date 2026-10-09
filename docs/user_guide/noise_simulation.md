@@ -824,6 +824,17 @@ strain_h1 = np.concatenate([chunk["H1"] for chunk in first_three_chunks])
 their overlap-add state inside the iterator, so concatenating sequential chunks
 reproduces the same realization as one seeded single-shot `generate(...)` call.
 
+<!-- prettier-ignore-start -->
+!!! note "Seeded multi-detector white noise changed after v0.15.0"
+    `WhiteNoiseSimulator` and `DefaultNoiseSimulator` now draw white noise
+    time-major from their shared generator — every detector's sample `k` before
+    any detector's sample `k + 1` — so a seeded stream continues one realization
+    for any number of detectors. Releases up to v0.15.0 drew each detector's
+    full array in turn, which kept that property for one detector only. For a
+    fixed seed, single-detector output is unchanged, but output for two or more
+    detectors differs from v0.15.0 and earlier releases.
+<!-- prettier-ignore-end -->
+
 ## Overlap-save FIR colouring
 
 `OverlapSaveFirSimulator` is a bounded-state alternative to the overlap-add
