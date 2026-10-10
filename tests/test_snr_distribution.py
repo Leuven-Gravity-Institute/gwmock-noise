@@ -151,7 +151,7 @@ def test_empirical_distribution_accepts_a_numpy_array() -> None:
 
     # The stored table is a copy: changing the caller's array afterwards changes nothing.
     table[0] = 1000.0
-    assert from_array == from_list
+    assert from_array.serialize() == from_list.serialize()
 
     # An array is validated exactly as a list is.
     with pytest.raises(ValueError, match="must be one-dimensional"):
