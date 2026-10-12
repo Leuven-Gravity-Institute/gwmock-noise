@@ -36,7 +36,7 @@ gwosc = ["gwpy>=4.0.0", "gwosc>=0.8.0"]
 
 [dependency-groups]
 dev = [
-  "ruff>=0.16.10",
+  "ruff>=0.17.0",
   "prek>=0.5.5",
   "pytest-cov>=7.1.0",
   "pytest-mock>=3.16.0",
