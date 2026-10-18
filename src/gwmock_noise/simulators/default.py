@@ -7,9 +7,9 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import h5py
 import numpy as np
 
+from gwmock_noise._optional import require
 from gwmock_noise.naming import (
     check_artifact_names,
     reject_colliding_names,
@@ -201,10 +201,9 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
     ) -> dict[str, Path]:
         """Persist per-detector strain as HDF5, carrying the same grid a frame would.
 
-        Written with ``h5py``, which is a required dependency, rather than through GWpy, which is not:
-        GWpy is an extra here (``frame``, ``gwpy``, ``gwosc``), and a *primary* output format must not
-        need an optional package to produce. The first version of this did use GWpy and was wrong for
-        that reason.
+        Written with ``h5py`` (the ``hdf5`` extra) rather than through GWpy (the ``frame``, ``gwpy`` and
+        ``gwosc`` extras), so this format needs one small package and not GWpy's whole stack. The default
+        format, ``npy``, needs neither: h5py publishes no wheel for the newest Python yet.
 
         The attributes are the ones GWpy's own HDF5 writer uses -- ``x0``, ``dx``, ``channel``, ``name``,
         ``unit``, ``xunit`` -- so ``TimeSeries.read`` loads these files unchanged and a reader cannot tell
@@ -220,6 +219,7 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         Returns:
             The path written for each detector.
         """
+        h5py = require("h5py", "hdf5", "HDF5 output")
         output_paths: dict[str, Path] = {}
         for detector, strain in strain_by_detector.items():
             channel = self._channel_for(config=config, detector=detector)
@@ -439,6 +439,10 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         )
 
         self._check_artifact_lengths(config)
+
+        if config.output.format == "hdf5":
+            # Before the directory is created and the noise generated, so a missing extra costs nothing.
+            require("h5py", "hdf5", "HDF5 output")
 
         Path(config.output.directory).mkdir(parents=True, exist_ok=True)
 

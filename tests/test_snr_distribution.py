@@ -12,9 +12,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import h5py
 import numpy as np
 import pytest
+
+try:
+    import h5py
+except ModuleNotFoundError as exc:  # Python 3.15: h5py publishes no wheel yet; its tests are skipped
+    if exc.name != "h5py":
+        raise
+    h5py = None
 
 from gwmock_noise import (
     BlipGlitch,
@@ -167,6 +173,7 @@ def test_empirical_distribution_accepts_a_numpy_array() -> None:
             EmpiricalSNRDistribution(samples=non_numeric)
 
 
+@pytest.mark.requires_h5py
 def test_empirical_distribution_reads_text_and_hdf5_tables(tmp_path: Path) -> None:
     """A table of observed SNRs can be supplied as a file instead of inline."""
     text_file = tmp_path / "snrs.txt"
@@ -193,6 +200,7 @@ def test_single_value_text_table_is_accepted(tmp_path: Path) -> None:
     assert EmpiricalSNRDistribution(file=text_file).sample(np.random.default_rng(0)) == 13.5
 
 
+@pytest.mark.requires_h5py
 def test_distribution_configuration_errors(tmp_path: Path) -> None:
     """Invalid distribution configurations are refused at construction."""
     with pytest.raises(ValueError, match="minimum must be finite and greater than zero"):

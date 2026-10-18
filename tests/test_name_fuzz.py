@@ -285,7 +285,7 @@ _COLLIDING_PAIRS = [
 ]
 
 
-@pytest.mark.parametrize("artifact_format", ["npy", "hdf5", "gwf"])
+@pytest.mark.parametrize("artifact_format", ["npy", pytest.param("hdf5", marks=pytest.mark.requires_h5py), "gwf"])
 @pytest.mark.parametrize(("gps_start", "duration"), _GRIDS)
 def test_a_name_that_fits_one_epoch_is_measured_against_the_epoch_used(
     tmp_path: Path, artifact_format: str, gps_start: float, duration: float
@@ -358,7 +358,7 @@ def test_two_names_never_share_one_file(tmp_path: Path, artifact_format: str, fi
     )
 
 
-@pytest.mark.parametrize("artifact_format", ["npy", "hdf5", "gwf"])
+@pytest.mark.parametrize("artifact_format", ["npy", pytest.param("hdf5", marks=pytest.mark.requires_h5py), "gwf"])
 @pytest.mark.parametrize("field", ["detector", "prefix", "channel"])
 def test_an_accepted_name_is_a_writable_name(tmp_path: Path, field: str, artifact_format: str) -> None:
     """Nothing the config accepts may fail in a writer, and nothing may be left behind by a refusal."""

@@ -5,9 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-import h5py
 import numpy as np
 import pytest
+
+try:
+    import h5py
+except ModuleNotFoundError as exc:  # Python 3.15: h5py publishes no wheel yet; its tests are skipped
+    if exc.name != "h5py":
+        raise
+    h5py = None
 
 from gwmock_noise import GengliBlipGlitch, LogNormalAmplitudeDistribution
 from gwmock_noise.glitches import _coloring as coloring_module
@@ -23,6 +29,7 @@ def _write_flat_psd(path: Path) -> None:
     np.savetxt(path, np.column_stack((frequencies, psd)))
 
 
+@pytest.mark.requires_h5py
 def test_from_population_file_round_trips_schema(tmp_path: Path) -> None:
     """Population helper writes the schema consumed by the model loader."""
     population_file = tmp_path / "population.h5"
@@ -36,6 +43,7 @@ def test_from_population_file_round_trips_schema(tmp_path: Path) -> None:
         assert handle.attrs["source"] == "test"
 
 
+@pytest.mark.requires_h5py
 def test_generate_waveform_uses_population_and_colors_output(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -78,6 +86,7 @@ def test_generate_waveform_uses_population_and_colors_output(
     assert captured["glitch_type"] == "Blip"
 
 
+@pytest.mark.requires_h5py
 def test_generate_waveform_requires_optional_dependency(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The model raises a focused error when gengli is unavailable."""
     population_file = tmp_path / "population.h5"
@@ -85,11 +94,14 @@ def test_generate_waveform_requires_optional_dependency(tmp_path: Path, monkeypa
     write_blip_population_file(population_file, snr_samples=np.array([8.0]))
     _write_flat_psd(psd_file)
 
-    monkeypatch.setattr(
-        gengli_module.importlib,
-        "import_module",
-        lambda name: (_ for _ in ()).throw(ModuleNotFoundError(name=name)),
-    )
+    import_module = gengli_module.importlib.import_module
+
+    def without_gengli(name: str):
+        if name == "gengli":
+            raise ModuleNotFoundError(name=name)
+        return import_module(name)
+
+    monkeypatch.setattr(gengli_module.importlib, "import_module", without_gengli)
 
     model = GengliBlipGlitch.from_population_file(
         population_file,
@@ -137,6 +149,7 @@ def test_serialize_reports_population_and_psd_paths(tmp_path: Path) -> None:
     }
 
 
+@pytest.mark.requires_h5py
 def test_color_glitch_uses_absolute_width_taper(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -169,6 +182,7 @@ def test_color_glitch_uses_absolute_width_taper(
     assert captured_alphas == pytest.approx([2.0 * PSD_WINDOW_WIDTH_HZ / (96.0 - 8.0)])
 
 
+@pytest.mark.requires_h5py
 def test_draw_reports_the_population_snr_and_the_realized_one(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -219,6 +233,7 @@ def test_draw_reports_the_population_snr_and_the_realized_one(
     assert draw.realized_snr == pytest.approx(expected, rel=1e-12)
 
 
+@pytest.mark.requires_h5py
 def test_draw_preserves_the_historical_rng_draw_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -660,6 +675,7 @@ POPULATION_PIN_WAVEFORMS = (
 )
 
 
+@pytest.mark.requires_h5py
 def test_population_file_realizations_are_bit_for_bit_unchanged(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -735,6 +751,7 @@ def test_population_file_realizations_are_bit_for_bit_unchanged(
     assert probes == [0.5899998082309823, 0.2707395834904839, 0.8881301256116383]
 
 
+@pytest.mark.requires_h5py
 def test_snr_configuration_errors(tmp_path: Path) -> None:
     """Exactly one target source, a PSD, and only the class gengli generates."""
     psd_file = tmp_path / "psd.txt"

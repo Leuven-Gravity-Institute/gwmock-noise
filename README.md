@@ -42,6 +42,8 @@ uv pip install gwmock-noise
 
 Optional extras (declared in `pyproject.toml`):
 
+- `gwmock-noise[hdf5]` — HDF5 files: `output.format = "hdf5"`, blip population
+  files and HDF5 SNR tables (`h5py`)
 - `gwmock-noise[gwpy]` — GWpy-based helpers (for example `GWpyAdapter`)
 - `gwmock-noise[frame]` — GWF frame output (`FrameWriter` / GWpy GWF stack)
 - `gwmock-noise[gengli]` — gengli-backed blip glitches (`GengliBlipGlitch`)
@@ -150,11 +152,11 @@ pages for more details:
 - Python 3.12 or higher
 - Operating System: Linux, macOS, or Windows
 
-**Note:** The package is built and tested against Python 3.12–3.14. When
+**Note:** The package is built and tested against Python 3.12–3.15. When
 creating a virtual environment with `uv`, specify the Python version to ensure
 compatibility: `uv venv --python 3.12` (replace `3.12` with your preferred
-version in the 3.12–3.14 range). This avoids potential issues with unsupported
-Python versions.
+version in the 3.12–3.15 range). On Python 3.15, h5py publishes no wheel yet, so
+the `hdf5` extra may not install there; everything else does.
 
 ### Install from PyPI
 

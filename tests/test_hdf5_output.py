@@ -127,6 +127,7 @@ class TestTheFormatIsRepresentable:
 class TestWhatGetsWritten:
     """The artifact, read back through the reader a consumer would use."""
 
+    @pytest.mark.requires_h5py
     def test_one_file_per_detector(self, tmp_path: Path) -> None:
         """One artifact per detector, as the other formats produce."""
         result = DefaultNoiseSimulator().run(_config(tmp_path))
@@ -190,6 +191,7 @@ class TestWhatGetsWritten:
 class TestNaming:
     """The file name, which is how a directory listing is read."""
 
+    @pytest.mark.requires_h5py
     def test_it_follows_the_frame_convention_with_an_hdf5_extension(self, tmp_path: Path) -> None:
         """`H-H1_<start>-<duration>.hdf5`: the detector, the epoch and the duration.
 
@@ -203,6 +205,7 @@ class TestNaming:
 
         assert result.output_paths["H1"].name == "H-H1_1000000000-4.hdf5"
 
+    @pytest.mark.requires_h5py
     def test_a_prefix_is_applied(self, tmp_path: Path) -> None:
         """A configured prefix leads the name, matching the frame writer."""
         result = DefaultNoiseSimulator().run(_config(tmp_path, prefix="run7"))
@@ -228,6 +231,7 @@ class TestTheOtherFormatsStillWork:
         assert np.load(result.output_paths["H1"]).size == 512
 
 
+@pytest.mark.requires_h5py
 def test_gwpy_reads_what_h5py_wrote(tmp_path: Path) -> None:
     """The compatibility claim, asserted rather than assumed.
 
@@ -274,6 +278,7 @@ class TestTheNameIsUniquePerDetector:
     instead, which is the strongest form of the same collision.
     """
 
+    @pytest.mark.requires_h5py
     def test_two_detectors_never_share_a_file(self, tmp_path: Path) -> None:
         """Two detectors given one and the same channel still write two files.
 
@@ -304,6 +309,7 @@ class TestTheNameIsUniquePerDetector:
         with pytest.raises(ValueError, match="more than one ':'"):
             _config(tmp_path, channels={"H1": "H1:A:B"})
 
+    @pytest.mark.requires_h5py
     def test_an_override_does_not_move_the_site_letter(self, tmp_path: Path) -> None:
         """`channels={"H1": "L1:CUSTOM"}` is still H1's data, so the name still starts with H."""
         result = DefaultNoiseSimulator().run(_config(tmp_path, channels={"H1": "L1:CUSTOM"}))
@@ -342,6 +348,7 @@ class TestTheNameIsUniquePerDetector:
                 output=OutputConfig(directory=tmp_path, format="hdf5"),
             )
 
+    @pytest.mark.requires_h5py
     def test_the_name_has_no_colon_so_it_is_a_file_on_windows(self, tmp_path: Path) -> None:
         """On NTFS a colon opens an alternate data stream, so the artifact would not be a file."""
         result = DefaultNoiseSimulator().run(_config(tmp_path))
@@ -353,6 +360,7 @@ class TestTheNameIsUniquePerDetector:
 class TestTheSidecar:
     """What a consumer can learn without opening the artifact."""
 
+    @pytest.mark.requires_h5py
     def test_it_records_the_channel_the_file_holds(self, tmp_path: Path) -> None:
         """HDF5 names carry the detector, not the channel, so the sidecar has to carry it.
 
@@ -512,6 +520,7 @@ class TestTheWriterAssertsItsOwnPrecondition:
 
         assert list(tmp_path.glob("*")) == []
 
+    @pytest.mark.requires_h5py
     def test_an_ordinary_bypassed_config_still_writes(self, tmp_path: Path) -> None:
         """The check must refuse bad names, not `model_construct` itself."""
         config = NoiseConfig.model_construct(
@@ -991,6 +1000,7 @@ class TestTheComposedNameLength:
 
         assert list(tmp_path.iterdir()) == []
 
+    @pytest.mark.requires_h5py
     def test_the_hdf5_name_is_checked_and_not_only_the_sidecar(self, tmp_path: Path) -> None:
         """An HDF5 name is six bytes longer than its sidecar, so one check cannot stand for the other.
 
@@ -1020,6 +1030,7 @@ class TestTheComposedNameLength:
                     DefaultNoiseSimulator().run(config)
                 assert list(directory.iterdir()) == []
 
+    @pytest.mark.requires_h5py
     def test_a_long_channel_is_unaffected(self, tmp_path: Path) -> None:
         """An HDF5 dataset name is not a path component, so the limit does not apply to it."""
         channel = "C" * 400
@@ -1138,6 +1149,7 @@ class TestTwoDetectorsOneFile:
 
         assert list(tmp_path.iterdir()) == []
 
+    @pytest.mark.requires_h5py
     def test_ordinary_detectors_are_unaffected(self, tmp_path: Path) -> None:
         """The guard must not disturb the case every other test in this file uses."""
         result = DefaultNoiseSimulator().run(_config(tmp_path))

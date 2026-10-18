@@ -71,7 +71,9 @@ sampling frequency but not `gps_start`, so a reader can recover the sample
 spacing and not the absolute time. `gwf` writes frame files, for pipelines that
 read frames. `hdf5` writes one file per detector carrying the samples together
 with the epoch, the sample interval, the channel and the unit, so a reader does
-not need to be told the grid separately; GWpy reads these files directly.
+not need to be told the grid separately; GWpy reads these files directly. `hdf5`
+needs the `hdf5` extra (`pip install "gwmock-noise[hdf5]"`); without it, the run
+stops before generating anything.
 
 Detector, channel and prefix names may not contain `/` or `\`, nor any character
 Windows reserves in a file name: `< > " | ? *`, and anything below `0x20`, which
@@ -335,7 +337,7 @@ snr = { distribution = "power_law", minimum = 10.0, alpha = 1.34, maximum = 621.
 # Draw with replacement from observed SNRs, given inline ...
 snr = { distribution = "empirical", samples = [11.4, 42.0, 92.2, 621.2] }
 # ... or from a file: one SNR per line, or an HDF5 file with an `snr` dataset
-# (the schema `gwmock-noise build-blip-glitch-table` writes).
+# (the schema `gwmock-noise build-blip-glitch-table` writes; needs the `hdf5` extra).
 snr = { distribution = "empirical", file = "observed_snrs.txt" }
 ```
 
@@ -409,8 +411,8 @@ expressed in this detector's band".
 
 `gwmock-noise[gengli]` adds a file-backed `GengliBlipGlitch` model that plugs
 into a `glitches` component. The expected population file is an HDF5 file with
-an `snr` dataset; the built-in CLI can generate that file from a GravitySpy CSV
-export:
+an `snr` dataset, so reading or writing one also needs the `hdf5` extra; the
+built-in CLI can generate that file from a GravitySpy CSV export:
 
 ```bash
 gwmock-noise build-blip-glitch-table --gravity-spy-csv gravity_spy.csv --out glitches.h5
