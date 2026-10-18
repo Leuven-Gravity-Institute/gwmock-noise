@@ -87,18 +87,18 @@ version.
     python --version
     ```
 
-2. Ensure Python 3.12 or higher is installed (the package targets 3.12–3.14;
+2. Ensure Python 3.13 or higher is installed (the package targets 3.13–3.15;
    see `requires-python` in `pyproject.toml`)
 3. Use a supported Python version when creating the venv:
 
     ```bash
-    python3.12 -m venv .venv
+    python3.13 -m venv .venv
     ```
 
 4. Or use uv for version management:
 
     ```bash
-    uv venv --python 3.12
+    uv venv --python 3.13
     source .venv/bin/activate
     ```
 

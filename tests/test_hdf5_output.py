@@ -33,6 +33,7 @@ from typing import ClassVar
 import numpy as np
 import pytest
 from _pytest.outcomes import Skipped
+from gwmock_data import hdf5 as gwmock_data_hdf5
 
 from gwmock_noise import NoiseComponentConfig, NoiseConfig, OutputConfig
 from gwmock_noise.naming import reject_unsafe
@@ -232,12 +233,14 @@ class TestTheOtherFormatsStillWork:
 
 
 @pytest.mark.requires_h5py
-def test_gwpy_reads_what_h5py_wrote(tmp_path: Path) -> None:
+@pytest.mark.parametrize("writer", ["h5py", "builtin"])
+def test_gwpy_reads_what_either_writer_wrote(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, writer: str) -> None:
     """The compatibility claim, asserted rather than assumed.
 
-    The writer uses `h5py` because GWpy is an optional extra here and a primary format must not need one.
-    The attributes it records are GWpy's own, so a reader with GWpy installed must not be able to tell --
-    if that ever stops being true, the format has quietly forked.
+    The file is written by h5py when it is installed and otherwise by gwmock-data's own writer, because GWpy
+    is an optional extra here and a primary format must not need one. Both record GWpy's own attributes, so
+    a reader with GWpy installed must not be able to tell which wrote the file -- if that ever stops being
+    true, the format has quietly forked. The built-in writer is forced by hiding h5py from gwmock-data.
 
     **This skips where GWpy is absent, and CI has two legs that install it** -- one at the newest GWpy,
     one at the declared floor. A guard that skips everywhere is indistinguishable from one that passes,
@@ -247,6 +250,8 @@ def test_gwpy_reads_what_h5py_wrote(tmp_path: Path) -> None:
     _require_gwpy_or_skip()
     from gwpy.timeseries import TimeSeries
 
+    if writer == "builtin":
+        monkeypatch.setattr(gwmock_data_hdf5, "_h5py", lambda: None)
     result = DefaultNoiseSimulator().run(_config(tmp_path))
 
     # No `channel=`: gwpy's HDF5 reader forwards **kwargs to `read_hdf5_array`, which does not accept

@@ -12,15 +12,16 @@ classifiers = [
   "Intended Audience :: Developers",
   "License :: OSI Approved :: BSD License",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: 3.15",
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dynamic = ["version"]
 dependencies = [
   "numpy>=2.2.0",
+  # The time series and HDF5 files the gwmock packages share; HDF5 needs no h5py through it.
+  "gwmock-data>=0.2.0",
   "pydantic>=2.10.0",
   "scipy>=1.15.0",
   "pyyaml>=6.0",
@@ -32,6 +33,7 @@ deepextractor = ["huggingface_hub>=0.26.0"]
 frame = ["gwpy>=4.0.0", "lalsuite>=7.24"]
 gengli = ["gengli>=0.2.0"]
 gwpy = ["gwpy>=4.0.0"]
+# HDF5 through h5py rather than gwmock-data's built-in writer and pyfive: faster, same files.
 hdf5 = ["h5py>=3.13.0"]
 gwosc = ["gwpy>=4.0.0", "gwosc>=0.8.0"]
 
@@ -130,7 +132,7 @@ markers = [
 
 [tool.ruff]
 line-length = 120 # Matches Black's default
-target-version = "py312" # Align with CI (3.12–3.14) and requires-python (>=3.12)
+target-version = "py313" # Align with CI (3.13–3.14) and requires-python (>=3.13)
 lint.extend-select = [
   "E",
   "F",

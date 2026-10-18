@@ -15,12 +15,12 @@ jobs:
                 # (lowest-direct) runs on ubuntu with the oldest supported
                 # Python, since floor versions predate newer interpreters'
                 # wheels.
-                python-version: ['3.12', '3.13', '3.14']
+                python-version: ['3.13', '3.14']
                 os: [ubuntu-latest, windows-latest, macos-latest]
                 resolution: [highest]
                 include:
                     - os: ubuntu-latest
-                      python-version: '3.12'
+                      python-version: '3.13'
                       resolution: lowest-direct
                       # The floor leg installs the `gwpy` extra too, so the GWpy compatibility test
                       # runs against the declared `gwpy>=` floor and not only the newest release.
@@ -97,5 +97,4 @@ jobs:
             - name: Run the core-dependency tests
               run: >-
                   uv run --no-sync pytest -p no:cacheprovider -o addopts= -o
-                  pythonpath= tests/test_core_install.py tests/test_optional.py
-                  tests/test_import.py
+                  pythonpath= tests/test_core_install.py tests/test_import.py

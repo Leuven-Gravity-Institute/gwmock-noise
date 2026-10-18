@@ -35,15 +35,15 @@ Then open [http://127.0.0.1:8000](http://127.0.0.1:8000).
 ### Install
 
 ```bash
-uv venv --python 3.12
+uv venv --python 3.13
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 uv pip install gwmock-noise
 ```
 
 Optional extras (declared in `pyproject.toml`):
 
-- `gwmock-noise[hdf5]` — HDF5 files: `output.format = "hdf5"`, blip population
-  files and HDF5 SNR tables (`h5py`)
+- `gwmock-noise[hdf5]` — faster HDF5 through `h5py`; HDF5 files also work
+  without it
 - `gwmock-noise[gwpy]` — GWpy-based helpers (for example `GWpyAdapter`)
 - `gwmock-noise[frame]` — GWF frame output (`FrameWriter` / GWpy GWF stack)
 - `gwmock-noise[gengli]` — gengli-backed blip glitches (`GengliBlipGlitch`)
@@ -149,14 +149,14 @@ pages for more details:
 
 ### Requirements
 
-- Python 3.12 or higher
+- Python 3.13 or higher
 - Operating System: Linux, macOS, or Windows
 
-**Note:** The package is built and tested against Python 3.12–3.15. When
+**Note:** The package is built and tested against Python 3.13–3.15. When
 creating a virtual environment with `uv`, specify the Python version to ensure
-compatibility: `uv venv --python 3.12` (replace `3.12` with your preferred
-version in the 3.12–3.15 range). On Python 3.15, h5py publishes no wheel yet, so
-the `hdf5` extra may not install there; everything else does.
+compatibility: `uv venv --python 3.13` (replace `3.13` with your preferred
+version in the 3.13–3.15 range). On Python 3.15, h5py publishes no wheel yet, so
+the `hdf5` extra may not install there; HDF5 files still work without it.
 
 ### Install from PyPI
 
@@ -164,7 +164,7 @@ The recommended way to install `gwmock-noise` is from PyPI:
 
 ```bash
 # Create a virtual environment (recommended with uv)
-uv venv --python 3.12
+uv venv --python 3.13
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install gwmock-noise
 ```
@@ -177,7 +177,7 @@ For the latest development version:
 git clone git@github.com:Leuven-Gravity-Institute/gwmock-noise.git
 cd gwmock-noise
 # Create a virtual environment (recommended with uv)
-uv venv --python 3.12
+uv venv --python 3.13
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv sync
 ```
@@ -192,7 +192,7 @@ git clone git@github.com:Leuven-Gravity-Institute/gwmock-noise.git
 cd gwmock-noise
 
 # Create a virtual environment (recommended with uv)
-uv venv --python 3.12
+uv venv --python 3.13
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv sync --group dev --group docs
 

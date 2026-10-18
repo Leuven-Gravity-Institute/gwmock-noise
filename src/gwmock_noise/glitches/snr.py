@@ -29,8 +29,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-
-from gwmock_noise._optional import require
+from gwmock_data import hdf5
 
 HDF5_SUFFIXES = (".h5", ".hdf5")
 SNR_DATASET = "snr"
@@ -103,11 +102,10 @@ def load_snr_samples(path: str | Path) -> np.ndarray:
     if not samples_path.exists():
         raise FileNotFoundError(f"SNR sample file not found: {samples_path}")
     if samples_path.suffix.lower() in HDF5_SUFFIXES:
-        h5py = require("h5py", "hdf5", "Reading an HDF5 SNR table")
-        with h5py.File(samples_path, "r") as handle:
-            if SNR_DATASET not in handle:
-                raise ValueError(f"SNR sample file must contain the '{SNR_DATASET}' dataset: {samples_path}")
-            values = np.asarray(handle[SNR_DATASET][...], dtype=float)
+        dataset = hdf5.read(samples_path, members=[SNR_DATASET]).members.get(SNR_DATASET)
+        if not isinstance(dataset, hdf5.Dataset):
+            raise ValueError(f"SNR sample file must contain the '{SNR_DATASET}' dataset: {samples_path}")
+        values = np.asarray(dataset.data, dtype=float)
     else:
         values = np.atleast_1d(np.loadtxt(samples_path, dtype=float))
     return _validate_snr_samples(values, f"SNR sample file '{samples_path}'")

@@ -13,16 +13,16 @@ pages for more details:
 
 ## Requirements
 
-- Python 3.12 or higher
+- Python 3.13 or higher
 - Operating System: Linux, macOS, or Windows
 
 <!-- prettier-ignore-start -->
 !!! note
-    The package is built and tested against Python 3.12–3.15. When creating a virtual environment with `uv`,
+    The package is built and tested against Python 3.13–3.15. When creating a virtual environment with `uv`,
     specify the Python version to ensure compatibility:
-    `uv venv --python 3.12` (replace `3.12` with your preferred version in the 3.12–3.15 range).
-    On Python 3.15, h5py publishes no wheel yet, so the `hdf5` extra (and anything that pulls it in) may
-    not install there; everything else does.
+    `uv venv --python 3.13` (replace `3.13` with your preferred version in the 3.13–3.15 range).
+    On Python 3.15, h5py publishes no wheel yet, so the `hdf5` extra may not install there. HDF5 files still
+    work: without h5py they are written and read by gwmock-data's own HDF5 support.
 <!-- prettier-ignore-end -->
 
 ## Install from PyPI
@@ -31,7 +31,7 @@ The recommended way to install `gwmock-noise` is from PyPI:
 
 ```bash
 # Create a virtual environment (recommended with uv)
-uv venv --python 3.12
+uv venv --python 3.13
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install gwmock-noise
 ```
@@ -40,13 +40,13 @@ uv pip install gwmock-noise
 
 Published wheels expose these optional dependency groups:
 
-| Extra    | Purpose                                                                               |
-| -------- | ------------------------------------------------------------------------------------- |
-| `hdf5`   | HDF5 files: `output.format = "hdf5"`, blip population files, HDF5 SNR tables (`h5py`) |
-| `gwpy`   | GWpy-based helpers (`GWpyAdapter`, parts of the GWF stack)                            |
-| `frame`  | GWF frame writing (`FrameWriter`; pulls `gwpy` and `lalsuite`)                        |
-| `gengli` | gengli-backed blip glitches (`GengliBlipGlitch`)                                      |
-| `gwosc`  | Real noise from GWOSC (`GwoscNoiseFetcher`; pulls `gwpy` and `gwosc`)                 |
+| Extra    | Purpose                                                                                |
+| -------- | -------------------------------------------------------------------------------------- |
+| `hdf5`   | Faster HDF5 through `h5py`; HDF5 files also work without it (gwmock-data's own writer) |
+| `gwpy`   | GWpy-based helpers (`GWpyAdapter`, parts of the GWF stack)                             |
+| `frame`  | GWF frame writing (`FrameWriter`; pulls `gwpy` and `lalsuite`)                         |
+| `gengli` | gengli-backed blip glitches (`GengliBlipGlitch`)                                       |
+| `gwosc`  | Real noise from GWOSC (`GwoscNoiseFetcher`; pulls `gwpy` and `gwosc`)                  |
 
 A feature whose extra is missing raises `ModuleNotFoundError` naming the extra
 to install. The default output format, `npy`, needs none of them.
@@ -72,7 +72,7 @@ For the latest development version:
 git clone git@github.com:Leuven-Gravity-Institute/gwmock-noise.git
 cd gwmock-noise
 # Create a virtual environment (recommended with uv)
-uv venv --python 3.12
+uv venv --python 3.13
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv sync
 ```
@@ -85,7 +85,7 @@ To install the package editable with lint/test/doc dependencies:
 git clone git@github.com:Leuven-Gravity-Institute/gwmock-noise.git
 cd gwmock-noise
 
-uv venv --python 3.12
+uv venv --python 3.13
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv sync --group dev --group docs
 
