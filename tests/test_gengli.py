@@ -43,6 +43,18 @@ def test_from_population_file_round_trips_schema(tmp_path: Path) -> None:
         assert handle.attrs["source"] == "test"
 
 
+def test_a_population_file_without_the_snr_dataset_is_refused(tmp_path: Path) -> None:
+    """A file whose ``snr`` is missing, or is a group, is not a population file."""
+    from gwmock_data import hdf5
+
+    for members in ({}, {"snr": hdf5.Group()}):
+        population_file = tmp_path / "population.h5"
+        hdf5.write(hdf5.Group(members), population_file)
+
+        with pytest.raises(ValueError, match="must contain the 'snr' dataset"):
+            read_blip_population_file(population_file)
+
+
 @pytest.mark.requires_h5py
 def test_generate_waveform_uses_population_and_colors_output(
     tmp_path: Path,

@@ -11,7 +11,7 @@ copy-paste CLI and Python snippets organised by what you want to do.
 ## 1. Install from PyPI
 
 ```bash
-uv venv --python 3.12
+uv venv --python 3.13
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 uv pip install gwmock-noise
 ```
@@ -66,8 +66,8 @@ print(result.output_paths)
 ordered `components` list (white noise by default; PSD/CSD, lines, glitches,
 Schumann, etc. when configured), and writes NumPy strain files plus JSON
 sidecars. Set `output.format` to `gwf` for frame files (the `frame` extra) or
-`hdf5` for HDF5 (the `hdf5` extra), each one file per detector alongside the
-same sidecars.
+`hdf5` for HDF5 (no extra needed), each one file per detector alongside the same
+sidecars.
 
 ## 4. Clone and develop
 
@@ -77,7 +77,7 @@ project does not publish a `[dev]` or `[docs]` extra on PyPI):
 ```bash
 git clone git@github.com:Leuven-Gravity-Institute/gwmock-noise.git
 cd gwmock-noise
-uv venv --python 3.12
+uv venv --python 3.13
 source .venv/bin/activate
 uv sync --group dev --group docs
 ```

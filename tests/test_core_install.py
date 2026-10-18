@@ -102,60 +102,44 @@ def test_a_default_run_writes_numpy_without_optional_packages(tmp_path: Path):
     assert outcome["result"] == {"H1": [".npy", 512], "L1": [".npy", 512]}
 
 
-def test_hdf5_output_without_h5py_names_the_extra_before_doing_anything(tmp_path: Path):
-    """The run stops before the output directory is created or any noise is generated."""
+def test_hdf5_output_works_without_h5py(tmp_path: Path):
+    """HDF5 output is written by gwmock-data's own writer and reads back with the grid and channel."""
     directory = tmp_path / "out"
     outcome = _run(
         f"""
+        import numpy as np
+        from gwmock_data import hdf5
         from gwmock_noise import DefaultNoiseSimulator, NoiseConfig, OutputConfig
 
         config = NoiseConfig(
             detectors=["H1"], duration=4.0, sampling_frequency=128.0, seed=7,
             output=OutputConfig(directory={str(directory)!r}, format="hdf5", gps_start=1000000000.0),
         )
-        try:
-            DefaultNoiseSimulator().run(config)
-        except ModuleNotFoundError as exc:
-            result = str(exc)
-        else:
-            result = None
+        path = DefaultNoiseSimulator().run(config).output_paths["H1"]
+        dataset = next(iter(hdf5.read(path).members.values()))
+        result = [int(np.asarray(dataset.data).size), float(dataset.attrs["x0"]), dataset.attrs["channel"]]
         """,
         hide_h5py=True,
     )
 
-    assert outcome["result"] is not None
-    assert "HDF5 output needs h5py" in outcome["result"]
-    assert "pip install 'gwmock-noise[hdf5]'" in outcome["result"]
-    assert not directory.exists()
+    assert outcome["optional_loaded"] == []
+    assert outcome["result"] == [512, 1000000000.0, "H1:MOCK_NOISE"]
 
 
-def test_population_and_snr_files_without_h5py_name_the_extra(tmp_path: Path):
-    """Reading or writing a blip population file, and reading an HDF5 SNR table, name the extra."""
-    population = tmp_path / "population.h5"
-    population.write_bytes(b"")
+def test_population_and_snr_files_work_without_h5py(tmp_path: Path):
+    """A blip population file is written and read back, and read as an SNR table, without h5py."""
+    population = tmp_path / "new" / "population.h5"
     outcome = _run(
         f"""
         import numpy as np
         from gwmock_noise.glitches.gengli import read_blip_population_file, write_blip_population_file
         from gwmock_noise.glitches.snr import load_snr_samples
 
-        calls = {{
-            "read": lambda: read_blip_population_file({str(population)!r}),
-            "write": lambda: write_blip_population_file(
-                {str(tmp_path / "new" / "population.h5")!r}, snr_samples=np.array([8.0])
-            ),
-            "snr": lambda: load_snr_samples({str(population)!r}),
-        }}
-        result = {{}}
-        for label, call in calls.items():
-            try:
-                call()
-            except ModuleNotFoundError as exc:
-                result[label] = str(exc)
+        write_blip_population_file({str(population)!r}, snr_samples=np.array([8.0, 12.5]), metadata={{"source": "test"}})
+        result = [read_blip_population_file({str(population)!r}).tolist(), load_snr_samples({str(population)!r}).tolist()]
         """,
         hide_h5py=True,
     )
 
-    assert sorted(outcome["result"]) == ["read", "snr", "write"]
-    assert all("pip install 'gwmock-noise[hdf5]'" in message for message in outcome["result"].values())
-    assert not (tmp_path / "new").exists(), "a write that cannot happen must not create its directory"
+    assert outcome["optional_loaded"] == []
+    assert outcome["result"] == [[8.0, 12.5], [8.0, 12.5]]

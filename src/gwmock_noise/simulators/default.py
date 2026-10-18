@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from gwmock_data import hdf5
 
-from gwmock_noise._optional import require
 from gwmock_noise.naming import (
     check_artifact_names,
     reject_colliding_names,
@@ -201,9 +201,10 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
     ) -> dict[str, Path]:
         """Persist per-detector strain as HDF5, carrying the same grid a frame would.
 
-        Written with ``h5py`` (the ``hdf5`` extra) rather than through GWpy (the ``frame``, ``gwpy`` and
-        ``gwosc`` extras), so this format needs one small package and not GWpy's whole stack. The default
-        format, ``npy``, needs neither: h5py publishes no wheel for the newest Python yet.
+        Written through ``gwmock_data.hdf5`` rather than GWpy (the ``frame``, ``gwpy`` and ``gwosc``
+        extras), so this format needs no optional package: h5py is used when it is installed (the ``hdf5``
+        extra) and gwmock-data's own writer otherwise, which is what makes HDF5 output work on Python 3.15,
+        where h5py publishes no wheel yet. Either way the file is the same layout.
 
         The attributes are the ones GWpy's own HDF5 writer uses -- ``x0``, ``dx``, ``channel``, ``name``,
         ``unit``, ``xunit`` -- so ``TimeSeries.read`` loads these files unchanged and a reader cannot tell
@@ -219,21 +220,21 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         Returns:
             The path written for each detector.
         """
-        h5py = require("h5py", "hdf5", "HDF5 output")
         output_paths: dict[str, Path] = {}
         for detector, strain in strain_by_detector.items():
             channel = self._channel_for(config=config, detector=detector)
             output_path = Path(config.output.directory) / self._hdf5_name(
                 config=config, detector=detector, channel=channel
             )
-            with h5py.File(output_path, "w") as handle:
-                dataset = handle.create_dataset(channel, data=np.asarray(strain, dtype=float))
-                dataset.attrs["x0"] = float(config.output.gps_start)
-                dataset.attrs["dx"] = 1.0 / float(config.sampling_frequency)
-                dataset.attrs["xunit"] = "s"
-                dataset.attrs["channel"] = channel
-                dataset.attrs["name"] = channel
-                dataset.attrs["unit"] = "strain"
+            attrs = {
+                "x0": float(config.output.gps_start),
+                "dx": 1.0 / float(config.sampling_frequency),
+                "xunit": "s",
+                "channel": channel,
+                "name": channel,
+                "unit": "strain",
+            }
+            hdf5.write(hdf5.Group({channel: hdf5.Dataset(np.asarray(strain, dtype=float), attrs)}), output_path)
             output_paths[detector] = output_path
         return output_paths
 
@@ -439,10 +440,6 @@ class DefaultNoiseSimulator(BaseNoiseSimulator):
         )
 
         self._check_artifact_lengths(config)
-
-        if config.output.format == "hdf5":
-            # Before the directory is created and the noise generated, so a missing extra costs nothing.
-            require("h5py", "hdf5", "HDF5 output")
 
         Path(config.output.directory).mkdir(parents=True, exist_ok=True)
 
