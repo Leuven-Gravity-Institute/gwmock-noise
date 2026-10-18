@@ -5,92 +5,7 @@ from __future__ import annotations
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
-from gwmock_noise.config import NoiseComponentConfig, NoiseConfig, OutputConfig, load_config
-from gwmock_noise.gaussian import SpectralLine
-from gwmock_noise.glitches import (
-    BlipGlitch,
-    DeepExtractorGlitch,
-    EmpiricalSNRDistribution,
-    GengliBlipGlitch,
-    GlitchDraw,
-    GlitchModel,
-    LogNormalAmplitudeDistribution,
-    NetworkCoherence,
-    PowerLawSNRDistribution,
-    ScatteredLightGlitch,
-    SNRDistribution,
-)
-from gwmock_noise.parallel import ParallelAdapter
-from gwmock_noise.populations import (
-    GLITCH_POPULATION_SCHEMA_VERSION,
-    ExpectedCount,
-    GlitchClass,
-    GlitchPopulation,
-    GlitchRealization,
-    available_glitch_populations,
-    et_o3_anchored_population,
-    get_glitch_population,
-)
-from gwmock_noise.simulators import (
-    GLITCH_CATALOGUE_COLUMNS,
-    GLITCH_CATALOGUE_SCHEMA_VERSION,
-    GLITCH_CATALOGUE_TIME_CONVENTION,
-    JOINT_BACKEND_ENTRY_POINT_GROUP,
-    AddLines,
-    ARMANoiseSimulator,
-    ARNoiseSimulator,
-    BaseNoiseSimulator,
-    ChannelDomain,
-    ChannelKind,
-    ChannelMetadata,
-    ColoredNoiseSimulator,
-    CompositeNoiseSimulator,
-    ConfigurableNoiseSimulator,
-    CorrelatedARNoiseSimulator,
-    CorrelatedNoiseSimulator,
-    DefaultNoiseSimulator,
-    FitError,
-    GlitchNoiseSimulator,
-    GwoscNoiseSimulator,
-    InjectGlitches,
-    JointCovariance,
-    JointDummyCorrelatedSimulator,
-    JointRealization,
-    JointStrainWitnessSimulator,
-    MultichannelNoiseSimulator,
-    NoiseSimulator,
-    OverlapSaveFirSimulator,
-    SchumannNoiseSimulator,
-    SchumannParams,
-    SimulationResult,
-    SpectralLineSimulator,
-    TimeVaryingColoredNoiseSimulator,
-    WhiteNoiseSimulator,
-    apply_segment_gps_start,
-    available_joint_backend_names,
-    discover_joint_backends,
-    load_joint_backend,
-    open_stream,
-    take,
-)
-from gwmock_noise.spectral import (
-    SpectralCovariance,
-    assemble_hermitian_spectral_matrices,
-    build_spectral_covariance_from_files,
-    cholesky_factors_from_spectral_matrices,
-    interpolate_complex_spectral_series,
-    interpolate_real_spectral_series,
-    load_and_interpolate_csd,
-    load_and_interpolate_psd,
-    normalize_csd_mapping,
-    normalize_detector_pair,
-    regularized_cholesky,
-    sample_complex_frequency_coefficients,
-    simulate_spectral_covariance_chunk,
-    time_series_from_frequency_coefficients,
-)
 from gwmock_noise.utils.log import setup_logger
-from gwmock_noise.version import __version__
 
 # Configure the shared package logger on import so warnings (e.g. coarse
 # frequency resolution) are emitted with a clear severity label instead of the
@@ -99,10 +14,33 @@ from gwmock_noise.version import __version__
 setup_logger()
 
 if TYPE_CHECKING:
-    # Static-only imports so type checkers and code scanners can resolve the
-    # lazily loaded names listed in __all__; at runtime they are resolved by
-    # __getattr__ below, keeping the optional dependencies off the import path.
+    # Static-only imports so type checkers and code scanners can resolve the names listed in __all__.
+    # At runtime every one of them is resolved by __getattr__ below on first use, so importing the
+    # package loads none of its submodules (and none of SciPy, JAX or the optional dependencies they
+    # bring) until something is asked for.
+    from gwmock_noise.config import (
+        NoiseComponentConfig,
+        NoiseConfig,
+        OutputConfig,
+        load_config,
+    )
     from gwmock_noise.diagnostics import DiagnosticResult, compare_psd, estimate_psd, run_diagnostics
+    from gwmock_noise.gaussian import (
+        SpectralLine,
+    )
+    from gwmock_noise.glitches import (
+        BlipGlitch,
+        DeepExtractorGlitch,
+        EmpiricalSNRDistribution,
+        GengliBlipGlitch,
+        GlitchDraw,
+        GlitchModel,
+        LogNormalAmplitudeDistribution,
+        NetworkCoherence,
+        PowerLawSNRDistribution,
+        ScatteredLightGlitch,
+        SNRDistribution,
+    )
     from gwmock_noise.gwosc import (
         FilterType,
         GwoscFilterConfig,
@@ -111,8 +49,163 @@ if TYPE_CHECKING:
         GwoscSegmentFilter,
     )
     from gwmock_noise.output import FrameWriter, GWpyAdapter
+    from gwmock_noise.parallel import (
+        ParallelAdapter,
+    )
+    from gwmock_noise.populations import (
+        GLITCH_POPULATION_SCHEMA_VERSION,
+        ExpectedCount,
+        GlitchClass,
+        GlitchPopulation,
+        GlitchRealization,
+        available_glitch_populations,
+        et_o3_anchored_population,
+        get_glitch_population,
+    )
+    from gwmock_noise.simulators import (
+        GLITCH_CATALOGUE_COLUMNS,
+        GLITCH_CATALOGUE_SCHEMA_VERSION,
+        GLITCH_CATALOGUE_TIME_CONVENTION,
+        JOINT_BACKEND_ENTRY_POINT_GROUP,
+        AddLines,
+        ARMANoiseSimulator,
+        ARNoiseSimulator,
+        BaseNoiseSimulator,
+        ChannelDomain,
+        ChannelKind,
+        ChannelMetadata,
+        ColoredNoiseSimulator,
+        CompositeNoiseSimulator,
+        ConfigurableNoiseSimulator,
+        CorrelatedARNoiseSimulator,
+        CorrelatedNoiseSimulator,
+        DefaultNoiseSimulator,
+        FitError,
+        GlitchNoiseSimulator,
+        GwoscNoiseSimulator,
+        InjectGlitches,
+        JointCovariance,
+        JointDummyCorrelatedSimulator,
+        JointRealization,
+        JointStrainWitnessSimulator,
+        MultichannelNoiseSimulator,
+        NoiseSimulator,
+        OverlapSaveFirSimulator,
+        SchumannNoiseSimulator,
+        SchumannParams,
+        SimulationResult,
+        SpectralLineSimulator,
+        TimeVaryingColoredNoiseSimulator,
+        WhiteNoiseSimulator,
+        apply_segment_gps_start,
+        available_joint_backend_names,
+        discover_joint_backends,
+        load_joint_backend,
+        open_stream,
+        take,
+    )
+    from gwmock_noise.spectral import (
+        SpectralCovariance,
+        assemble_hermitian_spectral_matrices,
+        build_spectral_covariance_from_files,
+        cholesky_factors_from_spectral_matrices,
+        interpolate_complex_spectral_series,
+        interpolate_real_spectral_series,
+        load_and_interpolate_csd,
+        load_and_interpolate_psd,
+        normalize_csd_mapping,
+        normalize_detector_pair,
+        regularized_cholesky,
+        sample_complex_frequency_coefficients,
+        simulate_spectral_covariance_chunk,
+        time_series_from_frequency_coefficients,
+    )
+    from gwmock_noise.version import (
+        __version__,
+    )
 
-_OPTIONAL_EXPORTS = {
+#: Public name -> the module defining it, imported on first access.
+_LAZY_EXPORTS = {
+    "__version__": "gwmock_noise.version",
+    "AddLines": "gwmock_noise.simulators",
+    "apply_segment_gps_start": "gwmock_noise.simulators",
+    "ARMANoiseSimulator": "gwmock_noise.simulators",
+    "ARNoiseSimulator": "gwmock_noise.simulators",
+    "assemble_hermitian_spectral_matrices": "gwmock_noise.spectral",
+    "available_glitch_populations": "gwmock_noise.populations",
+    "available_joint_backend_names": "gwmock_noise.simulators",
+    "BaseNoiseSimulator": "gwmock_noise.simulators",
+    "BlipGlitch": "gwmock_noise.glitches",
+    "build_spectral_covariance_from_files": "gwmock_noise.spectral",
+    "ChannelDomain": "gwmock_noise.simulators",
+    "ChannelKind": "gwmock_noise.simulators",
+    "ChannelMetadata": "gwmock_noise.simulators",
+    "cholesky_factors_from_spectral_matrices": "gwmock_noise.spectral",
+    "ColoredNoiseSimulator": "gwmock_noise.simulators",
+    "CompositeNoiseSimulator": "gwmock_noise.simulators",
+    "ConfigurableNoiseSimulator": "gwmock_noise.simulators",
+    "CorrelatedARNoiseSimulator": "gwmock_noise.simulators",
+    "CorrelatedNoiseSimulator": "gwmock_noise.simulators",
+    "DeepExtractorGlitch": "gwmock_noise.glitches",
+    "DefaultNoiseSimulator": "gwmock_noise.simulators",
+    "discover_joint_backends": "gwmock_noise.simulators",
+    "EmpiricalSNRDistribution": "gwmock_noise.glitches",
+    "et_o3_anchored_population": "gwmock_noise.populations",
+    "ExpectedCount": "gwmock_noise.populations",
+    "FitError": "gwmock_noise.simulators",
+    "GengliBlipGlitch": "gwmock_noise.glitches",
+    "get_glitch_population": "gwmock_noise.populations",
+    "GLITCH_CATALOGUE_COLUMNS": "gwmock_noise.simulators",
+    "GLITCH_CATALOGUE_SCHEMA_VERSION": "gwmock_noise.simulators",
+    "GLITCH_CATALOGUE_TIME_CONVENTION": "gwmock_noise.simulators",
+    "GLITCH_POPULATION_SCHEMA_VERSION": "gwmock_noise.populations",
+    "GlitchClass": "gwmock_noise.populations",
+    "GlitchDraw": "gwmock_noise.glitches",
+    "GlitchModel": "gwmock_noise.glitches",
+    "GlitchNoiseSimulator": "gwmock_noise.simulators",
+    "GlitchPopulation": "gwmock_noise.populations",
+    "GlitchRealization": "gwmock_noise.populations",
+    "GwoscNoiseSimulator": "gwmock_noise.simulators",
+    "InjectGlitches": "gwmock_noise.simulators",
+    "interpolate_complex_spectral_series": "gwmock_noise.spectral",
+    "interpolate_real_spectral_series": "gwmock_noise.spectral",
+    "JOINT_BACKEND_ENTRY_POINT_GROUP": "gwmock_noise.simulators",
+    "JointCovariance": "gwmock_noise.simulators",
+    "JointDummyCorrelatedSimulator": "gwmock_noise.simulators",
+    "JointRealization": "gwmock_noise.simulators",
+    "JointStrainWitnessSimulator": "gwmock_noise.simulators",
+    "load_and_interpolate_csd": "gwmock_noise.spectral",
+    "load_and_interpolate_psd": "gwmock_noise.spectral",
+    "load_config": "gwmock_noise.config",
+    "load_joint_backend": "gwmock_noise.simulators",
+    "LogNormalAmplitudeDistribution": "gwmock_noise.glitches",
+    "MultichannelNoiseSimulator": "gwmock_noise.simulators",
+    "NetworkCoherence": "gwmock_noise.glitches",
+    "NoiseComponentConfig": "gwmock_noise.config",
+    "NoiseConfig": "gwmock_noise.config",
+    "NoiseSimulator": "gwmock_noise.simulators",
+    "normalize_csd_mapping": "gwmock_noise.spectral",
+    "normalize_detector_pair": "gwmock_noise.spectral",
+    "open_stream": "gwmock_noise.simulators",
+    "OutputConfig": "gwmock_noise.config",
+    "OverlapSaveFirSimulator": "gwmock_noise.simulators",
+    "ParallelAdapter": "gwmock_noise.parallel",
+    "PowerLawSNRDistribution": "gwmock_noise.glitches",
+    "regularized_cholesky": "gwmock_noise.spectral",
+    "sample_complex_frequency_coefficients": "gwmock_noise.spectral",
+    "ScatteredLightGlitch": "gwmock_noise.glitches",
+    "SchumannNoiseSimulator": "gwmock_noise.simulators",
+    "SchumannParams": "gwmock_noise.simulators",
+    "simulate_spectral_covariance_chunk": "gwmock_noise.spectral",
+    "SimulationResult": "gwmock_noise.simulators",
+    "SNRDistribution": "gwmock_noise.glitches",
+    "SpectralCovariance": "gwmock_noise.spectral",
+    "SpectralLine": "gwmock_noise.gaussian",
+    "SpectralLineSimulator": "gwmock_noise.simulators",
+    "take": "gwmock_noise.simulators",
+    "time_series_from_frequency_coefficients": "gwmock_noise.spectral",
+    "TimeVaryingColoredNoiseSimulator": "gwmock_noise.simulators",
+    "WhiteNoiseSimulator": "gwmock_noise.simulators",
     "DiagnosticResult": "gwmock_noise.diagnostics",
     "FilterType": "gwmock_noise.gwosc",
     "GwoscFilterConfig": "gwmock_noise.gwosc",
@@ -222,10 +315,15 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    """Lazily resolve optional top-level exports."""
-    module_name = _OPTIONAL_EXPORTS.get(name)
+    """Resolve a top-level export on first access."""
+    module_name = _LAZY_EXPORTS.get(name)
     if module_name is not None:
         export = getattr(import_module(module_name), name)
         globals()[name] = export
         return export
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """List the lazily exported names alongside the module's own."""
+    return sorted(set(globals()) | set(_LAZY_EXPORTS))
