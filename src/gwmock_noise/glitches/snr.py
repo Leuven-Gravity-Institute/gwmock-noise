@@ -30,6 +30,8 @@ from typing import Any
 
 import numpy as np
 
+from gwmock_noise._optional import require
+
 HDF5_SUFFIXES = (".h5", ".hdf5")
 SNR_DATASET = "snr"
 # Any double below 1.0 is at most ``1 - 2**-53`` -- the spacing below 1.0 is
@@ -101,8 +103,7 @@ def load_snr_samples(path: str | Path) -> np.ndarray:
     if not samples_path.exists():
         raise FileNotFoundError(f"SNR sample file not found: {samples_path}")
     if samples_path.suffix.lower() in HDF5_SUFFIXES:
-        import h5py  # noqa: PLC0415
-
+        h5py = require("h5py", "hdf5", "Reading an HDF5 SNR table")
         with h5py.File(samples_path, "r") as handle:
             if SNR_DATASET not in handle:
                 raise ValueError(f"SNR sample file must contain the '{SNR_DATASET}' dataset: {samples_path}")

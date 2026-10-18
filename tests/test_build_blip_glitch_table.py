@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 from typer.testing import CliRunner
 
 from gwmock_noise.cli.main import app
@@ -13,6 +14,7 @@ from gwmock_noise.glitches.gengli import read_blip_population_file
 runner = CliRunner()
 
 
+@pytest.mark.requires_h5py
 def test_build_blip_glitch_table_writes_hdf5_population(tmp_path: Path) -> None:
     """The CLI filters the CSV and emits the expected population schema."""
     csv_path = tmp_path / "gravity_spy.csv"

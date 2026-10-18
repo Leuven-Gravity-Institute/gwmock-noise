@@ -65,8 +65,9 @@ print(result.output_paths)
 `DefaultNoiseSimulator().run(config)` validates the config, builds the requested
 ordered `components` list (white noise by default; PSD/CSD, lines, glitches,
 Schumann, etc. when configured), and writes NumPy strain files plus JSON
-sidecars. Set `output.format` to `gwf` for frame files or `hdf5` for HDF5, each
-one file per detector alongside the same sidecars.
+sidecars. Set `output.format` to `gwf` for frame files (the `frame` extra) or
+`hdf5` for HDF5 (the `hdf5` extra), each one file per detector alongside the
+same sidecars.
 
 ## 4. Clone and develop
 

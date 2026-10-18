@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-import h5py
 import numpy as np
 
+from gwmock_noise._optional import require
 from gwmock_noise.glitches._coloring import ColoredWaveform, color_whitened_waveform, optimal_snr
 from gwmock_noise.glitches.models import GlitchDraw, GlitchModel
 from gwmock_noise.glitches.snr import (
@@ -46,6 +46,7 @@ def read_blip_population_file(path: str | Path) -> np.ndarray:
     if not population_path.exists():
         raise FileNotFoundError(f"Population file not found: {population_path}")
 
+    h5py = require("h5py", "hdf5", "Reading a blip population file")
     with h5py.File(population_path, "r") as handle:
         if POPULATION_SNR_DATASET not in handle:
             raise ValueError(f"Population file must contain the '{POPULATION_SNR_DATASET}' dataset.")
@@ -70,8 +71,6 @@ def write_blip_population_file(
 ) -> Path:
     """Write the population-file schema consumed by ``GengliBlipGlitch``."""
     population_path = Path(path)
-    population_path.parent.mkdir(parents=True, exist_ok=True)
-
     values = np.asarray(snr_samples, dtype=float)
     if values.ndim != 1:
         raise ValueError("snr_samples must be one-dimensional.")
@@ -82,6 +81,9 @@ def write_blip_population_file(
     if np.any(values <= 0.0):
         raise ValueError("snr_samples must be greater than zero.")
 
+    # Checked before the directory is made, so a call that cannot write leaves nothing behind.
+    h5py = require("h5py", "hdf5", "Writing a blip population file")
+    population_path.parent.mkdir(parents=True, exist_ok=True)
     with h5py.File(population_path, "w") as handle:
         handle.create_dataset(POPULATION_SNR_DATASET, data=values)
         if metadata is not None:

@@ -18,10 +18,11 @@ pages for more details:
 
 <!-- prettier-ignore-start -->
 !!! note
-    The package is built and tested against Python 3.12–3.14. When creating a virtual environment with `uv`,
+    The package is built and tested against Python 3.12–3.15. When creating a virtual environment with `uv`,
     specify the Python version to ensure compatibility:
-    `uv venv --python 3.12` (replace `3.12` with your preferred version in the 3.12–3.14 range).
-    This avoids potential issues with unsupported Python versions.
+    `uv venv --python 3.12` (replace `3.12` with your preferred version in the 3.12–3.15 range).
+    On Python 3.15, h5py publishes no wheel yet, so the `hdf5` extra (and anything that pulls it in) may
+    not install there; everything else does.
 <!-- prettier-ignore-end -->
 
 ## Install from PyPI
@@ -37,16 +38,21 @@ uv pip install gwmock-noise
 
 ### Optional dependencies (extras)
 
-Published wheels expose three optional dependency groups:
+Published wheels expose these optional dependency groups:
 
-| Extra    | Purpose                                                               |
-| -------- | --------------------------------------------------------------------- |
-| `gwpy`   | GWpy-based helpers (`GWpyAdapter`, parts of the GWF stack)            |
-| `frame`  | GWF frame writing (`FrameWriter`; pulls `gwpy` and `lalsuite`)        |
-| `gengli` | gengli-backed blip glitches (`GengliBlipGlitch`)                      |
-| `gwosc`  | Real noise from GWOSC (`GwoscNoiseFetcher`; pulls `gwpy` and `gwosc`) |
+| Extra    | Purpose                                                                               |
+| -------- | ------------------------------------------------------------------------------------- |
+| `hdf5`   | HDF5 files: `output.format = "hdf5"`, blip population files, HDF5 SNR tables (`h5py`) |
+| `gwpy`   | GWpy-based helpers (`GWpyAdapter`, parts of the GWF stack)                            |
+| `frame`  | GWF frame writing (`FrameWriter`; pulls `gwpy` and `lalsuite`)                        |
+| `gengli` | gengli-backed blip glitches (`GengliBlipGlitch`)                                      |
+| `gwosc`  | Real noise from GWOSC (`GwoscNoiseFetcher`; pulls `gwpy` and `gwosc`)                 |
+
+A feature whose extra is missing raises `ModuleNotFoundError` naming the extra
+to install. The default output format, `npy`, needs none of them.
 
 ```bash
+uv pip install "gwmock-noise[hdf5]"
 uv pip install "gwmock-noise[gwpy]"
 uv pip install "gwmock-noise[frame]"
 uv pip install "gwmock-noise[gengli]"
@@ -103,7 +109,6 @@ python -c "import gwmock_noise; print(gwmock_noise.__version__)"
 The default wheel installs:
 
 - **numpy** — arrays, FFTs, RNG
-- **h5py** — file-backed glitch population tables
 - **pydantic** — configuration models
 - **scipy** — signal processing and numerics
 - **pyyaml** — YAML config loading
