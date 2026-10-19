@@ -666,3 +666,40 @@ def test_ma_dominant_model_generates_and_reports_the_delay_line() -> None:
     expected = max(simulator.numerator_coefficients.size, simulator.denominator_coefficients.size + 1) - 1
     assert simulator.metadata["autoregressive_moving_average"]["state_size"] == expected
     assert simulator.generate(0.5, 256.0, ["H1"], seed=1)["H1"].shape == (128,)
+
+
+def _exact_design_grid_response(simulator: ARMANoiseSimulator, blocks: int) -> np.ndarray:
+    """Return ``2 |B / A|^2 / f_s`` on the simulator's design grid from a long impulse response."""
+    from scipy.signal import lfilter
+
+    grid = simulator._fit_grid_size
+    impulse = np.zeros(blocks * grid)
+    impulse[0] = 1.0
+    response = lfilter(simulator._numerator_coefficients, simulator._denominator_coefficients, impulse)
+    folded = np.fft.rfft(response.reshape(blocks, grid).sum(axis=0))
+    return (2.0 / simulator.sampling_frequency) * np.abs(folded) ** 2
+
+
+def test_model_spectrum_and_gain_are_not_time_aliased() -> None:
+    """The fitted spectrum is the filter's own, not its impulse response folded onto the design grid.
+
+    With a band starting at 10 Hz the fitted poles sit close to the unit circle and the impulse response
+    outlasts the design grid. Cutting it there folded its tail back onto the grid, so the evaluated
+    spectrum, and the innovation variance calibrated against it, were off.
+    """
+    simulator = ARMANoiseSimulator(
+        psd_file=ALIGO_PSD,
+        ar_order=256,
+        ma_order=64,
+        detectors=["H1"],
+        sampling_frequency=SAMPLING_FREQUENCY,
+        duration=1.0,
+        seed=1,
+        low_frequency_cutoff=10.0,
+        high_frequency_cutoff=2048.0,
+    )
+    exact = _exact_design_grid_response(simulator, blocks=64)
+    assert np.allclose(simulator._model_psd, simulator._sigma_squared * exact, rtol=1e-6, atol=0.0)
+    in_band = simulator._target_psd > 0.0
+    log_ratio = np.log(simulator._target_psd[in_band]) - np.log(exact[in_band])
+    assert simulator._sigma_squared == pytest.approx(float(np.exp(np.mean(log_ratio))), rel=1e-6)

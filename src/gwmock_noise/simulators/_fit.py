@@ -28,6 +28,7 @@ __all__ = [
     "band_fit_residual",
     "geometric_band_edges",
     "levinson_durbin",
+    "rational_response_on_grid",
     "require_nonnegative_spectrum",
     "toeplitz_condition_number",
 ]
@@ -260,3 +261,50 @@ def band_fit_residual(  # noqa: PLR0913
         "median_relative_error": float(np.median(relative_errors)) if relative_errors else 0.0,
         "bands": bands,
     }
+
+
+#: Energy fraction an impulse response may keep in its last design-grid length before it counts as decayed.
+RESPONSE_DECAY_TOLERANCE = 1e-12
+
+#: Most design-grid lengths the impulse response is extended to while waiting for it to decay.
+MAXIMUM_RESPONSE_BLOCKS = 64
+
+
+def rational_response_on_grid(numerator: np.ndarray, denominator: np.ndarray, grid_size: int) -> np.ndarray:
+    """Return ``B / A`` on the ``grid_size`` design-grid frequencies, free of time aliasing.
+
+    A transform of an impulse response cut at ``grid_size`` samples is the true
+    response only when the response has died out within that length. With poles
+    close to the unit circle it has not, and the cut folds its tail back onto
+    the grid: the evaluated spectrum is then wrong by a factor that can reach
+    orders of magnitude. The response is extended in whole multiples of
+    ``grid_size`` until its last block holds a negligible fraction of its energy,
+    then folded back by summing the blocks, which is exact on the design grid.
+    The impulse response is used rather than the polynomial sum because, at high
+    order with poles near the circle, the polynomial sum loses precision to
+    cancellation. A response that has not decayed after
+    :data:`MAXIMUM_RESPONSE_BLOCKS` blocks is folded as it stands.
+
+    Args:
+        numerator: Numerator coefficients ``b_0 .. b_q``.
+        denominator: Denominator coefficients ``1, a_1 .. a_p``.
+        grid_size: Length of the design grid's inverse transform.
+
+    Returns:
+        The complex frequency response on ``grid_size // 2 + 1`` frequencies.
+    """
+    from scipy.signal import lfilter  # noqa: PLC0415 - kept lazy so importing the package does not load SciPy.
+
+    blocks = 1
+    while True:
+        impulse = np.zeros(blocks * grid_size, dtype=float)
+        impulse[0] = 1.0
+        response = lfilter(numerator, denominator, impulse)
+        tail = float(np.sum(response[-grid_size:] ** 2))
+        # One block always has all its energy in its last block, so the loop runs at least twice.
+        if (blocks > 1 and tail <= RESPONSE_DECAY_TOLERANCE * float(np.sum(response**2))) or (
+            blocks >= MAXIMUM_RESPONSE_BLOCKS
+        ):
+            break
+        blocks *= 2
+    return np.fft.rfft(response.reshape(blocks, grid_size).sum(axis=0))
