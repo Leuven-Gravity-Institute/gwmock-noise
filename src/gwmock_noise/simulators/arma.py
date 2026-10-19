@@ -47,6 +47,7 @@ from gwmock_noise.simulators._fit import (
     FitError,
     band_fit_residual,
     levinson_durbin,
+    rational_response_on_grid,
     require_nonnegative_spectrum,
     toeplitz_condition_number,
 )
@@ -521,12 +522,9 @@ class ARMANoiseSimulator(ConfigurableNoiseSimulator):
         self._filter_state = {detector: np.zeros(max(self._state_size, 0), dtype=float) for detector in self.detectors}
 
     def _evaluate_model_spectrum(self) -> np.ndarray:
-        """Return ``2 |B / A|^2 / f_s`` on the design grid via the impulse response."""
-        impulse = np.zeros(self._fit_grid_size, dtype=float)
-        impulse[0] = 1.0
-        response = np.fft.rfft(
-            lfilter(self._numerator_coefficients, self._denominator_coefficients, impulse),
-            n=self._fit_grid_size,
+        """Return ``2 |B / A|^2 / f_s`` on the design grid, free of time aliasing."""
+        response = rational_response_on_grid(
+            self._numerator_coefficients, self._denominator_coefficients, self._fit_grid_size
         )
         return (2.0 / self.sampling_frequency) * np.abs(response) ** 2
 
