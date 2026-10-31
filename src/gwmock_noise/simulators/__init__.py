@@ -9,6 +9,7 @@ from gwmock_noise.glitches.models import (
     LogNormalAmplitudeDistribution,
     ScatteredLightGlitch,
 )
+from gwmock_noise.simulators._covariance_tolerance import UnsupportedCovarianceToleranceError
 from gwmock_noise.simulators._fit import FitError
 from gwmock_noise.simulators.arma import ARMANoiseSimulator
 from gwmock_noise.simulators.autoregressive import ARNoiseSimulator
@@ -90,6 +91,7 @@ __all__ = [
     "SimulationResult",
     "SpectralLineSimulator",
     "TimeVaryingColoredNoiseSimulator",
+    "UnsupportedCovarianceToleranceError",
     "WhiteNoiseSimulator",
     "apply_segment_gps_start",
     "available_joint_backend_names",

@@ -764,6 +764,112 @@ When the window is too coarse for the input spectrum (or for the requested
 `gwmock-noise` logger suggesting a larger `window_duration`. A larger window
 improves resolution at the cost of more samples per synthesis block.
 
+## Choosing the window from a covariance tolerance
+
+The colored simulator crossfades independently drawn windows, so the covariance
+of its output departs from that of the target spectrum. Part of the departure is
+stationary: the spectrum is smoothed on the scale of the window. The other part
+is cyclic: the periodic crossfade correlates frequencies that the target leaves
+independent. Both shrink as the window grows. The **total covariance error**
+measures them together, relative to the target, over an analysis band. It was
+evaluated for this simulator in
+
+> I. C. F. Wong, _Choosing a generator for streaming Gaussian noise in
+> gravitational-wave mock data: accuracy, cost and reproducibility_; data
+> release
+> [doi:10.5281/zenodo.23243286](https://doi.org/10.5281/zenodo.23243286).
+
+Instead of a window, you can pass the largest error you accept. The simulator
+takes the shortest evaluated window whose error meets it:
+
+```python
+from gwmock_noise import ColoredNoiseSimulator
+
+simulator = ColoredNoiseSimulator(
+    psd_file="aLIGO_O4_high_projected_psd",
+    detectors=["H1"],
+    sampling_frequency=4096.0,
+    covariance_tolerance=1e-3,
+)
+simulator.window_duration  # 64.0
+simulator.metadata["colored_noise"]["covariance_tolerance"]
+# {'requested': 0.001, 'preset': 'aLIGO_O4_high_projected_psd',
+#  'evaluated_error': 0.000996..., 'error_band_hz': [10.0, 2044.0],
+#  'source': 'doi:10.5281/zenodo.23243286'}
+```
+
+In a configuration file the option goes on the component:
+
+```toml
+[[components]]
+simulator = "colored"
+psd_file = "aLIGO_O4_high_projected_psd"
+covariance_tolerance = 1e-3
+```
+
+The simulator never evaluates the error itself, because an evaluation takes
+minutes to hours. It reads the evaluated errors bundled with the package. The
+window it returns is always one that was evaluated: between two evaluated
+windows it takes the longer one, never an interpolated one.
+
+### What the evaluated errors hold for
+
+An evaluated error describes one configuration. With `covariance_tolerance`, the
+simulator adopts that configuration:
+
+- **Target.** The target is held flat below 5 Hz at its value there. The aLIGO
+  curves start at about 10 Hz, so between 5 Hz and their first point they are
+  continued by the power law of their lowest octave. The ET curves start at 1
+  Hz, so their tabulated 1–5 Hz wall is **replaced** by the flat value at 5 Hz,
+  up to 14 orders of magnitude lower: the generated noise has no seismic wall
+  below 5 Hz. The noise is generated from 0 Hz to the Nyquist frequency, so no
+  taper or cut falls inside the analysis band. The metadata records the curve's
+  first tabulated frequency and the continuation settings.
+- **Band.** The error is measured from 10 Hz on the aLIGO curves, and from 5 Hz
+  on the ET curves. It runs to 2048 Hz, or to 4 Hz below the Nyquist frequency
+  if that is lower.
+- **Curve.** The bundled curve must be passed by name and must be unmodified.
+  Each entry carries the SHA-256 of the curve it was evaluated for.
+
+For the same reason, a tolerance cannot be combined with `window_duration`,
+`low_frequency_cutoff`, `high_frequency_cutoff`, `psd_schedule` or `psd_array`.
+A simulator built from a tolerance also refuses to generate at a sampling
+frequency other than the one it was built for.
+
+### Supported curves
+
+The evaluated windows at 4096 Hz, with their total covariance errors:
+
+| Curve (`psd_file`)            | 8 s    | 16 s   | 64 s   | 256 s  | 1024 s   |
+| ----------------------------- | ------ | ------ | ------ | ------ | -------- |
+| `aLIGO_O4_high_projected_psd` | 5.4e-2 | 1.3e-2 | 1.0e-3 | 1.6e-4 | 1.2e-4\* |
+| `aLIGO_O3_actual_H1_psd`      | 1.9e-2 | 6.5e-3 | 8.0e-4 | 1.0e-4 | 1.2e-5\* |
+| `ET_D_psd`                    | 1.8e-2 | 5.7e-3 | 6.0e-4 | 7.9e-5 | 1.1e-5   |
+| `ET_10_full_cryo_psd`         | 2.6e-2 | 1.1e-2 | 1.8e-3 | 2.1e-4 | 3.3e-5   |
+
+An asterisk marks an evaluation whose cyclic part did not converge. Such a value
+leaves out part of the error, so it is not an upper bound, and the simulator
+refuses any tolerance that only an unconverged evaluation meets. The same holds
+for every longer window (2048 s and 4096 s, not shown) and for every window
+evaluated at 8192 Hz, so a tolerance at 8192 Hz is always refused.
+
+### When a tolerance is refused
+
+`UnsupportedCovarianceToleranceError`, a subclass of `ValueError`, is raised
+when the bundled errors do not cover a request:
+
+- the PSD is not one of the curves above, or not the bundled file;
+- the sampling frequency was not evaluated;
+- no evaluated window meets the tolerance;
+- the shortest window that meets it was not converged.
+
+The message says which case applies. If you need a curve the table does not
+cover, pass `window_duration` directly. Contributions that add a curve are
+welcome as pull requests. The table is generated by
+`scripts/build_covariance_tolerance_table.py` from the published data release,
+so a new curve needs its errors evaluated in the same way and published with
+their provenance.
+
 ## Spectral covariance utilities
 
 `gwmock_noise.spectral` exposes the lower-level PSD/CSD operations used by the

@@ -1,0 +1,260 @@
+{
+    "source": {
+        "analysis_commits": ["71fa4d22939560d49f6e3c11e4b2b9b0e1bc822a"],
+        "archive": "results.tar.gz",
+        "archive_md5": "d24fab45af50addeb46ea8c03cb5a1ba",
+        "doi": "10.5281/zenodo.23243286",
+        "generator_commit": "8908fcc2b1477bce419e018ce0ae96c9511e6785"
+    },
+    "spectra": {
+        "ET_10_full_cryo_psd": {
+            "release_curve": "et10_full_cryo_lines",
+            "sampling_frequencies": {
+                "4096": {
+                    "error_band_hz": [5.0, 2044.0],
+                    "windows": [
+                        {
+                            "converged": true,
+                            "eps_total": 0.025762369086294118,
+                            "window_duration": 8.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 0.011125561390381337,
+                            "window_duration": 16.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 0.0018483082653458225,
+                            "window_duration": 64.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 0.00020767463227712376,
+                            "window_duration": 256.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 3.266708932282795e-5,
+                            "window_duration": 1024.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 1.230814539995913e-5,
+                            "window_duration": 2048.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 3.5322324339732523e-6,
+                            "window_duration": 4096.0
+                        }
+                    ]
+                },
+                "8192": {
+                    "error_band_hz": [5.0, 2048.0],
+                    "windows": [
+                        {
+                            "converged": false,
+                            "eps_total": 1.230809185551712e-5,
+                            "window_duration": 2048.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 3.5322170922282813e-6,
+                            "window_duration": 4096.0
+                        }
+                    ]
+                }
+            },
+            "sha256": "29b3fcac12640c617a6a4c4181790001ac77ed005d5407f294ad01e09ffb89ce"
+        },
+        "ET_D_psd": {
+            "release_curve": "et_d_smooth",
+            "sampling_frequencies": {
+                "4096": {
+                    "error_band_hz": [5.0, 2044.0],
+                    "windows": [
+                        {
+                            "converged": true,
+                            "eps_total": 0.01769854080351865,
+                            "window_duration": 8.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 0.0057399350998271195,
+                            "window_duration": 16.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 0.0005959965543838524,
+                            "window_duration": 64.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 7.855292578907565e-5,
+                            "window_duration": 256.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 1.0806188837691926e-5,
+                            "window_duration": 1024.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 2.9222463083582738e-6,
+                            "window_duration": 2048.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 1.1582061222446159e-6,
+                            "window_duration": 4096.0
+                        }
+                    ]
+                },
+                "8192": {
+                    "error_band_hz": [5.0, 2048.0],
+                    "windows": [
+                        {
+                            "converged": false,
+                            "eps_total": 2.9173165095205797e-6,
+                            "window_duration": 2048.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 1.1562523130189544e-6,
+                            "window_duration": 4096.0
+                        }
+                    ]
+                }
+            },
+            "sha256": "92089fb91b5a22aec20a63114da84cf1e494b7507fb7c41e601e070c95792cd6"
+        },
+        "aLIGO_O3_actual_H1_psd": {
+            "release_curve": "aligo_o3h1_lines",
+            "sampling_frequencies": {
+                "4096": {
+                    "error_band_hz": [10.0, 2044.0],
+                    "windows": [
+                        {
+                            "converged": true,
+                            "eps_total": 0.019083772027615284,
+                            "window_duration": 8.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 0.006458717619434106,
+                            "window_duration": 16.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 0.0007994036763095367,
+                            "window_duration": 64.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 9.988941689041762e-5,
+                            "window_duration": 256.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 1.2485254332381925e-5,
+                            "window_duration": 1024.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 4.414212862984822e-6,
+                            "window_duration": 2048.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 1.5606605661223067e-6,
+                            "window_duration": 4096.0
+                        }
+                    ]
+                },
+                "8192": {
+                    "error_band_hz": [10.0, 2048.0],
+                    "windows": [
+                        {
+                            "converged": false,
+                            "eps_total": 4.4142116699353945e-6,
+                            "window_duration": 2048.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 1.5606603541458331e-6,
+                            "window_duration": 4096.0
+                        }
+                    ]
+                }
+            },
+            "sha256": "7a72086e25ddb3733f536405a640c1794d001214b558559142af3f6f124a8972"
+        },
+        "aLIGO_O4_high_projected_psd": {
+            "release_curve": "aligo_o4high_smooth",
+            "sampling_frequencies": {
+                "4096": {
+                    "error_band_hz": [10.0, 2044.0],
+                    "windows": [
+                        {
+                            "converged": true,
+                            "eps_total": 0.05366739647722309,
+                            "window_duration": 8.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 0.012743509473298149,
+                            "window_duration": 16.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 0.0009962878305917388,
+                            "window_duration": 64.0
+                        },
+                        {
+                            "converged": true,
+                            "eps_total": 0.00015594017415934705,
+                            "window_duration": 256.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 0.00011758063389475482,
+                            "window_duration": 1024.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 0.00011658766275186345,
+                            "window_duration": 2048.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 0.0001165356707597248,
+                            "window_duration": 4096.0
+                        }
+                    ]
+                },
+                "8192": {
+                    "error_band_hz": [10.0, 2048.0],
+                    "windows": [
+                        {
+                            "converged": false,
+                            "eps_total": 0.00011658766287550777,
+                            "window_duration": 2048.0
+                        },
+                        {
+                            "converged": false,
+                            "eps_total": 0.00011653567032796556,
+                            "window_duration": 4096.0
+                        }
+                    ]
+                }
+            },
+            "sha256": "683c2ce8292009ba258c24cabc61799a39373e1fc1c2d406c4d7804f084d5218"
+        }
+    },
+    "target": {
+        "continuation_hz": 5.0,
+        "continuation_points": 256,
+        "slope_octave": 2.0
+    }
+}
