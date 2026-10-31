@@ -132,6 +132,62 @@ def validate_table(
             )
 
 
+def continued_psd(
+    table_frequencies: np.ndarray,
+    table_psd: np.ndarray,
+    frequencies: np.ndarray,
+    *,
+    continuation_hz: float,
+    slope_octave: float,
+) -> np.ndarray:
+    """Return the paper's continued target at the given frequencies.
+
+    Above the curve's first tabulated point the target is the curve, interpolated linearly
+    in frequency and zero beyond its last point. Between ``continuation_hz`` and that point
+    it continues the curve with the power law fitted, in log-log, to the curve's lowest
+    ``slope_octave`` factor of frequency. Below ``continuation_hz`` it is held flat at its
+    value there.
+
+    Args:
+        table_frequencies: The curve's frequencies, ascending, in hertz.
+        table_psd: The curve's one-sided PSD, positive.
+        frequencies: Where to evaluate the target, in hertz.
+        continuation_hz: Where the continuation is held flat, in hertz.
+        slope_octave: The factor of frequency above the first point the slope is fitted over.
+
+    Returns:
+        The one-sided PSD at ``frequencies``.
+
+    Raises:
+        ValueError: If the table fails :func:`validate_table`.
+    """
+    validate_table(table_frequencies, table_psd, continuation_hz=continuation_hz, slope_octave=slope_octave)
+    frequencies = np.asarray(frequencies, dtype=float)
+    first = float(table_frequencies[0])
+    target = np.interp(frequencies, table_frequencies, table_psd, left=0.0, right=0.0)
+    if first > continuation_hz:
+        octave = fitted_octave(table_frequencies, slope_octave)
+        slope = float(np.polyfit(np.log(table_frequencies[octave]), np.log(table_psd[octave]), 1)[0])
+
+        def level(at: np.ndarray) -> np.ndarray:
+            return np.where(
+                at < first,
+                float(table_psd[0]) * (np.maximum(at, 1e-300) / first) ** slope,
+                np.interp(at, table_frequencies, table_psd),
+            )
+
+    else:
+
+        def level(at: np.ndarray) -> np.ndarray:
+            return np.interp(at, table_frequencies, table_psd)
+
+    below_floor = frequencies < continuation_hz
+    continued = (frequencies < first) & ~below_floor
+    target[continued] = level(frequencies[continued])
+    target[below_floor] = float(level(np.array([continuation_hz]))[0])
+    return target
+
+
 def continued_target(  # noqa: PLR0913 - the table, the rate and the three continuation settings are distinct.
     table_frequencies: np.ndarray,
     table_psd: np.ndarray,
@@ -143,15 +199,13 @@ def continued_target(  # noqa: PLR0913 - the table, the rate and the three conti
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return the paper's continued target as a table from zero to the Nyquist frequency.
 
-    Above the curve's first tabulated point the target is the curve. Between
-    ``continuation_hz`` and that point it continues the curve with the power law fitted, in
-    log-log, to the curve's lowest ``slope_octave`` factor of frequency. Below
-    ``continuation_hz`` it is held flat at its value there. The continuation is tabulated at
-    ``continuation_points`` geometrically spaced frequencies, so that the simulator's linear
-    interpolation follows the power law; the table also holds zero, every tabulated point up
-    to the Nyquist frequency, and the Nyquist frequency when the curve reaches it. A curve
-    that stops below the Nyquist frequency stops there, so that the simulator's
-    interpolation, like the target, is zero beyond it rather than ramping down to zero.
+    The target is :func:`continued_psd`. Its continuation is tabulated at
+    ``continuation_points`` geometrically spaced frequencies from ``continuation_hz`` to the
+    curve's first point, so that the simulator's linear interpolation follows the power law;
+    the table also holds zero, every tabulated point up to the Nyquist frequency, and the
+    Nyquist frequency when the curve reaches it. A curve that stops below the Nyquist
+    frequency stops there, so that the simulator's interpolation, like the target, is zero
+    beyond it rather than ramping down to zero.
 
     Args:
         table_frequencies: The curve's frequencies, ascending, in hertz.
@@ -174,28 +228,9 @@ def continued_target(  # noqa: PLR0913 - the table, the rate and the three conti
     continuation = np.geomspace(continuation_hz, first, continuation_points) if first > 0.0 else [continuation_hz]
     end = [nyquist] if table_frequencies[-1] >= nyquist else []
     grid = np.unique(np.concatenate(([0.0], continuation, table_frequencies[table_frequencies <= nyquist], end)))
-    target = np.interp(grid, table_frequencies, table_psd, left=0.0, right=0.0)
-    if first > continuation_hz:
-        octave = fitted_octave(table_frequencies, slope_octave)
-        slope = float(np.polyfit(np.log(table_frequencies[octave]), np.log(table_psd[octave]), 1)[0])
-
-        def level(at: np.ndarray) -> np.ndarray:
-            return np.where(
-                at < first,
-                float(table_psd[0]) * (np.maximum(at, 1e-300) / first) ** slope,
-                np.interp(at, table_frequencies, table_psd),
-            )
-
-    else:
-
-        def level(at: np.ndarray) -> np.ndarray:
-            return np.interp(at, table_frequencies, table_psd)
-
-    below_floor = grid < continuation_hz
-    continued = (grid < first) & ~below_floor
-    target[continued] = level(grid[continued])
-    target[below_floor] = float(level(np.array([continuation_hz]))[0])
-    return grid, target
+    return grid, continued_psd(
+        table_frequencies, table_psd, grid, continuation_hz=continuation_hz, slope_octave=slope_octave
+    )
 
 
 def _bundled_preset(psd_file: str | Path, spectra: dict[str, Any]) -> tuple[str, Path]:
@@ -216,9 +251,10 @@ def _bundled_preset(psd_file: str | Path, spectra: dict[str, Any]) -> tuple[str,
     ):
         raise UnsupportedCovarianceToleranceError(
             f"No covariance errors are bundled for the PSD {str(psd_file)!r}. A covariance tolerance is supported "
-            f"only for the bundled curves {sorted(spectra)}, passed by name. For another PSD, choose "
-            f"window_duration directly, or evaluate the crossfade's covariance error for it and open a pull request "
-            f"to add it; see {DOCUMENTATION_SECTION}."
+            f"only for the bundled curves {sorted(spectra)}, passed by name. For another PSD, evaluate the "
+            f"crossfade's covariance error with `gwmock-noise evaluate-covariance-error`, which writes the target it "
+            f"evaluated and the ColoredNoiseSimulator settings that reproduce it; to add the PSD to the bundled "
+            f"errors, open a pull request with that result. See {DOCUMENTATION_SECTION}."
         )
     digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
     if digest != spectra[preset]["sha256"]:
@@ -266,7 +302,9 @@ def choose_crossfade_window(
     if rate is None:
         raise UnsupportedCovarianceToleranceError(
             f"No covariance errors are bundled for {preset!r} at {sampling_frequency!r} Hz; they cover "
-            f"{sorted(float(key) for key in rates)} Hz. Choose window_duration directly, or use one of those rates."
+            f"{sorted(float(key) for key in rates)} Hz. Use one of those rates, or evaluate the error at yours with "
+            f"`gwmock-noise evaluate-covariance-error`, which writes the target it evaluated and the "
+            f"ColoredNoiseSimulator settings that reproduce it."
         )
     for row in rate["windows"]:
         if row["eps_total"] > covariance_tolerance:

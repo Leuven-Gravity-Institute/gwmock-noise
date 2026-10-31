@@ -86,9 +86,11 @@ def main(
 def register_commands() -> None:
     """Register CLI commands."""
     from gwmock_noise.cli.build_blip_glitch_table import build_blip_glitch_table  # noqa: PLC0415
+    from gwmock_noise.cli.evaluate_covariance_error import evaluate_covariance_error  # noqa: PLC0415
     from gwmock_noise.cli.simulate import simulate  # noqa: PLC0415
 
     app.command()(build_blip_glitch_table)
+    app.command()(evaluate_covariance_error)
     app.command()(simulate)
 
 
