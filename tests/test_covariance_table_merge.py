@@ -114,8 +114,9 @@ def test_an_unconverged_evaluation_does_not_replace_a_row() -> None:
     before = copy.deepcopy(table)
     record = _record(sampling_frequency=4096.0, windows=[(2048.0, 0.003, False)])
     assert not contributes(table, record)
-    _merge(table, record)
-    assert table == before
+    source = _merge(table, record)
+    assert table["spectra"] == before["spectra"]
+    assert table["sources"][source]["kind"] == "evaluation"
 
 
 def test_a_converged_row_is_never_replaced_and_must_be_agreed_with() -> None:
@@ -134,7 +135,10 @@ def test_a_converged_row_is_never_replaced_and_must_be_agreed_with() -> None:
         "converged": True,
         "source": RELEASE_SOURCE,
     }
-    assert set(table["sources"]) == {RELEASE_SOURCE}
+    assert set(table["sources"]) == {
+        RELEASE_SOURCE,
+        source_id(hashlib.sha256(json.dumps(agreeing).encode()).hexdigest()),
+    }
 
 
 def test_a_refused_merge_leaves_the_table_unchanged() -> None:
@@ -256,6 +260,11 @@ def test_a_result_the_command_wrote_merges(tmp_path: Path) -> None:
     assert row["converged"] is True
 
 
+def _bytes(record: dict) -> bytes:
+    """Return a result's bytes as the command writes them."""
+    return (json.dumps(record, indent=4, sort_keys=True) + "\n").encode("utf-8")
+
+
 def _write(directory: Path, record: dict) -> Path:
     """Write a result as the command would, under a name of its own."""
     data = (json.dumps(record, indent=4, sort_keys=True) + "\n").encode("utf-8")
@@ -321,8 +330,7 @@ def test_a_committed_evaluation_that_adds_nothing_does_not_stop_the_rebuild(tmp_
     _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True), (32.0, 0.001, True)]))
     table = build_table(_table(), tmp_path)
     assert set(_rows(table, ET_D, "4096")) >= {2.0, 32.0}
-    cited = {row["source"] for row in _rows(table, ET_D, "4096").values()}
-    assert {source for source in table["sources"] if source != RELEASE_SOURCE} == cited - {RELEASE_SOURCE}
+    assert len([source for source in table["sources"] if source != RELEASE_SOURCE]) == 2
 
 
 def test_a_committed_evaluation_that_no_longer_fits_names_its_file(tmp_path: Path) -> None:
@@ -359,7 +367,14 @@ def test_a_table_in_another_layout_is_refused(monkeypatch: pytest.MonkeyPatch) -
     """A table that is not schema version 2 is refused with a reason, not read as if it were."""
     from gwmock_noise.data import covariance_tolerance as package
 
-    monkeypatch.setattr(package.json, "loads", lambda _: {"source": {}, "spectra": {}})
+    class _OldTable:
+        def joinpath(self, _name: str) -> _OldTable:
+            return self
+
+        def read_text(self, encoding: str) -> str:
+            return json.dumps({"source": {}, "spectra": {}})
+
+    monkeypatch.setattr(package.resources, "files", lambda _name: _OldTable())
     with pytest.raises(ValueError, match="schema version None"):
         load_crossfade_errors()
 
@@ -375,3 +390,60 @@ def test_the_build_script_imports() -> None:
     result = subprocess.run([sys.executable, str(script), "--help"], capture_output=True, text=True, check=False)  # noqa: S603
     assert result.returncode == 0, result.stderr
     assert "--merge" in result.stdout
+
+
+def test_agreement_holds_across_every_converged_source(tmp_path: Path) -> None:
+    """Three converged errors of one window where each neighbour agrees but the extremes do not are refused.
+
+    Closeness to a relative 1e-10 is not transitive: A agrees with B and B with C, yet A and C differ by twice that.
+    Checking each result only against the row the table keeps would accept or refuse them depending on the order.
+    """
+    middle = 0.1
+    low, high = (
+        _record(sampling_frequency=4096.0, windows=[(2.0, middle * (1 + shift), True)]) for shift in (-0.9e-10, 0.9e-10)
+    )
+    sources = {source_id(hashlib.sha256(_bytes(record)).hexdigest()) for record in (low, high)}
+    # The order that checking against the kept row alone gets wrong: the middle value is merged first and is the row
+    # kept (its id sorts first), so each extreme is compared only with it.
+    for attempt in itertools.count():
+        center = _record(sampling_frequency=4096.0, windows=[(2.0, middle, True)])
+        center["psd"]["argument"] = f"{ET_D}.txt#{attempt}"
+        if source_id(hashlib.sha256(_bytes(center)).hexdigest()) < min(sources):
+            break
+    for name, record in (("0-center", center), ("1-low", low), ("2-high", high)):
+        (tmp_path / f"{name}.json").write_bytes(_bytes(record))
+    with pytest.raises(EvaluationMismatchError, match="converged errors of one window must agree"):
+        build_table(_table(), tmp_path)
+
+
+@pytest.mark.parametrize("duration", [-1.0, 0.0, float("nan"), float("inf")])
+def test_a_window_duration_that_is_not_positive_and_finite_is_refused(duration: float) -> None:
+    """A window must be a positive, finite duration; a negative one would sort first and be chosen."""
+    record = _record(windows=[(duration, 0.01, True)])
+    with pytest.raises(EvaluationMismatchError, match="window_duration"):
+        _merge(_table(), record)
+
+
+def test_every_committed_evaluation_is_pinned_even_when_overtaken(tmp_path: Path) -> None:
+    """A committed file whose windows another covers is still listed, so a change to it changes the table."""
+    covered = _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True)]))
+    _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True), (32.0, 0.001, True)]))
+    before = build_table(_table(), tmp_path)
+    assert source_id(hashlib.sha256(covered.read_bytes()).hexdigest()) in before["sources"]
+    covered.write_bytes(covered.read_bytes() + b" ")
+    assert build_table(_table(), tmp_path) != before
+
+
+def test_a_result_the_rebuild_refuses_is_not_written(tmp_path: Path) -> None:
+    """A new result that passes the first checks but fails the rebuild leaves the evaluations as they were."""
+    directory = tmp_path / "evaluations"
+    directory.mkdir()
+    for shift in (-0.9e-10, 0.0):
+        _write(directory, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1 * (1 + shift), True)]))
+    before = sorted(path.name for path in directory.iterdir())
+    result = _write(
+        tmp_path, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1 * (1 + 0.9e-10), True), (4.0, 0.05, True)])
+    )
+    with pytest.raises(EvaluationMismatchError, match="must agree"):
+        add_evaluation(_table(), directory, result)
+    assert sorted(path.name for path in directory.iterdir()) == before

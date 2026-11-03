@@ -255,6 +255,10 @@ def main(argv: list[str] | None = None) -> int:
     except EvaluationMismatchError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    except (ValueError, KeyError, TypeError) as exc:
+        # A file that is not what evaluate-covariance-error writes: not JSON, or JSON of another shape.
+        print(f"error: not an evaluate-covariance-error result ({type(exc).__name__}: {exc}).", file=sys.stderr)
+        return 1
     text = json.dumps(table, indent=4, sort_keys=True) + "\n"
     if args.check:
         bundled = json.loads(TABLE_PATH.read_text(encoding="utf-8"))

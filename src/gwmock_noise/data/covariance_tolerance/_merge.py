@@ -16,6 +16,8 @@ of merging does not matter: a converged error before an unconverged one, then th
 before an evaluation, then the evaluation whose id sorts first. Converged errors of one window
 must agree, which checks each source against the others. A new evaluation is added only if it
 contributes: a window the table lacks, or a converged error where the table's is unconverged.
+``table["sources"]`` lists every committed evaluation, cited by a row or overtaken by another,
+with its SHA-256, so ``--check`` notices a change to any committed file.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ import hashlib
 import json
 import math
 import re
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -97,6 +100,10 @@ def _check_window(window: dict[str, Any], expected_band: list[float]) -> None:
     for field in ("window_duration", "eps_total"):
         if isinstance(window[field], bool) or not isinstance(window[field], int | float):
             raise EvaluationMismatchError(f"a window's {field} is {window[field]!r}, not a number.")
+    if not (math.isfinite(window["window_duration"]) and window["window_duration"] > 0):
+        raise EvaluationMismatchError(
+            f"a window's window_duration {window['window_duration']!r} s is not positive and finite."
+        )
     if [float(edge) for edge in window["error_band_hz"]] != expected_band:
         raise EvaluationMismatchError(
             f"the {window['window_duration']!r} s window was measured over {window['error_band_hz']} Hz, "
@@ -204,20 +211,6 @@ def merge_evaluation(table: dict[str, Any], record: dict[str, Any], *, file: str
         "sha256": sha256,
         "gwmock_noise_version": str(record["gwmock_noise_version"]),
     }
-    _drop_unused_sources(table)
-
-
-def _drop_unused_sources(table: dict[str, Any]) -> None:
-    """Remove the evaluations no row cites any more, so the table names only what it uses."""
-    cited = {
-        row["source"]
-        for spectrum in table["spectra"].values()
-        for rate in spectrum["sampling_frequencies"].values()
-        for row in rate["windows"]
-    }
-    for source in [source for source, entry in table["sources"].items() if entry["kind"] == "evaluation"]:
-        if source not in cited:
-            del table["sources"][source]
 
 
 def contributes(table: dict[str, Any], record: dict[str, Any]) -> bool:
@@ -240,18 +233,48 @@ def contributes(table: dict[str, Any], record: dict[str, Any]) -> bool:
 def build_table(release_table: dict[str, Any], directory: Path) -> dict[str, Any]:
     """Return the release's table with every evaluation committed in ``directory`` merged.
 
+    Besides each merge's check against the row the table keeps, every converged error of a
+    window, from the release and from each evaluation, must agree with every other: closeness
+    is not transitive, so checking each against the kept row alone would accept or refuse a
+    set depending on the order of merging.
+
     Raises:
-        EvaluationMismatchError: If a committed evaluation cannot be merged; the message names the file.
+        EvaluationMismatchError: If a committed evaluation cannot be merged, or if the converged
+            errors of a window do not all agree; the message names the files.
     """
     table = copy.deepcopy(release_table)
+    converged: dict[tuple[str, str, float], list[tuple[float, str]]] = {}
+    for preset, spectrum in release_table["spectra"].items():
+        for key, rate in spectrum["sampling_frequencies"].items():
+            for row in rate["windows"]:
+                if row["converged"]:
+                    converged.setdefault((preset, key, row["window_duration"]), []).append(
+                        (row["eps_total"], describe_source(release_table, row["source"]))
+                    )
     for path in sorted(directory.glob("*.json")):
         data = path.read_bytes()
+        record = json.loads(data)
         try:
             merge_evaluation(
-                table, json.loads(data), file=f"{directory.name}/{path.name}", sha256=hashlib.sha256(data).hexdigest()
+                table, record, file=f"{directory.name}/{path.name}", sha256=hashlib.sha256(data).hexdigest()
             )
         except EvaluationMismatchError as exc:
-            raise EvaluationMismatchError(f"{path}: {exc} Remove or replace that file.") from exc
+            raise EvaluationMismatchError(f"{directory.name}/{path.name}: {exc} Remove or replace that file.") from exc
+        preset = evaluated_preset(table, record)
+        key = str(round(float(record["sampling_frequency"])))
+        for window in record["windows"]:
+            if window["converged"]:
+                converged.setdefault((preset, key, float(window["window_duration"])), []).append(
+                    (float(window["eps_total"]), f"{directory.name}/{path.name}")
+                )
+    for (preset, key, duration), values in sorted(converged.items()):
+        (low, low_source), (high, high_source) = min(values), max(values)
+        if not math.isclose(low, high, rel_tol=AGREEMENT_RTOL, abs_tol=0.0):
+            raise EvaluationMismatchError(
+                f"{preset!r} at {key} Hz and {duration!r} s: converged errors of one window must agree to "
+                f"{AGREEMENT_RTOL}, but range from {low!r} ({low_source}) to {high!r} ({high_source}). Remove or "
+                f"replace the file that disagrees."
+            )
     return table
 
 
@@ -259,8 +282,8 @@ def add_evaluation(release_table: dict[str, Any], directory: Path, result: Path)
     """Copy a new result into ``directory`` and return its path and the table rebuilt with it.
 
     The result is checked against the table the committed evaluations give, must contribute
-    to it, and is then copied byte for byte; the table returned is :func:`build_table`'s, the one
-    ``--check`` rebuilds.
+    to it, and must rebuild with them; only then is it copied byte for byte. The table returned
+    is :func:`build_table`'s, the one ``--check`` rebuilds.
 
     Raises:
         EvaluationMismatchError: If the result does not describe the table's configuration, adds
@@ -277,7 +300,15 @@ def add_evaluation(release_table: dict[str, Any], directory: Path, result: Path)
             f"window it holds is already in the table, converged or no less converged."
         )
     name = f"{preset}__{round(float(record['sampling_frequency']))}__{sha256[:12]}.json"
-    merge_evaluation(copy.deepcopy(current), record, file=f"{directory.name}/{name}", sha256=sha256)
+    # The table is rebuilt with the new file in a staging copy first, so a result the rebuild refuses is never
+    # written where it would make every later --check fail.
+    with tempfile.TemporaryDirectory() as scratch:
+        staged = Path(scratch) / directory.name
+        staged.mkdir()
+        for path in directory.glob("*.json"):
+            (staged / path.name).write_bytes(path.read_bytes())
+        (staged / name).write_bytes(data)
+        table = build_table(release_table, staged)
     directory.mkdir(parents=True, exist_ok=True)
     (directory / name).write_bytes(data)
-    return directory / name, build_table(release_table, directory)
+    return directory / name, table
