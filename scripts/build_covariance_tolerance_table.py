@@ -22,7 +22,9 @@ The errors were evaluated against the paper's continued target (held flat below 
 value there, which replaces the ET curves' tabulated 1-5 Hz; between 5 Hz and a first
 tabulated point above it, as on the aLIGO curves, the power law of the lowest octave) over a
 fixed band per curve. The table records those settings next to the numbers,
-together with the SHA-256 of each bundled curve, so that a changed curve is detected.
+together with the SHA-256 of each bundled curve, so that a changed curve is detected. A
+bundled curve is recorded only if it is byte for byte the curve the release evaluated, which
+the archive also carries.
 
 Usage::
 
@@ -96,11 +98,6 @@ def md5_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-def sha256_of(path: Path) -> str:
-    """Return the SHA-256 of a file."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def fetch_archive(target: Path) -> None:
     """Download the release archive."""
     with urllib.request.urlopen(ARCHIVE_URL, timeout=600) as response, target.open("wb") as handle:
@@ -119,6 +116,20 @@ def read_exact(archive: Path, curve: str, sampling_frequency: int) -> dict[str, 
         if member is None:
             raise KeyError(name)
         return json.load(member)
+
+
+def read_curve(archive: Path, curve: str) -> bytes:
+    """Return the bytes of a curve the release evaluated.
+
+    Raises:
+        KeyError: If the archive has no such file.
+    """
+    name = f"psd/{curve}.txt"
+    with tarfile.open(archive) as bundle:
+        member = bundle.extractfile(name)
+        if member is None:
+            raise KeyError(name)
+        return member.read()
 
 
 def crossfade_rows(record: dict[str, Any]) -> list[dict[str, Any]]:
@@ -152,8 +163,8 @@ def build(archive: Path) -> dict[str, Any]:
     """Return the table built from the release archive.
 
     Raises:
-        ValueError: If the archive is not the published one, or if its files disagree on the
-            generator they evaluated.
+        ValueError: If the archive is not the published one, if its files disagree on the
+            generator they evaluated, or if a bundled curve is not the one the release evaluated.
     """
     actual = md5_of(archive)
     if actual != ARCHIVE_MD5:
@@ -171,9 +182,13 @@ def build(archive: Path) -> dict[str, Any]:
                 "error_band_hz": list(error_band(band, sampling_frequency)),
                 "windows": crossfade_rows(record),
             }
+        # The table pins the bundled file, so the bundled file must be the curve the release evaluated.
+        bundled = (PSD_DIR / f"{preset}.txt").read_bytes()
+        if bundled != read_curve(archive, curve):
+            raise ValueError(f"the bundled {preset}.txt differs from psd/{curve}.txt, the curve the release evaluated.")
         spectra[preset] = {
             "release_curve": curve,
-            "sha256": sha256_of(PSD_DIR / f"{preset}.txt"),
+            "sha256": hashlib.sha256(bundled).hexdigest(),
             "sampling_frequencies": rates,
         }
     if len(generator_commits) != 1:

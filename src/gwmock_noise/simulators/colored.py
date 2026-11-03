@@ -253,7 +253,8 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         self.low_frequency_cutoff = low_frequency_cutoff
         self.high_frequency_cutoff = high_frequency_cutoff
         self.window_duration = window_duration
-        self.covariance_tolerance = covariance_tolerance
+        # Validated by the window choice above; stored as a float so the metadata stays JSON-serialisable.
+        self.covariance_tolerance = None if covariance_tolerance is None else float(covariance_tolerance)
         self._covariance_choice = choice
 
         self._rngs: dict[str, np.random.Generator] = {}

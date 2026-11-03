@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import math
 import shutil
 from pathlib import Path
@@ -117,7 +118,7 @@ def test_a_tolerance_no_window_meets_is_refused() -> None:
 def test_every_tolerance_at_8192_hz_is_refused(preset: str) -> None:
     """At 8192 Hz only windows whose evaluation did not converge were evaluated."""
     assert not any(row["converged"] for row in _rows(preset, 8192))
-    with pytest.raises(UnsupportedCovarianceToleranceError):
+    with pytest.raises(UnsupportedCovarianceToleranceError, match="did not converge"):
         choose_crossfade_window(preset, 8192.0, 0.5)
 
 
@@ -358,6 +359,16 @@ def test_a_configuration_file_can_request_a_tolerance(tmp_path: Path) -> None:
 
     assert simulator.window_duration == 64.0
     assert simulator.metadata["colored_noise"]["covariance_tolerance"]["requested"] == 2e-3
+
+
+def test_a_numpy_tolerance_is_recorded_as_a_json_number() -> None:
+    """A NumPy scalar tolerance is stored as a float, so the metadata stays JSON-serialisable."""
+    simulator = ColoredNoiseSimulator(psd_file=O4, sampling_frequency=4096.0, covariance_tolerance=np.float32(2e-3))
+
+    requested = simulator.metadata["colored_noise"]["covariance_tolerance"]["requested"]
+    assert type(requested) is float
+    assert type(simulator.covariance_tolerance) is float
+    json.dumps(simulator.metadata)
 
 
 def test_the_documented_table_quotes_the_bundled_errors() -> None:
