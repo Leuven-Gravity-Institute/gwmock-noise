@@ -1,7 +1,7 @@
 """Tests for choosing the crossfade window from a covariance-error tolerance.
 
-The bundled table is copied from a published data release by
-``scripts/build_covariance_tolerance_table.py``. These tests pin three separable things:
+The bundled table is built from a published data release, and any evaluations merged into it,
+by ``scripts/build_covariance_tolerance_table.py``. These tests pin three separable things:
 
 **The table describes the bundled curves.** Each entry carries the SHA-256 of the curve its
 errors were evaluated for, so a curve edited after the evaluation fails here rather than
@@ -23,6 +23,7 @@ import hashlib
 import json
 import math
 import shutil
+from importlib import resources
 from pathlib import Path
 
 import numpy as np
@@ -52,17 +53,33 @@ def _rows(preset: str, sampling_frequency: int = 4096) -> list[dict]:
 
 
 def test_the_table_names_its_source() -> None:
-    """The table records the release it was copied from and the generator it evaluated."""
-    assert TABLE["source"]["doi"] == "10.5281/zenodo.23243286"
-    assert len(TABLE["source"]["generator_commit"]) == 40
+    """The table records the release it was copied from and the generator it evaluated, and every row names it."""
+    assert TABLE["schema_version"] == 2
+    release = TABLE["sources"]["zenodo-23243286"]
+    assert release["kind"] == "release"
+    assert release["doi"] == "10.5281/zenodo.23243286"
+    assert len(release["generator_commit"]) == 40
     assert TABLE["target"] == {"continuation_hz": 5.0, "slope_octave": 2.0, "continuation_points": 256}
+    for spectrum in TABLE["spectra"].values():
+        for rate in spectrum["sampling_frequencies"].values():
+            assert all(row["source"] in TABLE["sources"] for row in rate["windows"])
 
 
 #: SHA-256 of the bundled table as canonical JSON. The window-selection tests derive their
 #: expectations from the table itself, so an accidental edit of a row would leave them green;
 #: this pin catches it. Update it only together with a table that
 #: ``scripts/build_covariance_tolerance_table.py --check`` reports as matching the release.
-TABLE_DIGEST = "553a68b362be0942a6905da89ed554dac512d34beff09b2ed5007420639a7394"
+TABLE_DIGEST = "436e2048be685724d7dfc7d6e5d4d13ed6b82f45bc3ac3889539759d61810d8e"
+
+
+def test_each_merged_evaluation_is_the_committed_file() -> None:
+    """Every evaluation the table cites is committed under its directory, byte for byte as it was merged."""
+    directory = resources.files("gwmock_noise.data.covariance_tolerance")
+    for source in TABLE["sources"].values():
+        if source["kind"] != "evaluation":
+            continue
+        path = directory / source["file"]
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == source["sha256"]
 
 
 def test_the_table_is_the_one_checked_against_the_release() -> None:

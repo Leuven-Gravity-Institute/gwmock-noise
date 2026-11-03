@@ -1,3 +1,6 @@
+# Merged covariance-error evaluations are committed byte for byte: the table records each
+# file's SHA-256, so no hook may reformat them.
+exclude: ^src/gwmock_noise/data/covariance_tolerance/evaluations/
 repos:
     - repo: https://github.com/pre-commit/pre-commit-hooks
       rev: v6.0.0

@@ -831,6 +831,17 @@ simulator adopts that configuration:
 - **Curve.** The bundled curve must be passed by name, or as the path of the
   bundled file itself, and must be unmodified. Each entry carries the SHA-256 of
   the curve it was evaluated for.
+- **Edge.** The errors are for this continued target, the paper's specified
+  edge. The data release also evaluates a hard edge, a target that is zero
+  outside the analysis band, as the cutoffs give when they are set at the band
+  edges. `covariance_tolerance` does not cover it: there the generators also
+  taper the spectrum over 1 Hz inside the band, and that taper, which a longer
+  window does not remove, dominates the error, so a tolerance would not select a
+  useful window.
+- **Source.** Each error records where it comes from: the data release, or an
+  evaluation merged into the table (see
+  [Adding evaluated errors to the bundled table](#adding-evaluated-errors-to-the-bundled-table)).
+  The metadata's `source` cites it.
 
 For the same reason, a tolerance cannot be combined with `window_duration`,
 `low_frequency_cutoff`, `high_frequency_cutoff`, `psd_schedule` or `psd_array`.
@@ -933,9 +944,34 @@ as `gwmock_noise.diagnostics.crossfade_covariance_error`, with the target and
 the settings from `crossfade_target` and `simulator_settings` in the same
 module.
 
-Contributions that add a curve to the bundled errors are welcome as pull
-requests: attach the JSON result for the curve, added as a bundled PSD, at 4096
-Hz and the windows above.
+### Adding evaluated errors to the bundled table
+
+For a curve the table already covers, a result of `evaluate-covariance-error`
+can extend it: windows the table lacks, a sampling frequency it lacks, or a
+window whose evaluation did not converge, replaced by one that did. Evaluate
+with a released version of gwmock-noise, over the curve's band (10 to 2048 Hz
+for the aLIGO curves, 5 to 2048 Hz for the ET curves), and merge the result from
+a clone of the repository:
+
+```bash
+gwmock-noise evaluate-covariance-error ET_D_psd \
+    --sampling-frequency 8192 --analysis-band 5 2048 \
+    --window-duration 8 --window-duration 16 \
+    --out ET_D_8192.json
+uv run python scripts/build_covariance_tolerance_table.py --merge ET_D_8192.json
+```
+
+The script downloads the data release (or takes it from `--archive`), rebuilds
+the table from it and the evaluations already merged, and refuses a result that
+describes another configuration: another curve or a changed one, another target,
+other method constants, another band, or a development version of gwmock-noise.
+A converged error in the table is never replaced; a converged result for the
+same window must agree with it to a relative 1e-10. The result is copied, byte
+for byte, to `src/gwmock_noise/data/covariance_tolerance/evaluations/`, the
+table cites it by its SHA-256, and `--check` rebuilds the table from the release
+and those files. Open a pull request with both. A curve the table does not cover
+needs a bundled PSD first, and is not added by a merge; open an issue to propose
+one.
 
 ## Spectral covariance utilities
 
