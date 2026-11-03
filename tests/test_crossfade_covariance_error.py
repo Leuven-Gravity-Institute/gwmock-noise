@@ -98,6 +98,25 @@ def test_a_sum_stopped_at_the_cap_is_not_converged(monkeypatch: pytest.MonkeyPat
     assert capped.error_band.stationary == converged.error_band.stationary
 
 
+def test_a_sum_of_every_distinct_harmonic_is_converged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A window whose distinct harmonics do not exceed the cap is never cut by it: here every one is summed.
+
+    The same case as an 8 s window at 8192 Hz (16384 distinct harmonics, the cap) at a size a test can afford: at
+    64 Hz a 2 s window has 32 distinct harmonics, and with a 5-20 Hz band the pairs straddle the Nyquist frequency
+    from harmonic 24, so the stopping rule could first be tested at 48, beyond them all.
+    """
+    monkeypatch.setattr(crossfade_covariance, "MAXIMUM_HARMONICS", 32)
+    complete = crossfade_covariance_error("ET_D_psd", 64.0, 2.0, (5.0, 20.0))
+    assert complete.harmonics == 32
+    assert complete.converged is True
+    monkeypatch.setattr(crossfade_covariance, "MAXIMUM_HARMONICS", 31)
+    cut = crossfade_covariance_error("ET_D_psd", 64.0, 2.0, (5.0, 20.0))
+    # Twice the straddling onset (48) lies beyond the cap of 31, so the stopping rule is taken from the first check
+    # (16), where this sum stops: before the straddling pairs start at 24, so not converged.
+    assert cut.harmonics == 16
+    assert cut.converged is False
+
+
 def test_an_odd_window_is_refused() -> None:
     """With an odd number of samples the overlap is shorter than the stride, outside the derivation."""
     with pytest.raises(ValueError, match="even number"):

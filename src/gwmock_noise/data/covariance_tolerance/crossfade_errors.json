@@ -1,6 +1,30 @@
 {
     "schema_version": 2,
     "sources": {
+        "evaluation-518433613958": {
+            "file": "evaluations/aLIGO_O3_actual_H1_psd__8192__518433613958.json",
+            "gwmock_noise_version": "0.19.0",
+            "kind": "evaluation",
+            "sha256": "51843361395858fb4e287895e1b284fc445e413acaf5711a0ef7b7e4283f6f84"
+        },
+        "evaluation-677a852a9978": {
+            "file": "evaluations/ET_10_full_cryo_psd__8192__677a852a9978.json",
+            "gwmock_noise_version": "0.19.0",
+            "kind": "evaluation",
+            "sha256": "677a852a9978e460b7b3c289325d594a3e438592eec0da3a28fb1cd0c7a90d96"
+        },
+        "evaluation-8eee1052b6a4": {
+            "file": "evaluations/ET_D_psd__8192__8eee1052b6a4.json",
+            "gwmock_noise_version": "0.19.0",
+            "kind": "evaluation",
+            "sha256": "8eee1052b6a4d6b6b01d778b46ff99cb15b9ed177084789087dc0e5e54f81868"
+        },
+        "evaluation-fe09a946c629": {
+            "file": "evaluations/aLIGO_O4_high_projected_psd__8192__fe09a946c629.json",
+            "gwmock_noise_version": "0.19.0",
+            "kind": "evaluation",
+            "sha256": "fe09a946c6291918b4640f6f68e9e0ef29a913d38397be0121697711bcbb566f"
+        },
         "zenodo-23243286": {
             "analysis_commits": ["71fa4d22939560d49f6e3c11e4b2b9b0e1bc822a"],
             "archive": "results.tar.gz",
@@ -65,6 +89,12 @@
                 "8192": {
                     "error_band_hz": [5.0, 2048.0],
                     "windows": [
+                        {
+                            "converged": true,
+                            "eps_total": 0.02576090909006865,
+                            "source": "evaluation-677a852a9978",
+                            "window_duration": 8.0
+                        },
                         {
                             "converged": false,
                             "eps_total": 1.230809185551712e-5,
@@ -137,6 +167,12 @@
                     "error_band_hz": [5.0, 2048.0],
                     "windows": [
                         {
+                            "converged": true,
+                            "eps_total": 0.017668564511719317,
+                            "source": "evaluation-8eee1052b6a4",
+                            "window_duration": 8.0
+                        },
+                        {
                             "converged": false,
                             "eps_total": 2.9173165095205797e-6,
                             "source": "zenodo-23243286",
@@ -208,6 +244,12 @@
                     "error_band_hz": [10.0, 2048.0],
                     "windows": [
                         {
+                            "converged": true,
+                            "eps_total": 0.019083615232742934,
+                            "source": "evaluation-518433613958",
+                            "window_duration": 8.0
+                        },
+                        {
                             "converged": false,
                             "eps_total": 4.4142116699353945e-6,
                             "source": "zenodo-23243286",
@@ -278,6 +320,12 @@
                 "8192": {
                     "error_band_hz": [10.0, 2048.0],
                     "windows": [
+                        {
+                            "converged": true,
+                            "eps_total": 0.05366229567134914,
+                            "source": "evaluation-fe09a946c629",
+                            "window_duration": 8.0
+                        },
                         {
                             "converged": false,
                             "eps_total": 0.00011658766287550777,

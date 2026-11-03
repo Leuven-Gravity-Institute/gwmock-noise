@@ -1,0 +1,52 @@
+{
+    "analysis_band_hz": [
+        10.0,
+        2048.0
+    ],
+    "gwmock_noise_version": "0.19.0",
+    "method": {
+        "convergence_tolerance": 0.001,
+        "first_convergence_check": 16,
+        "maximum_harmonics": 16384,
+        "nyquist_guard_hz": 4.0,
+        "oversample": 4
+    },
+    "psd": {
+        "argument": "aLIGO_O4_high_projected_psd",
+        "file": "aLIGO_O4_high_projected_psd.txt",
+        "sha256": "683c2ce8292009ba258c24cabc61799a39373e1fc1c2d406c4d7804f084d5218"
+    },
+    "sampling_frequency": 8192.0,
+    "target": {
+        "continuation_hz": 5.0,
+        "continuation_points": 256,
+        "slope_octave": 2.0
+    },
+    "target_file": {
+        "file": "aLIGO_O4_high_projected_psd__8192__8_target.txt",
+        "sha256": "c7c2286a381d3fb8237d49c398b4946058f5e124dd6c86460899fde149f8011b"
+    },
+    "windows": [
+        {
+            "converged": true,
+            "eps_cyclic": 0.047686875672956736,
+            "eps_stationary": 0.024609019998188954,
+            "eps_total": 0.05366229567134914,
+            "eps_total_analysis_band": 0.05366229567134914,
+            "error_band_hz": [
+                10.0,
+                2048.0
+            ],
+            "harmonics": 16384,
+            "simulator": {
+                "high_frequency_cutoff": 4096.0,
+                "low_frequency_cutoff": 0.0,
+                "psd_file": "aLIGO_O4_high_projected_psd__8192__8_target.txt",
+                "sampling_frequency": 8192.0,
+                "window_duration": 8.0
+            },
+            "wall_seconds": 442.2328432397917,
+            "window_duration": 8.0
+        }
+    ]
+}

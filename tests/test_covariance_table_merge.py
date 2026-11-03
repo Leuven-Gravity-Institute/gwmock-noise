@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from gwmock_noise.cli import evaluate_covariance_error as cli_command
 from gwmock_noise.cli.main import app
 from gwmock_noise.data.covariance_tolerance import describe_source, load_crossfade_errors
 from gwmock_noise.data.covariance_tolerance._merge import (
@@ -37,8 +38,19 @@ O4 = "aLIGO_O4_high_projected_psd"
 
 
 def _table() -> dict:
-    """Return a fresh copy of the bundled table."""
-    return copy.deepcopy(load_crossfade_errors())
+    """Return the bundled table as the data release alone gives it, without any merged evaluation.
+
+    The merge rules are tested against a fixed starting point, so that evaluations merged into the bundled table
+    later do not change what these tests exercise.
+    """
+    table = copy.deepcopy(load_crossfade_errors())
+    for spectrum in table["spectra"].values():
+        for key, rate in list(spectrum["sampling_frequencies"].items()):
+            rate["windows"] = [row for row in rate["windows"] if row["source"] == RELEASE_SOURCE]
+            if not rate["windows"]:
+                del spectrum["sampling_frequencies"][key]
+    table["sources"] = {RELEASE_SOURCE: table["sources"][RELEASE_SOURCE]}
+    return table
 
 
 def _record(preset: str = ET_D, sampling_frequency: float = 8192.0, windows: list | None = None) -> dict:
@@ -228,9 +240,12 @@ def test_the_selector_cites_an_evaluated_row(monkeypatch: pytest.MonkeyPatch) ->
     assert recorded["source"].startswith("gwmock-noise 0.19.0 evaluation evaluations/result.json (SHA-256 ")
 
 
-def test_a_result_the_command_wrote_merges(tmp_path: Path) -> None:
+def test_a_result_the_command_wrote_merges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The command's own output is accepted once it is from a release: the two agree on the configuration."""
     out = tmp_path / "result.json"
+    # The installed version depends on the checkout; the command records the version of a release here, so the
+    # record it writes is merged as it is.
+    monkeypatch.setattr(cli_command, "__version__", "0.19.0")
     result = CliRunner().invoke(
         app,
         [
@@ -249,10 +264,8 @@ def test_a_result_the_command_wrote_merges(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     record = json.loads(out.read_text(encoding="utf-8"))
+    assert record["gwmock_noise_version"] == "0.19.0"
     table = _table()
-    with pytest.raises(EvaluationMismatchError, match="not a plain release version"):
-        _merge(table, record)
-    record["gwmock_noise_version"] = "0.19.0"
     source = _merge(table, record)
     row = _rows(table, ET_D, "4096")[4.0]
     assert row["source"] == source

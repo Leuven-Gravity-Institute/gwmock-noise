@@ -1,0 +1,52 @@
+{
+    "analysis_band_hz": [
+        5.0,
+        2048.0
+    ],
+    "gwmock_noise_version": "0.19.0",
+    "method": {
+        "convergence_tolerance": 0.001,
+        "first_convergence_check": 16,
+        "maximum_harmonics": 16384,
+        "nyquist_guard_hz": 4.0,
+        "oversample": 4
+    },
+    "psd": {
+        "argument": "ET_D_psd",
+        "file": "ET_D_psd.txt",
+        "sha256": "92089fb91b5a22aec20a63114da84cf1e494b7507fb7c41e601e070c95792cd6"
+    },
+    "sampling_frequency": 8192.0,
+    "target": {
+        "continuation_hz": 5.0,
+        "continuation_points": 256,
+        "slope_octave": 2.0
+    },
+    "target_file": {
+        "file": "ET_D_psd__8192__8_target.txt",
+        "sha256": "34bbc28768435e6f5e86f07fdf431a009da4acdad1801bb7f85c42e577d80cd2"
+    },
+    "windows": [
+        {
+            "converged": true,
+            "eps_cyclic": 0.0028803553150774006,
+            "eps_stationary": 0.017432203680650727,
+            "eps_total": 0.017668564511719317,
+            "eps_total_analysis_band": 0.017668564511719317,
+            "error_band_hz": [
+                5.0,
+                2048.0
+            ],
+            "harmonics": 16384,
+            "simulator": {
+                "high_frequency_cutoff": 4096.0,
+                "low_frequency_cutoff": 0.0,
+                "psd_file": "ET_D_psd__8192__8_target.txt",
+                "sampling_frequency": 8192.0,
+                "window_duration": 8.0
+            },
+            "wall_seconds": 452.9261112213135,
+            "window_duration": 8.0
+        }
+    ]
+}

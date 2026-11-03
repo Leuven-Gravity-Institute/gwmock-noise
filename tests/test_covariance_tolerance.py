@@ -22,6 +22,7 @@ import copy
 import hashlib
 import json
 import math
+import re
 import shutil
 from importlib import resources
 from pathlib import Path
@@ -69,7 +70,7 @@ def test_the_table_names_its_source() -> None:
 #: expectations from the table itself, so an accidental edit of a row would leave them green;
 #: this pin catches it. Update it only together with a table that
 #: ``scripts/build_covariance_tolerance_table.py --check`` reports as matching the release.
-TABLE_DIGEST = "436e2048be685724d7dfc7d6e5d4d13ed6b82f45bc3ac3889539759d61810d8e"
+TABLE_DIGEST = "a1c07eefa61932ed7cb980fec9c82f0049fa4eb06baf987f4fccc6b752cd49e3"
 
 
 def test_each_merged_evaluation_is_the_committed_file() -> None:
@@ -150,11 +151,16 @@ def test_a_tolerance_no_window_meets_is_refused() -> None:
 
 
 @pytest.mark.parametrize("preset", PRESETS)
-def test_every_tolerance_at_8192_hz_is_refused(preset: str) -> None:
-    """At 8192 Hz only windows whose evaluation did not converge were evaluated."""
-    assert not any(row["converged"] for row in _rows(preset, 8192))
+def test_at_8192_hz_only_the_evaluated_8_s_window_is_chosen(preset: str) -> None:
+    """At 8192 Hz the 8 s window, from a merged evaluation, is the only converged one; tighter tolerances are refused."""
+    rows = {row["window_duration"]: row for row in _rows(preset, 8192)}
+    assert [duration for duration, row in rows.items() if row["converged"]] == [8.0]
+    assert TABLE["sources"][rows[8.0]["source"]]["kind"] == "evaluation"
+    choice = choose_crossfade_window(preset, 8192.0, 1.01 * rows[8.0]["eps_total"])
+    assert choice.window_duration == 8.0
+    assert choice.source.startswith("gwmock-noise 0.19.0 evaluation evaluations/")
     with pytest.raises(UnsupportedCovarianceToleranceError, match="did not converge"):
-        choose_crossfade_window(preset, 8192.0, 0.5)
+        choose_crossfade_window(preset, 8192.0, 0.99 * rows[8.0]["eps_total"])
 
 
 def test_an_unevaluated_sampling_frequency_is_refused() -> None:
@@ -441,6 +447,19 @@ def test_the_documented_table_quotes_the_bundled_errors() -> None:
             f"{row['eps_total']:.1e}".replace("e-0", "e-") + ("\\*" if not row["converged"] else "") for row in rows
         ]
         assert cells == expected
+
+    # The 8192 Hz sentence quotes the 8 s errors in the table's row order.
+    quoted = re.search(
+        r"At 8192 Hz the only converged window is 8 s.*?:\s*(.*?) for the four curves", section, re.DOTALL
+    )
+    assert quoted is not None
+    numbers = re.findall(r"\d\.\de-\d+", quoted.group(1))
+    expected_8192 = []
+    for line in lines:
+        preset = line.strip("|").split("|")[0].strip().strip("`")
+        row = next(row for row in _rows(preset, 8192) if row["window_duration"] == 8.0)
+        expected_8192.append(f"{row['eps_total']:.1e}".replace("e-0", "e-"))
+    assert numbers == expected_8192
 
 
 def test_a_curve_tabulated_below_five_hertz_is_replaced_there_by_the_flat_value() -> None:
