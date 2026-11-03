@@ -71,6 +71,8 @@
         },
         {
             "matchManagers": ["pre-commit"],
+            "description": "Wait until a hook's release has settled: a tag can exist before the package its hook installs is published.",
+            "minimumReleaseAge": "3 days",
             "automerge": true,
             "automergeType": "pr",
             "automergeStrategy": "squash"
