@@ -23,6 +23,9 @@ import json
 from importlib import resources
 from typing import Any
 
+#: The version of the table's layout this package reads.
+SCHEMA_VERSION = 2
+
 #: File name of the bundled table.
 CROSSFADE_ERRORS = "crossfade_errors.json"
 
@@ -32,9 +35,18 @@ def load_crossfade_errors() -> dict[str, Any]:
 
     Returns:
         The table in the shape ``scripts/build_covariance_tolerance_table.py`` writes.
+
+    Raises:
+        ValueError: If the table is not in the layout this package reads.
     """
     payload = resources.files(__name__).joinpath(CROSSFADE_ERRORS).read_text(encoding="utf-8")
-    return json.loads(payload)
+    table = json.loads(payload)
+    if table.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError(
+            f"{CROSSFADE_ERRORS} has schema version {table.get('schema_version')!r}, not {SCHEMA_VERSION}; "
+            f"rebuild it with scripts/build_covariance_tolerance_table.py --write."
+        )
+    return table
 
 
 def describe_source(table: dict[str, Any], source: str) -> str:

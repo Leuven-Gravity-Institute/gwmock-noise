@@ -55,11 +55,12 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from gwmock_noise.data.covariance_tolerance import SCHEMA_VERSION
 from gwmock_noise.data.covariance_tolerance._merge import (
     RELEASE_SOURCE,
-    SCHEMA_VERSION,
-    evaluated_preset,
-    merge_evaluation,
+    EvaluationMismatchError,
+    add_evaluation,
+    build_table,
 )
 from gwmock_noise.simulators._covariance_tolerance import error_band
 
@@ -224,21 +225,6 @@ def build(archive: Path) -> dict[str, Any]:
     }
 
 
-def merge_file(table: dict[str, Any], path: Path) -> None:
-    """Merge one committed or proposed evaluation file into the table."""
-    data = path.read_bytes()
-    record = json.loads(data)
-    merge_evaluation(table, record, file=f"evaluations/{path.name}", sha256=hashlib.sha256(data).hexdigest())
-
-
-def build_with_evaluations(archive: Path) -> dict[str, Any]:
-    """Return the table built from the release, with every committed evaluation merged, in name order."""
-    table = build(archive)
-    for path in sorted(EVALUATIONS_DIR.glob("*.json")):
-        merge_file(table, path)
-    return table
-
-
 def main(argv: list[str] | None = None) -> int:
     """Build the table, print it, and write it when asked."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -258,18 +244,17 @@ def main(argv: list[str] | None = None) -> int:
         if archive is None:
             archive = Path(directory) / "results.tar.gz"
             fetch_archive(archive)
-        table = build_with_evaluations(archive)
-    if args.merge is not None:
-        data = args.merge.read_bytes()
-        digest = hashlib.sha256(data).hexdigest()
-        record = json.loads(data)
-        rate = round(float(record["sampling_frequency"]))
-        name = f"{evaluated_preset(table, record)}__{rate}__{digest[:12]}.json"
-        merge_evaluation(table, record, file=f"evaluations/{name}", sha256=digest)
-        EVALUATIONS_DIR.mkdir(exist_ok=True)
-        (EVALUATIONS_DIR / name).write_bytes(data)
-        print(f"added {(EVALUATIONS_DIR / name).relative_to(REPO_ROOT)}")
-        args.write = True
+        release = build(archive)
+    try:
+        if args.merge is not None:
+            added, table = add_evaluation(release, EVALUATIONS_DIR, args.merge)
+            print(f"added {added.relative_to(REPO_ROOT)}")
+            args.write = True
+        else:
+            table = build_table(release, EVALUATIONS_DIR)
+    except EvaluationMismatchError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     text = json.dumps(table, indent=4, sort_keys=True) + "\n"
     if args.check:
         bundled = json.loads(TABLE_PATH.read_text(encoding="utf-8"))

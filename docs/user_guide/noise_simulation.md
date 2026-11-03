@@ -949,9 +949,10 @@ module.
 For a curve the table already covers, a result of `evaluate-covariance-error`
 can extend it: windows the table lacks, a sampling frequency it lacks, or a
 window whose evaluation did not converge, replaced by one that did. Evaluate
-with a released version of gwmock-noise, over the curve's band (10 to 2048 Hz
-for the aLIGO curves, 5 to 2048 Hz for the ET curves), and merge the result from
-a clone of the repository:
+with a release of gwmock-noise that includes the command (one after 0.18.4), not
+a development build, over the curve's band (10 to 2048 Hz for the aLIGO curves,
+5 to 2048 Hz for the ET curves), and merge the result from a clone of the
+repository:
 
 ```bash
 gwmock-noise evaluate-covariance-error ET_D_psd \
@@ -964,14 +965,22 @@ uv run python scripts/build_covariance_tolerance_table.py --merge ET_D_8192.json
 The script downloads the data release (or takes it from `--archive`), rebuilds
 the table from it and the evaluations already merged, and refuses a result that
 describes another configuration: another curve or a changed one, another target,
-other method constants, another band, or a development version of gwmock-noise.
-A converged error in the table is never replaced; a converged result for the
-same window must agree with it to a relative 1e-10. The result is copied, byte
-for byte, to `src/gwmock_noise/data/covariance_tolerance/evaluations/`, the
-table cites it by its SHA-256, and `--check` rebuilds the table from the release
-and those files. Open a pull request with both. A curve the table does not cover
-needs a bundled PSD first, and is not added by a merge; open an issue to propose
-one.
+other method constants, another band, or a version that is not a plain release
+number (the check reads the version the result records; it cannot tell a release
+from a build that reports one). It also refuses a result that adds nothing: no
+window the table lacks, and no converged error where the table's is not. A
+converged error in the table is never replaced; a converged result for the same
+window must agree with it to a relative 1e-10. Where several sources give a
+window, the table keeps a converged error before an unconverged one, the release
+before an evaluation, and otherwise the evaluation whose id sorts first, so the
+table does not depend on the order of merging. The result is copied, byte for
+byte, to `src/gwmock_noise/data/covariance_tolerance/evaluations/`, the table
+cites it by its SHA-256, and `--check` rebuilds the table from the release and
+those files. The target file written beside the result is not copied: the result
+records its SHA-256, and the target can be regenerated from the bundled curve
+with `crossfade_target`. Open a pull request with both. A curve the table does
+not cover needs a bundled PSD first, and is not added by a merge; open an issue
+to propose one.
 
 ## Spectral covariance utilities
 
