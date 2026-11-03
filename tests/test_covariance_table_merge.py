@@ -593,3 +593,71 @@ def test_an_interruption_before_the_table_is_replaced_removes_the_result(
     with pytest.raises(KeyboardInterrupt):
         script.write_table("new\n", added)
     assert not added.exists()
+
+
+def _unreadable_table(monkeypatch: pytest.MonkeyPatch, script) -> None:
+    """Make reading the bundled table back fail, as a transient I/O error would."""
+    read_text = Path.read_text
+
+    def refuse(path: Path, *args: object, **kwargs: object) -> str:
+        if path == script.TABLE_PATH:
+            raise OSError(5, "Input/output error")
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", refuse)
+
+
+def test_a_completed_write_keeps_the_result_without_reading_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once the table is written, the result stays and reports success, even if the table could not be read back."""
+    script = _build_script(monkeypatch, tmp_path)
+    added = tmp_path / "added.json"
+    added.write_text("{}\n", encoding="utf-8")
+    _unreadable_table(monkeypatch, script)
+    assert script.write_table("new\n", added) == 0
+    assert added.exists()
+
+
+def test_an_unknown_table_state_keeps_the_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """After an interruption, a table that cannot be read is not taken as the old one: the result is kept."""
+    script = _build_script(monkeypatch, tmp_path)
+    added = tmp_path / "added.json"
+    added.write_text("{}\n", encoding="utf-8")
+
+    def replace_then_interrupt(path: Path, text: str) -> None:
+        path.write_text(text, encoding="utf-8")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(script, "write_atomically", replace_then_interrupt)
+    _unreadable_table(monkeypatch, script)
+    with pytest.raises(KeyboardInterrupt):
+        script.write_table("new\n", added)
+    assert added.exists()
+
+
+def test_a_failed_cleanup_is_reported_with_the_write_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """If the added result cannot be removed after a failed write, both failures are reported, the write's first."""
+    script = _build_script(monkeypatch, tmp_path)
+    script.TABLE_PATH.write_text("old\n", encoding="utf-8")
+    added = tmp_path / "added.json"
+    added.write_text("{}\n", encoding="utf-8")
+
+    def fail(path: Path, text: str) -> None:
+        raise OSError(28, "No space left on device")
+
+    unlink = Path.unlink
+
+    def refuse(path: Path, missing_ok: bool = False) -> None:
+        if path == added:
+            raise PermissionError(13, "Permission denied")
+        unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(script, "write_atomically", fail)
+    monkeypatch.setattr(Path, "unlink", refuse)
+    assert script.write_table("new\n", added) == 1
+    errors = capsys.readouterr().err.splitlines()
+    assert "No space left on device" in errors[0]
+    assert errors[1].startswith(f"error: could not remove {added}")

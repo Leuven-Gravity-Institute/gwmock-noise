@@ -236,12 +236,33 @@ def write_atomically(path: Path, text: str) -> None:
         partial.unlink(missing_ok=True)
 
 
-def _table_is(text: str) -> bool:
-    """Return whether the bundled table on disk is ``text``."""
+def _table_is(text: str) -> bool | None:
+    """Return whether the bundled table on disk is ``text``, or ``None`` if it cannot be read."""
     try:
         return TABLE_PATH.read_text(encoding="utf-8") == text
     except OSError:
-        return False
+        return None
+
+
+def _roll_back(added: Path, text: str) -> None:
+    """Remove the result ``--merge`` added, but only if the table on disk is confirmed not to be the new one.
+
+    Decided from the file, not from where the write stopped: an interruption after the replacement leaves the new
+    table, which cites the result, and the result must then stay. If the table cannot be read, its state is unknown,
+    and the result is kept.
+    """
+    state = _table_is(text)
+    if state is None:
+        print(
+            f"error: could not read {TABLE_PATH} after the failed write; kept {added}. Run --check, and --write or "
+            f"remove the file to repair.",
+            file=sys.stderr,
+        )
+    elif state is False:
+        try:
+            added.unlink(missing_ok=True)
+        except OSError as cleanup:
+            print(f"error: could not remove {added} after the failed write ({cleanup}).", file=sys.stderr)
 
 
 def write_table(text: str, added: Path | None) -> int:
@@ -249,19 +270,16 @@ def write_table(text: str, added: Path | None) -> int:
 
     A result copied into the evaluations without the table that cites it would make ``--check`` fail.
     """
+    written = False
     try:
         write_atomically(TABLE_PATH, text)
+        written = True
     except OSError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     finally:
-        # Runs on any exit, an interruption included. Decided from the file, not from where the exception came: an
-        # interruption after the replacement leaves the new table, which cites the result, and the result must stay.
-        if added is not None and not _table_is(text):
-            try:
-                added.unlink(missing_ok=True)
-            except OSError as cleanup:
-                print(f"error: could not remove {added} after the failed write ({cleanup}).", file=sys.stderr)
+        if added is not None and not written:
+            _roll_back(added, text)
     if added is not None:
         print(f"added {added.relative_to(REPO_ROOT)}")
     print(f"wrote {TABLE_PATH.relative_to(REPO_ROOT)}")
