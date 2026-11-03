@@ -575,3 +575,21 @@ def test_an_interruption_after_the_table_is_replaced_keeps_the_result(
     with pytest.raises(KeyboardInterrupt):
         script.write_table("new\n", added)
     assert added.exists()
+
+
+def test_an_interruption_before_the_table_is_replaced_removes_the_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Interrupted before the new table is in place, the result --merge added goes, as on a failed write."""
+    script = _build_script(monkeypatch, tmp_path)
+    script.TABLE_PATH.write_text("old\n", encoding="utf-8")
+    added = tmp_path / "added.json"
+    added.write_text("{}\n", encoding="utf-8")
+
+    def interrupt(path: Path, text: str) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(script, "write_atomically", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        script.write_table("new\n", added)
+    assert not added.exists()

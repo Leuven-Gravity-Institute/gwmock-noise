@@ -251,18 +251,17 @@ def write_table(text: str, added: Path | None) -> int:
     """
     try:
         write_atomically(TABLE_PATH, text)
-    except BaseException as exc:
-        # Decided from the file, not from where the exception came: an interruption after the replacement leaves the
-        # new table, which cites the result, and the result must then stay.
+    except OSError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        # Runs on any exit, an interruption included. Decided from the file, not from where the exception came: an
+        # interruption after the replacement leaves the new table, which cites the result, and the result must stay.
         if added is not None and not _table_is(text):
             try:
                 added.unlink(missing_ok=True)
             except OSError as cleanup:
                 print(f"error: could not remove {added} after the failed write ({cleanup}).", file=sys.stderr)
-        if not isinstance(exc, OSError):
-            raise
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
     if added is not None:
         print(f"added {added.relative_to(REPO_ROOT)}")
     print(f"wrote {TABLE_PATH.relative_to(REPO_ROOT)}")
