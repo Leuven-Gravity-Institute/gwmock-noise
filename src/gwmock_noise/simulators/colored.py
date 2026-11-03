@@ -9,6 +9,11 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from gwmock_noise.simulators._covariance_tolerance import (
+    CrossfadeChoice,
+    UnsupportedCovarianceToleranceError,
+    choose_crossfade_window,
+)
 from gwmock_noise.simulators._spectral import (
     load_spectral_series,
     median_frequency_spacing,
@@ -30,6 +35,9 @@ logger = logging.getLogger(LOGGER_NAME)
 
 PSD_WINDOW_WIDTH_HZ = 1.0
 MIN_TAPER_BINS = 2
+
+#: The low-frequency cutoff, in hertz, when none is given.
+DEFAULT_LOW_FREQUENCY_CUTOFF = 2.0
 
 #: Relative tolerance for a supplied psd_array frequency axis against the
 #: simulator's own grid. It is tight on purpose: the array must be declared on
@@ -125,7 +133,28 @@ def _validate_array_target(
 
 
 class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
-    """Generate colored detector noise from an input PSD."""
+    """Generate colored detector noise from an input PSD.
+
+    The noise is a crossfade of independently drawn frequency-domain windows. Its covariance
+    departs from the target's by an amount that falls as the window grows. Instead of a
+    window, a caller can pass ``covariance_tolerance``, the largest acceptable total
+    covariance error, for one of the bundled detector curves: the simulator then takes the
+    shortest window whose evaluated error meets it, from the errors evaluated in
+
+        I. C. F. Wong, "Choosing a generator for streaming Gaussian noise in
+        gravitational-wave mock data: accuracy, cost and reproducibility",
+        arXiv:2611.01624; data: doi:10.5281/zenodo.23243286.
+
+    Those errors hold for the paper's configuration, which the simulator then adopts: the
+    target is generated from zero to the Nyquist frequency and held flat below 5 Hz at its
+    value there; between 5 Hz and a first tabulated point above it (the aLIGO curves) it
+    continues the curve by the power law of its lowest octave. The ET curves are tabulated
+    from 1 Hz, so their 1-5 Hz wall is replaced by that flat value, orders of magnitude lower.
+    The error is measured over the curve's analysis band (from 10 Hz for the aLIGO curves and
+    5 Hz for the ET curves). ``metadata`` records the chosen window, its evaluated error, the
+    band and the continuation. A tolerance therefore cannot be combined with a window, cutoffs, a schedule, an
+    array, or a PSD that is not a bundled curve.
+    """
 
     simulator_name = "colored"
 
@@ -141,11 +170,55 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         sampling_frequency: float = 4096.0,
         duration: float = 4.0,
         seed: int | None = None,
-        low_frequency_cutoff: float = 2.0,
+        low_frequency_cutoff: float | None = None,
         high_frequency_cutoff: float | None = None,
-        window_duration: float = DEFAULT_WINDOW_DURATION,
+        window_duration: float | None = None,
+        covariance_tolerance: float | None = None,
     ) -> None:
-        """Initialize the simulator."""
+        """Initialize the simulator.
+
+        Args:
+            psd_file: A two-column PSD table, as a path, a URL, or the name of a bundled curve.
+            psd_schedule: ``(GPS offset, PSD file)`` anchors interpolated in time.
+            psd_array: A PSD already on the simulator's frequency grid.
+            frequencies: The frequency axis of ``psd_array``.
+            delta_frequency: The frequency spacing of ``psd_array``.
+            detectors: Detector names.
+            sampling_frequency: Sampling frequency in hertz.
+            duration: Default duration of a generated segment, in seconds.
+            seed: Seed of the random number generators.
+            low_frequency_cutoff: Lowest generated frequency in hertz; 2 Hz when omitted.
+            high_frequency_cutoff: Highest generated frequency in hertz; the Nyquist frequency
+                when omitted.
+            window_duration: Crossfade window in seconds; 64 s when omitted.
+            covariance_tolerance: Largest acceptable total covariance error. When given, the
+                window is chosen from the bundled evaluated errors (see the class docstring),
+                and ``psd_file`` must name a bundled curve.
+
+        Raises:
+            TypeError: If the covariance tolerance is not a real number.
+            ValueError: If the PSD sources or their axes are inconsistent, or if a covariance
+                tolerance is combined with a setting it chooses itself.
+            UnsupportedCovarianceToleranceError: If no bundled evaluated error covers the
+                requested tolerance, curve and sampling frequency.
+        """
+        choice = self._choose_for_tolerance(
+            covariance_tolerance,
+            psd_file=psd_file,
+            psd_schedule=psd_schedule,
+            psd_array=psd_array,
+            sampling_frequency=sampling_frequency,
+            low_frequency_cutoff=low_frequency_cutoff,
+            high_frequency_cutoff=high_frequency_cutoff,
+            window_duration=window_duration,
+        )
+        if choice is not None:
+            low_frequency_cutoff = 0.0
+            window_duration = choice.window_duration
+        if low_frequency_cutoff is None:
+            low_frequency_cutoff = DEFAULT_LOW_FREQUENCY_CUTOFF
+        if window_duration is None:
+            window_duration = DEFAULT_WINDOW_DURATION
         sources = [psd_file, psd_schedule, psd_array]
         if all(source is None for source in sources):
             raise ValueError("Exactly one of psd_file, psd_schedule or psd_array must be provided.")
@@ -180,6 +253,9 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         self.low_frequency_cutoff = low_frequency_cutoff
         self.high_frequency_cutoff = high_frequency_cutoff
         self.window_duration = window_duration
+        # Validated by the window choice above; stored as a float so the metadata stays JSON-serialisable.
+        self.covariance_tolerance = None if covariance_tolerance is None else float(covariance_tolerance)
+        self._covariance_choice = choice
 
         self._rngs: dict[str, np.random.Generator] = {}
         self._generated_samples = 0
@@ -194,6 +270,43 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
             overlap_size=self._overlap_size,
         )
         self._configure_frequency_grid()
+
+    @staticmethod
+    def _choose_for_tolerance(  # noqa: PLR0913 - every setting a tolerance excludes is checked.
+        covariance_tolerance: float | None,
+        *,
+        psd_file: str | Path | None,
+        psd_schedule: list[tuple[float, str | Path]] | None,
+        psd_array: np.ndarray | None,
+        sampling_frequency: float,
+        low_frequency_cutoff: float | None,
+        high_frequency_cutoff: float | None,
+        window_duration: float | None,
+    ) -> CrossfadeChoice | None:
+        """Return the window a covariance tolerance chooses, or ``None`` without one.
+
+        Raises:
+            ValueError: If the tolerance is combined with a setting it chooses itself.
+            UnsupportedCovarianceToleranceError: If the bundled errors do not cover it.
+        """
+        if covariance_tolerance is None:
+            return None
+        conflicting = {
+            "psd_schedule": psd_schedule,
+            "psd_array": psd_array,
+            "low_frequency_cutoff": low_frequency_cutoff,
+            "high_frequency_cutoff": high_frequency_cutoff,
+            "window_duration": window_duration,
+        }
+        given = [name for name, value in conflicting.items() if value is not None]
+        if given:
+            raise ValueError(
+                f"covariance_tolerance chooses the window, the cutoffs and the target itself, so it cannot be "
+                f"combined with {', '.join(given)}: the bundled errors hold only for the configuration it chooses."
+            )
+        if psd_file is None:
+            raise UnsupportedCovarianceToleranceError("covariance_tolerance needs psd_file to name a bundled curve.")
+        return choose_crossfade_window(psd_file, sampling_frequency, covariance_tolerance)
 
     @classmethod
     def from_component(cls, component: NoiseComponentConfig, config: NoiseConfig) -> ColoredNoiseSimulator:
@@ -266,9 +379,13 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
 
     def _load_psd_on_grid(self, psd_file: str | Path) -> np.ndarray:
         """Load one PSD file onto the simulator frequency grid."""
+        psd_frequencies, psd_values = load_spectral_series(psd_file, kind="PSD")
+        return self._table_on_grid(psd_frequencies, psd_values)
+
+    def _table_on_grid(self, psd_frequencies: np.ndarray, psd_values: np.ndarray) -> np.ndarray:
+        """Interpolate a PSD table onto the simulator frequency grid and taper its band edges."""
         psd = np.zeros_like(self._frequency_grid, dtype=float)
         masked_frequencies = self._frequency_grid[self._frequency_mask]
-        psd_frequencies, psd_values = load_spectral_series(psd_file, kind="PSD")
         self._psd_input_spacing = min(self._psd_input_spacing, median_frequency_spacing(psd_frequencies))
         interpolated_psd = np.interp(masked_frequencies, psd_frequencies, psd_values, left=0.0, right=0.0)
         psd[self._frequency_mask] = np.clip(interpolated_psd, a_min=0.0, a_max=None)
@@ -281,6 +398,9 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
         """Load all configured PSD anchors onto the current simulator grid."""
         if self.psd_array is not None:
             return [(0.0, self._array_psd_on_grid())]
+        if self._covariance_choice is not None:
+            choice = self._covariance_choice
+            return [(0.0, self._table_on_grid(choice.target_frequencies, choice.target_psd))]
         anchors = self.psd_schedule or [(0.0, self.psd_file)]
         return [
             (gps_offset_seconds, self._load_psd_on_grid(psd_path))
@@ -508,6 +628,12 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
     ) -> dict[str, np.ndarray]:
         """Generate per-detector colored noise."""
         runtime_detectors = list(detectors)
+        if self._covariance_choice is not None and sampling_frequency != self.sampling_frequency:
+            raise UnsupportedCovarianceToleranceError(
+                f"This simulator chose its window for covariance_tolerance={self.covariance_tolerance!r} at "
+                f"{self.sampling_frequency!r} Hz, and the bundled errors hold only there; generate at that rate or "
+                f"construct a new simulator for {sampling_frequency!r} Hz."
+            )
         self._validate_runtime(
             duration=duration,
             sampling_frequency=sampling_frequency,
@@ -580,7 +706,26 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
                 "window_duration": self.window_duration,
                 "window_size": self._window_size,
                 "overlap_size": self._overlap_size,
+                "covariance_tolerance": self._covariance_metadata(),
             },
+        }
+
+    def _covariance_metadata(self) -> dict[str, Any] | None:
+        """Return what a covariance tolerance chose, or ``None`` without one."""
+        choice = self._covariance_choice
+        if choice is None:
+            return None
+        return {
+            "requested": self.covariance_tolerance,
+            "preset": choice.preset,
+            "evaluated_error": choice.covariance_error,
+            "error_band_hz": list(choice.error_band_hz),
+            "target": {
+                "first_tabulated_hz": choice.first_tabulated_hz,
+                "continuation_hz": choice.continuation_hz,
+                "slope_octave": choice.slope_octave,
+            },
+            "source": choice.source,
         }
 
 
