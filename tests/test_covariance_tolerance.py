@@ -32,7 +32,12 @@ from gwmock_noise.config import NoiseConfig, OutputConfig
 from gwmock_noise.data.covariance_tolerance import load_crossfade_errors
 from gwmock_noise.simulators import ColoredNoiseSimulator, UnsupportedCovarianceToleranceError
 from gwmock_noise.simulators import _covariance_tolerance as covariance_tolerance
-from gwmock_noise.simulators._covariance_tolerance import choose_crossfade_window, continued_target, error_band
+from gwmock_noise.simulators._covariance_tolerance import (
+    choose_crossfade_window,
+    continued_psd,
+    continued_target,
+    error_band,
+)
 from gwmock_noise.simulators._spectral import _resolve_bundled_psd
 
 TABLE = load_crossfade_errors()
@@ -137,14 +142,14 @@ def test_every_tolerance_at_8192_hz_is_refused(preset: str) -> None:
 
 def test_an_unevaluated_sampling_frequency_is_refused() -> None:
     """The errors depend on the rate, so an unevaluated rate is refused, not borrowed."""
-    with pytest.raises(UnsupportedCovarianceToleranceError, match="4096"):
+    with pytest.raises(UnsupportedCovarianceToleranceError, match=r"4096.*evaluate-covariance-error"):
         choose_crossfade_window(O4, 2048.0, 0.1)
 
 
 def test_a_bundled_curve_the_table_does_not_cover_is_refused() -> None:
     """A bundled curve with no evaluated errors is refused and the covered curves are named."""
     assert _resolve_bundled_psd("aLIGO_O4_low_projected_psd") is not None
-    with pytest.raises(UnsupportedCovarianceToleranceError, match="window_duration directly"):
+    with pytest.raises(UnsupportedCovarianceToleranceError, match="gwmock-noise evaluate-covariance-error"):
         choose_crossfade_window("aLIGO_O4_low_projected_psd", 4096.0, 0.1)
 
 
@@ -285,6 +290,7 @@ def test_a_table_starting_above_nyquist_is_continued_only_up_to_nyquist() -> Non
         ([10.0, 20.0, 30.0], [1e-46, np.nan, 1e-46], "non-negative at every point"),
         ([10.0, 20.0, 30.0], [1e-46, 0.0, 1e-46], "two or more points there, all positive"),
         ([10.0, 100.0, 1000.0], [1e-44, 1e-48, 1e-52], "two or more points there, all positive"),
+        ([1.0, 2.0, 4.0], [1e-44, 1e-45, 1e-46], "beyond 5.0 Hz"),
     ],
 )
 def test_a_table_that_cannot_be_continued_is_refused(frequencies: list, psd: list, message: str) -> None:
@@ -479,3 +485,15 @@ def test_the_power_law_is_fitted_to_exactly_the_points_the_table_check_guards() 
     psd[2] = 0.0
     with pytest.raises(ValueError, match="all positive"):
         continued_target(frequencies, psd, 4096.0, continuation_hz=5.0, slope_octave=2.0, continuation_points=8)
+
+
+def test_the_continued_psd_refuses_a_table_that_is_not_positive() -> None:
+    """Evaluated directly on a grid, the continuation refuses what it cannot fit, as the tabulated one does."""
+    with pytest.raises(ValueError, match="all positive"):
+        continued_psd(
+            np.array([10.0, 20.0, 30.0]),
+            np.array([1e-46, 0.0, 1e-46]),
+            np.linspace(0.0, 30.0, 7),
+            continuation_hz=5.0,
+            slope_octave=2.0,
+        )
