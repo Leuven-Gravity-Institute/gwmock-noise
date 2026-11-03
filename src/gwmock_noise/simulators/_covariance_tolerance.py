@@ -218,9 +218,9 @@ def _bundled_preset(psd_file: str | Path, spectra: dict[str, Any]) -> tuple[str,
     ):
         raise UnsupportedCovarianceToleranceError(
             f"No covariance errors are bundled for the PSD {str(psd_file)!r}. A covariance tolerance is supported "
-            f"only for the bundled curves {sorted(spectra)}, passed by name or as the bundled file's own path. For another PSD, choose "
-            f"window_duration directly, or evaluate the crossfade's covariance error for it and open a pull request "
-            f"to add it; see {DOCUMENTATION_SECTION}."
+            f"only for the bundled curves {sorted(spectra)}, passed by name or as the bundled file's own path. For "
+            f"another PSD, choose window_duration directly, or evaluate the crossfade's covariance error for it and "
+            f"open a pull request to add it; see {DOCUMENTATION_SECTION}."
         )
     digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
     if digest != spectra[preset]["sha256"]:
