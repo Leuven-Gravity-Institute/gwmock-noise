@@ -255,8 +255,8 @@ def _bundled_preset(psd_file: str | Path, spectra: dict[str, Any]) -> tuple[str,
             f"No covariance errors are bundled for the PSD {str(psd_file)!r}. A covariance tolerance is supported "
             f"only for the bundled curves {sorted(spectra)}, passed by name or as the bundled file's own path. For "
             f"another PSD, evaluate the crossfade's covariance error with `gwmock-noise evaluate-covariance-error`, "
-            f"which writes the target it evaluated and the ColoredNoiseSimulator settings that reproduce it; to add the "
-            f"PSD to the bundled errors, open a pull request with that result. See {DOCUMENTATION_SECTION}."
+            f"which writes the target it evaluated and the ColoredNoiseSimulator settings that reproduce it; to add "
+            f"the PSD to the bundled errors, open a pull request with that result. See {DOCUMENTATION_SECTION}."
         )
     digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
     if digest != spectra[preset]["sha256"]:
