@@ -43,12 +43,13 @@ def _psd_path(psd: str) -> Path:
 
 def _write_atomically(path: Path, text: str) -> None:
     """Replace ``path`` with ``text`` in one step, so an interruption leaves the old file or the new one."""
-    with tempfile.NamedTemporaryFile(
+    handle = tempfile.NamedTemporaryFile(  # noqa: SIM115 - closed below, before the replacement.
         "w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
-    ) as handle:
-        handle.write(text)
+    )
     temporary = Path(handle.name)
     try:
+        with handle:
+            handle.write(text)
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)

@@ -488,6 +488,16 @@ def test_an_interrupted_write_leaves_no_temporary_file(tmp_path: Path, monkeypat
     assert sorted(path.name for path in tmp_path.iterdir()) == ["result_target.txt"]
 
 
+def test_a_failed_write_leaves_the_result_and_no_temporary_file(tmp_path: Path) -> None:
+    """A write that fails part way, here on text UTF-8 cannot encode, keeps the old result and removes its temporary."""
+    out = tmp_path / "result.json"
+    out.write_text("old\n", encoding="utf-8")
+    with pytest.raises(UnicodeEncodeError):
+        cli_module._write_atomically(out, "new \ud800\n")
+    assert out.read_text(encoding="utf-8") == "old\n"
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["result.json"]
+
+
 def test_every_window_is_evaluated_from_the_psd_as_first_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A PSD changed during a run does not change the later windows, the recorded hash or the target."""
     bundled = _resolve_bundled_psd("ET_D_psd")
