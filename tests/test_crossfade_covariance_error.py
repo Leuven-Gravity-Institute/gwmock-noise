@@ -463,6 +463,31 @@ def test_the_cli_refuses_to_overwrite_the_psd(tmp_path: Path, name: str) -> None
     assert psd.read_bytes() == bundled.read_bytes()
 
 
+def test_the_cli_refuses_an_output_hard_linked_to_the_psd(tmp_path: Path) -> None:
+    """An output that is another name for the PSD file, as a hard link is, is refused like the PSD's own path."""
+    bundled = _resolve_bundled_psd("ET_D_psd")
+    assert bundled is not None
+    psd = tmp_path / "input.txt"
+    psd.write_bytes(bundled.read_bytes())
+    (tmp_path / "result_target.txt").hardlink_to(psd)
+    result = _invoke(str(psd), tmp_path / "result.json", "4")
+    assert result.exit_code != 0
+    assert "overwrite" in result.output
+    assert psd.read_bytes() == bundled.read_bytes()
+
+
+def test_an_interrupted_write_leaves_no_temporary_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A write interrupted before the replacement removes its temporary file."""
+
+    def interrupt(source, destination):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli_module.os, "replace", interrupt)
+    out = tmp_path / "result.json"
+    _invoke("ET_D_psd", out, "2")
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["result_target.txt"]
+
+
 def test_every_window_is_evaluated_from_the_psd_as_first_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A PSD changed during a run does not change the later windows, the recorded hash or the target."""
     bundled = _resolve_bundled_psd("ET_D_psd")

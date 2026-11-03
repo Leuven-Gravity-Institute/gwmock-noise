@@ -43,9 +43,15 @@ def _psd_path(psd: str) -> Path:
 
 def _write_atomically(path: Path, text: str) -> None:
     """Replace ``path`` with ``text`` in one step, so an interruption leaves the old file or the new one."""
-    temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_text(text, encoding="utf-8")
-    os.replace(temporary, path)
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
+    ) as handle:
+        handle.write(text)
+    temporary = Path(handle.name)
+    try:
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def evaluate_covariance_error(
@@ -76,7 +82,8 @@ def evaluate_covariance_error(
     path = _psd_path(psd)
     target_out = out.with_name(f"{out.stem}_target.txt")
     for written in (out, target_out):
-        if written.resolve() == path.resolve():
+        # By file identity, not by name: a symbolic or hard link to the PSD is the PSD.
+        if written.exists() and written.samefile(path):
             raise typer.BadParameter(f"writing {written} would overwrite the PSD it evaluates.", param_hint="--out")
     with tempfile.TemporaryDirectory() as directory:
         # Every window, the hash and the target come from one snapshot of the PSD, so a file changed during a long
