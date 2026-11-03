@@ -37,8 +37,19 @@ O4 = "aLIGO_O4_high_projected_psd"
 
 
 def _table() -> dict:
-    """Return a fresh copy of the bundled table."""
-    return copy.deepcopy(load_crossfade_errors())
+    """Return the bundled table as the data release alone gives it, without any merged evaluation.
+
+    The merge rules are tested against a fixed starting point, so that evaluations merged into the bundled table
+    later do not change what these tests exercise.
+    """
+    table = copy.deepcopy(load_crossfade_errors())
+    for spectrum in table["spectra"].values():
+        for key, rate in list(spectrum["sampling_frequencies"].items()):
+            rate["windows"] = [row for row in rate["windows"] if row["source"] == RELEASE_SOURCE]
+            if not rate["windows"]:
+                del spectrum["sampling_frequencies"][key]
+    table["sources"] = {RELEASE_SOURCE: table["sources"][RELEASE_SOURCE]}
+    return table
 
 
 def _record(preset: str = ET_D, sampling_frequency: float = 8192.0, windows: list | None = None) -> dict:
@@ -250,6 +261,8 @@ def test_a_result_the_command_wrote_merges(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     record = json.loads(out.read_text(encoding="utf-8"))
     table = _table()
+    # The installed version depends on the checkout (a tagged commit reports a release), so set it both ways.
+    record["gwmock_noise_version"] = "0.18.4-post.3+8f8b4bb"
     with pytest.raises(EvaluationMismatchError, match="not a plain release version"):
         _merge(table, record)
     record["gwmock_noise_version"] = "0.19.0"

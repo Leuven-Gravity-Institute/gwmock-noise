@@ -862,8 +862,13 @@ The evaluated windows at 4096 Hz, with their total covariance errors:
 An asterisk marks an evaluation whose cyclic part did not converge. Such a value
 leaves out part of the error, so it is not an upper bound, and the simulator
 refuses any tolerance that only an unconverged evaluation meets. The same holds
-for every longer window (2048 s and 4096 s, not shown) and for every window
-evaluated at 8192 Hz, so a tolerance at 8192 Hz is always refused.
+for every longer window (2048 s and 4096 s, not shown).
+
+At 8192 Hz the only converged window is 8 s, evaluated with gwmock-noise 0.19.0
+and merged into the table, with errors close to those at 4096 Hz: 5.4e-2,
+1.9e-2, 1.8e-2 and 2.6e-2 for the four curves above, in that order. A tolerance
+at 8192 Hz therefore selects 8 s, or is refused if it is tighter. Longer windows
+at 8192 Hz do not converge within the method's harmonic limit.
 
 ### When a tolerance is refused
 
