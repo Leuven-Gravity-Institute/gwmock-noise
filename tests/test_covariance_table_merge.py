@@ -475,3 +475,18 @@ def test_a_committed_file_that_is_not_a_result_names_itself(tmp_path: Path, cont
         EvaluationMismatchError, match=rf"{tmp_path.name}/broken\.json: not an evaluate-covariance-error"
     ):
         build_table(_table(), tmp_path)
+
+
+def test_an_unreadable_committed_file_names_itself(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A committed file that cannot be read is reported by name, like one that is not a result."""
+    broken = _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True)]))
+    read_bytes = Path.read_bytes
+
+    def refuse(path: Path) -> bytes:
+        if path == broken:
+            raise PermissionError(13, "Permission denied", str(path))
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", refuse)
+    with pytest.raises(EvaluationMismatchError, match=rf"{tmp_path.name}/{broken.name}: cannot be read"):
+        build_table(_table(), tmp_path)

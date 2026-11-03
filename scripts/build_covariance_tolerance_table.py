@@ -255,11 +255,15 @@ def main(argv: list[str] | None = None) -> int:
     except EvaluationMismatchError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    except OSError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     except (ValueError, KeyError, TypeError) as exc:
         # A file that is not what evaluate-covariance-error writes: not JSON, or JSON of another shape.
         # Committed evaluations are reported by build_table with their names, so this is the --merge input.
         print(
-            f"error: {args.merge}: not an evaluate-covariance-error result ({type(exc).__name__}: {exc}).",
+            f"error: {args.merge or 'the table'}: not an evaluate-covariance-error result "
+            f"({type(exc).__name__}: {exc}).",
             file=sys.stderr,
         )
         return 1

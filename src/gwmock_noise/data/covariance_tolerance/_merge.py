@@ -254,7 +254,10 @@ def build_table(release_table: dict[str, Any], directory: Path) -> dict[str, Any
                     )
     for path in sorted(directory.glob("*.json")):
         label = f"{directory.name}/{path.name}"
-        data = path.read_bytes()
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            raise EvaluationMismatchError(f"{label}: cannot be read ({exc}).") from exc
         try:
             record = json.loads(data)
             merge_evaluation(table, record, file=label, sha256=hashlib.sha256(data).hexdigest())
