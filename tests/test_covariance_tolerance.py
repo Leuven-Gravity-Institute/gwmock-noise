@@ -58,6 +58,19 @@ def test_the_table_names_its_source() -> None:
     assert TABLE["target"] == {"continuation_hz": 5.0, "slope_octave": 2.0, "continuation_points": 256}
 
 
+#: SHA-256 of the bundled table as canonical JSON. The window-selection tests derive their
+#: expectations from the table itself, so an accidental edit of a row would leave them green;
+#: this pin catches it. Update it only together with a table that
+#: ``scripts/build_covariance_tolerance_table.py --check`` reports as matching the release.
+TABLE_DIGEST = "553a68b362be0942a6905da89ed554dac512d34beff09b2ed5007420639a7394"
+
+
+def test_the_table_is_the_one_checked_against_the_release() -> None:
+    """The bundled table is exactly the one last verified against the data release."""
+    canonical = json.dumps(TABLE, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    assert hashlib.sha256(canonical).hexdigest() == TABLE_DIGEST
+
+
 @pytest.mark.parametrize("preset", PRESETS)
 def test_each_entry_matches_the_bundled_curve(preset: str) -> None:
     """The bundled curve is byte for byte the one its errors were evaluated for."""
