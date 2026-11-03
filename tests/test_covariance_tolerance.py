@@ -22,6 +22,7 @@ import copy
 import hashlib
 import json
 import math
+import re
 import shutil
 from importlib import resources
 from pathlib import Path
@@ -446,6 +447,19 @@ def test_the_documented_table_quotes_the_bundled_errors() -> None:
             f"{row['eps_total']:.1e}".replace("e-0", "e-") + ("\\*" if not row["converged"] else "") for row in rows
         ]
         assert cells == expected
+
+    # The 8192 Hz sentence quotes the 8 s errors in the table's row order.
+    quoted = re.search(
+        r"At 8192 Hz the only converged window is 8 s.*?:\s*(.*?) for the four curves", section, re.DOTALL
+    )
+    assert quoted is not None
+    numbers = re.findall(r"\d\.\de-\d+", quoted.group(1))
+    expected_8192 = []
+    for line in lines:
+        preset = line.strip("|").split("|")[0].strip().strip("`")
+        row = next(row for row in _rows(preset, 8192) if row["window_duration"] == 8.0)
+        expected_8192.append(f"{row['eps_total']:.1e}".replace("e-0", "e-"))
+    assert numbers == expected_8192
 
 
 def test_a_curve_tabulated_below_five_hertz_is_replaced_there_by_the_flat_value() -> None:

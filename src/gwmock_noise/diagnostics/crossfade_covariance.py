@@ -23,6 +23,9 @@ pairs start to straddle zero or the Nyquist frequency. A sum that reaches the ca
 whose straddling pairs lie beyond the cap so that it stops at the first check, omits part of
 the cyclic error and is marked not converged: it is not an upper bound. Long windows stop the
 second way, at the first check or soon after it (16 or 32 harmonics for the bundled curves).
+A window with no more distinct harmonics than the cap is summed in full instead: every pair is
+included, so the sum is complete and marked converged, whether or not the stopping rule was
+reached (an 8 s window at 8192 Hz, with 16384 distinct harmonics, is one).
 
 This is the method, and the code, of
 
@@ -98,9 +101,10 @@ class CrossfadeCovarianceError:
         analysis_band: The error over the analysis band up to at most the Nyquist frequency,
             which includes the simulator's roll-off there.
         harmonics: How many cyclic harmonics were summed.
-        converged: Whether the cyclic sum met the stopping rule, with every pair that
-            straddles zero or the Nyquist frequency summed, before the cap. When it did not,
-            the errors omit part of the cyclic error and are not upper bounds.
+        converged: Whether the cyclic sum is complete: it met the stopping rule, with every pair
+            that straddles zero or the Nyquist frequency summed, before the cap, or it summed
+            every distinct harmonic of the window. When neither holds, the errors omit part of
+            the cyclic error and are not upper bounds.
     """
 
     window_duration: float
