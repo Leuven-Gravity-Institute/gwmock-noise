@@ -902,23 +902,23 @@ simulator = ColoredNoiseSimulator(
 )
 ```
 
-The PSD table must be finite and non-negative, positive with two or more points
-in the range the power law is fitted over when it starts above 5 Hz, and must
-cover the analysis band, which must start at 1 Hz or above, clear of the
-simulator's taper above 0 Hz, hold at least two frequency bins, and not be all
-zero; anything else is refused, since the error would measure the table's end,
-the taper, or a target that is not a number, or would not be defined. The PSD's
-overall scale does not matter, since the error is relative to it, but a table
-whose band lies more than about 160 orders of magnitude below its peak cannot be
-evaluated in double precision, as the error's square overflows or the band's
-norm underflows, and is refused. A table that stops below the Nyquist frequency
-is generated as zero beyond its last point, as its target is. The error is
-measured over the analysis band, cut 4 Hz below the Nyquist frequency; the error
-over the band up to the Nyquist frequency, which includes the simulator's
-roll-off there, is recorded beside it. The JSON result also records the
-gwmock-noise version, the settings and the SHA-256 of the PSD file, and is
-rewritten after each window, so an interrupted run keeps the windows it
-finished.
+The PSD table must be finite and non-negative, extend beyond 5 Hz, be positive
+with two or more points in the range the power law is fitted over when it starts
+above 5 Hz, and must cover the analysis band, which must start at 1 Hz or above,
+clear of the simulator's taper above 0 Hz, hold at least two frequency bins, and
+not be all zero; anything else is refused, since the error would measure the
+table's end, the taper, or a target that is not a number, or would not be
+defined. The PSD's overall scale does not matter, since the error is relative to
+it, but a table whose band lies more than about 160 orders of magnitude below
+its peak cannot be evaluated in double precision, as the error's square
+overflows or the band's norm underflows, and is refused. A table that stops
+below the Nyquist frequency is generated as zero beyond its last point, as its
+target is. The error is measured over the analysis band, cut 4 Hz below the
+Nyquist frequency; the error over the band up to the Nyquist frequency, which
+includes the simulator's roll-off there, is recorded beside it. The JSON result
+also records the gwmock-noise version, the settings and the SHA-256 of the PSD
+file, and is rewritten after each window, so an interrupted run keeps the
+windows it finished.
 
 The error is computed exactly, from the algebra of the crossfade, not from
 realizations, but the cost grows quickly with the window. At 4096 Hz on the
