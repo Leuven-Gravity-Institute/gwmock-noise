@@ -247,6 +247,20 @@ def test_a_table_from_zero_hertz_is_continued_and_the_continuation_is_idempotent
     np.testing.assert_array_equal(np.interp(frequencies, *twice), np.interp(frequencies, *once))
 
 
+def test_a_table_starting_above_nyquist_is_continued_only_up_to_nyquist() -> None:
+    """The continuation towards a first point above the Nyquist frequency stops there, as the target does."""
+    frequencies = np.array([3000.0, 4000.0, 5000.0])
+    psd = np.array([1e-46, 2e-46, 3e-46])
+    settings = {"continuation_hz": 5.0, "slope_octave": 2.0, "continuation_points": 256}
+
+    grid, target = continued_target(frequencies, psd, 4096.0, **settings)
+
+    assert grid[0] == 0.0
+    assert grid[-1] == 2048.0
+    assert np.all(np.diff(grid) > 0)
+    assert np.all(target > 0)
+
+
 @pytest.mark.parametrize(
     ("frequencies", "psd", "message"),
     [
