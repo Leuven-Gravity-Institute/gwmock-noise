@@ -267,7 +267,7 @@ def _with_smaller_id(record: dict, bound: str) -> dict:
         varied["psd"]["argument"] = f"{varied['psd']['argument']}#{attempt}"
         if source_id(hashlib.sha256(_bytes(varied)).hexdigest()) < bound:
             return varied
-    pytest.fail(f"no variation of the record has an id below {bound}")
+    raise AssertionError(f"no variation of the record has an id below {bound}")
 
 
 def _bytes(record: dict) -> bytes:
@@ -490,3 +490,35 @@ def test_an_unreadable_committed_file_names_itself(tmp_path: Path, monkeypatch: 
     monkeypatch.setattr(Path, "read_bytes", refuse)
     with pytest.raises(EvaluationMismatchError, match=rf"{tmp_path.name}/{broken.name}: cannot be read"):
         build_table(_table(), tmp_path)
+
+
+def test_an_empty_error_band_is_refused() -> None:
+    """A rate whose cut band is empty (5 Hz to 4 Hz at 16 Hz) is refused, not stored."""
+    with pytest.raises(EvaluationMismatchError, match="empty"):
+        _merge(_table(), _record(sampling_frequency=16.0, windows=[(8.0, 0.01, True)]))
+
+
+def test_two_results_with_one_source_id_are_refused() -> None:
+    """Different bytes whose SHA-256 share the 12-character prefix would share a source; the second is refused."""
+    table = _table()
+    first, second = "a" * 12 + "0" * 52, "a" * 12 + "1" * 52
+    merge_evaluation(table, _record(windows=[(8.0, 0.02, True)]), file="evaluations/one.json", sha256=first)
+    before = copy.deepcopy(table)
+    with pytest.raises(EvaluationMismatchError, match="source id"):
+        merge_evaluation(table, _record(windows=[(16.0, 0.01, True)]), file="evaluations/two.json", sha256=second)
+    assert table == before
+
+
+def test_an_interrupted_write_leaves_no_evaluation_behind(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The new result is written under a temporary name and renamed, so an interruption leaves no partial ``.json``."""
+    from gwmock_noise.data.covariance_tolerance import _merge as merge_module
+
+    def interrupt(source: object, destination: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(merge_module.os, "replace", interrupt)
+    directory = tmp_path / "evaluations"
+    result = _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(4.0, 0.05, True)]))
+    with pytest.raises(KeyboardInterrupt):
+        add_evaluation(_table(), directory, result)
+    assert list(directory.glob("*.json")) == []

@@ -1,6 +1,3 @@
-# Merged covariance-error evaluations are committed byte for byte: the table records each
-# file's SHA-256, so no hook may reformat them.
-exclude: ^src/gwmock_noise/data/covariance_tolerance/evaluations/
 repos:
     - repo: https://github.com/pre-commit/pre-commit-hooks
       rev: v6.0.0
@@ -18,8 +15,11 @@ repos:
           - id: check-toml
           - id: debug-statements
           - id: end-of-file-fixer
+            exclude: &evaluations ^src/gwmock_noise/data/covariance_tolerance/evaluations/
           - id: mixed-line-ending
+            exclude: *evaluations
           - id: trailing-whitespace
+            exclude: *evaluations
           - id: check-docstring-first
           - id: check-json
 
@@ -40,6 +40,9 @@ repos:
       rev: v3.9.10
       hooks:
           - id: prettier
+            # Merged covariance-error evaluations are committed byte for byte (the table records each
+            # file's SHA-256), so the hooks that rewrite files skip them; check-json still checks them.
+            exclude: *evaluations
 
     - repo: https://github.com/DavidAnson/markdownlint-cli2
       rev: v0.24.0

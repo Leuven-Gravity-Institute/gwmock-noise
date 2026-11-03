@@ -47,6 +47,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import tarfile
@@ -225,6 +226,34 @@ def build(archive: Path) -> dict[str, Any]:
     }
 
 
+def write_atomically(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text`` in one step, so an interruption leaves the old table or the new one."""
+    partial = path.with_name(f"{path.name}.partial")
+    try:
+        partial.write_text(text, encoding="utf-8")
+        os.replace(partial, path)
+    finally:
+        partial.unlink(missing_ok=True)
+
+
+def write_table(text: str, added: Path | None) -> int:
+    """Write the table; if that fails, remove the result ``--merge`` just added, and report the failure.
+
+    A result copied into the evaluations without the table that cites it would make ``--check`` fail.
+    """
+    try:
+        write_atomically(TABLE_PATH, text)
+    except BaseException as exc:
+        if added is not None:
+            added.unlink(missing_ok=True)
+        if not isinstance(exc, OSError):
+            raise
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"wrote {TABLE_PATH.relative_to(REPO_ROOT)}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Build the table, print it, and write it when asked."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -245,6 +274,7 @@ def main(argv: list[str] | None = None) -> int:
             archive = Path(directory) / "results.tar.gz"
             fetch_archive(archive)
         release = build(archive)
+    added = None
     try:
         if args.merge is not None:
             added, table = add_evaluation(release, EVALUATIONS_DIR, args.merge)
@@ -277,8 +307,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"{TABLE_PATH.relative_to(REPO_ROOT)} matches the release and the committed evaluations.")
     elif args.write:
-        TABLE_PATH.write_text(text, encoding="utf-8")
-        print(f"wrote {TABLE_PATH.relative_to(REPO_ROOT)}")
+        return write_table(text, added)
     else:
         sys.stdout.write(text)
     return 0

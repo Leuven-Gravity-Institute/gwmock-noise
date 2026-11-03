@@ -26,6 +26,7 @@ import copy
 import hashlib
 import json
 import math
+import os
 import re
 import tempfile
 from pathlib import Path
@@ -142,6 +143,11 @@ def _check_configuration(table: dict[str, Any], record: dict[str, Any], preset: 
     if not sampling_frequency.is_integer() or sampling_frequency <= 0:
         raise EvaluationMismatchError(f"the sampling frequency {sampling_frequency!r} Hz is not a positive integer.")
     expected_band = list(error_band((band[0], band[1]), sampling_frequency))
+    if expected_band[0] >= expected_band[1]:
+        raise EvaluationMismatchError(
+            f"at {sampling_frequency!r} Hz the error band {expected_band} Hz of {preset!r} is empty: the Nyquist "
+            f"frequency, less its guard, lies below the band."
+        )
     rate = table["spectra"][preset]["sampling_frequencies"].get(str(round(sampling_frequency)))
     if rate is not None and rate["error_band_hz"] != expected_band:
         raise EvaluationMismatchError(
@@ -181,6 +187,11 @@ def merge_evaluation(table: dict[str, Any], record: dict[str, Any], *, file: str
     rates = table["spectra"][preset]["sampling_frequencies"]
     rate = rates.get(key, {"error_band_hz": list(error_band((band[0], band[1]), float(key))), "windows": []})
     source = source_id(sha256)
+    if source in table["sources"] and table["sources"][source].get("sha256") != sha256:
+        raise EvaluationMismatchError(
+            f"the source id {source} already names {table['sources'][source]['file']}, whose bytes differ: two "
+            f"results share the first 12 characters of their SHA-256. Evaluate again, which changes the bytes."
+        )
     rows = {row["window_duration"]: row for row in rate["windows"]}
     for window in record["windows"]:
         duration = float(window["window_duration"])
@@ -311,6 +322,11 @@ def add_evaluation(release_table: dict[str, Any], directory: Path, result: Path)
             f"window it holds is already in the table, converged or no less converged."
         )
     name = f"{preset}__{round(float(record['sampling_frequency']))}__{sha256[:12]}.json"
+    if (directory / name).exists():
+        raise EvaluationMismatchError(
+            f"{directory.name}/{name} is already committed with other bytes: two results share the first 12 "
+            f"characters of their SHA-256. Evaluate again, which changes the bytes."
+        )
     # The table is rebuilt with the new file in a staging copy first, so a result the rebuild refuses is never
     # written where it would make every later --check fail.
     with tempfile.TemporaryDirectory() as scratch:
@@ -321,5 +337,11 @@ def add_evaluation(release_table: dict[str, Any], directory: Path, result: Path)
         (staged / name).write_bytes(data)
         table = build_table(release_table, staged)
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / name).write_bytes(data)
+    # Written under a name build_table ignores and renamed, so an interruption leaves no partial result to refuse.
+    partial = directory / f"{name}.partial"
+    try:
+        partial.write_bytes(data)
+        os.replace(partial, directory / name)
+    finally:
+        partial.unlink(missing_ok=True)
     return directory / name, table
