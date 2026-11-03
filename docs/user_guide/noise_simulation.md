@@ -775,8 +775,8 @@ measures them together, relative to the target, over an analysis band. It was
 evaluated for this simulator in
 
 > I. C. F. Wong, _Choosing a generator for streaming Gaussian noise in
-> gravitational-wave mock data: accuracy, cost and reproducibility_; data
-> release
+> gravitational-wave mock data: accuracy, cost and reproducibility_,
+> [arXiv:2611.01624](https://arxiv.org/abs/2611.01624); data release
 > [doi:10.5281/zenodo.23243286](https://doi.org/10.5281/zenodo.23243286).
 
 Instead of a window, you can pass the largest error you accept. The simulator

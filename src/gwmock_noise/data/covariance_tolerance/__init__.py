@@ -9,8 +9,8 @@ curve; the table records both. It is what
 ``ColoredNoiseSimulator(covariance_tolerance=...)`` chooses a window from.
 
 Source: I. C. F. Wong, "Choosing a generator for streaming Gaussian noise in
-gravitational-wave mock data: accuracy, cost and reproducibility", data release
-doi:10.5281/zenodo.23243286.
+gravitational-wave mock data: accuracy, cost and reproducibility", arXiv:2611.01624;
+data release doi:10.5281/zenodo.23243286.
 
 Regenerate it with ``scripts/build_covariance_tolerance_table.py --write``.
 """

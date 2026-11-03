@@ -143,7 +143,7 @@ class ColoredNoiseSimulator(ConfigurableNoiseSimulator):
 
         I. C. F. Wong, "Choosing a generator for streaming Gaussian noise in
         gravitational-wave mock data: accuracy, cost and reproducibility",
-        data: doi:10.5281/zenodo.23243286.
+        arXiv:2611.01624; data: doi:10.5281/zenodo.23243286.
 
     Those errors hold for the paper's configuration, which the simulator then adopts: the
     target is generated from zero to the Nyquist frequency and held flat below 5 Hz at its

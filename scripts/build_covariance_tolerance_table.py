@@ -6,7 +6,7 @@ Every number in that table is copied from the data release of
 
     I. C. F. Wong, "Choosing a generator for streaming Gaussian noise in
     gravitational-wave mock data: accuracy, cost and reproducibility",
-    data: doi:10.5281/zenodo.23243286
+    arXiv:2611.01624; data: doi:10.5281/zenodo.23243286
 
 and this script is how the copy is made, so the table can be checked against the release
 rather than trusted.
