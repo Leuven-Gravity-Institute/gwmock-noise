@@ -218,7 +218,7 @@ def _bundled_preset(psd_file: str | Path, spectra: dict[str, Any]) -> tuple[str,
     ):
         raise UnsupportedCovarianceToleranceError(
             f"No covariance errors are bundled for the PSD {str(psd_file)!r}. A covariance tolerance is supported "
-            f"only for the bundled curves {sorted(spectra)}, passed by name. For another PSD, choose "
+            f"only for the bundled curves {sorted(spectra)}, passed by name or as the bundled file's own path. For another PSD, choose "
             f"window_duration directly, or evaluate the crossfade's covariance error for it and open a pull request "
             f"to add it; see {DOCUMENTATION_SECTION}."
         )
@@ -239,7 +239,7 @@ def choose_crossfade_window(
     """Return the shortest evaluated window whose covariance error meets the tolerance.
 
     Args:
-        psd_file: A bundled detector curve, by name.
+        psd_file: A bundled detector curve, by name or as the path of the bundled file itself.
         sampling_frequency: The sampling frequency, in hertz.
         covariance_tolerance: The largest acceptable total covariance error, positive.
 
