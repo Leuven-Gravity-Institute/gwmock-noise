@@ -228,6 +228,8 @@ def continued_target(  # noqa: PLR0913 - the table, the rate and the three conti
     continuation = np.geomspace(continuation_hz, first, continuation_points) if first > 0.0 else [continuation_hz]
     end = [nyquist] if table_frequencies[-1] >= nyquist else []
     grid = np.unique(np.concatenate(([0.0], continuation, table_frequencies[table_frequencies <= nyquist], end)))
+    # A first point above the Nyquist frequency would carry the continuation past it; the target stops there.
+    grid = grid[grid <= nyquist]
     return grid, continued_psd(
         table_frequencies, table_psd, grid, continuation_hz=continuation_hz, slope_octave=slope_octave
     )
