@@ -1,0 +1,3 @@
+# The bundled PSDs are data, and the covariance-tolerance table pins their exact bytes by SHA-256.
+# Never convert their line endings on checkout.
+src/gwmock_noise/data/psd/*.txt -text
