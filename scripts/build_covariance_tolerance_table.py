@@ -1,15 +1,17 @@
-"""Build the crossfade covariance-error table from the published data release.
+"""Build the crossfade covariance-error table from the published data release and merged evaluations.
 
 ``ColoredNoiseSimulator(covariance_tolerance=...)`` chooses its crossfade window from a
 small table bundled at ``src/gwmock_noise/data/covariance_tolerance/crossfade_errors.json``.
-Every number in that table is copied from the data release of
+Its numbers are copied from the data release of
 
     I. C. F. Wong, "Choosing a generator for streaming Gaussian noise in
     gravitational-wave mock data: accuracy, cost and reproducibility",
     arXiv:2611.01624; data: doi:10.5281/zenodo.23243286
 
-and this script is how the copy is made, so the table can be checked against the release
-rather than trusted.
+or taken from ``gwmock-noise evaluate-covariance-error`` results committed under
+``evaluations/`` next to it, and every row names which. This script is how the table is made
+from those sources, so it can be checked against them rather than trusted; ``--merge`` adds a
+result after the checks of :mod:`gwmock_noise.data.covariance_tolerance._merge`.
 
 From the release archive ``results.tar.gz`` it reads the evaluated covariance errors
 ``results/exact/<curve>__specified__<rate>.json`` of the four detector curves that
@@ -30,9 +32,11 @@ Usage::
 
     uv run python scripts/build_covariance_tolerance_table.py --archive results.tar.gz --check
     uv run python scripts/build_covariance_tolerance_table.py --archive results.tar.gz --write
+    uv run python scripts/build_covariance_tolerance_table.py --archive results.tar.gz --merge result.json
 
-``--check`` compares the table built from the release with the bundled one, value by value,
-and exits non-zero on any difference. ``--write`` rewrites the bundled table; the pre-commit
+``--check`` compares the table built from the release and the committed evaluations with
+the bundled one, value by value, and exits non-zero on any difference. ``--merge`` checks a
+result, copies it byte for byte into ``evaluations/``, and rewrites the table. ``--write`` rewrites the bundled table; the pre-commit
 prettier hook then reformats it, which changes its layout but not its values. Without
 ``--archive`` the archive is downloaded from the Zenodo record. Its MD5 is checked against
 the published value either way.
@@ -43,6 +47,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import tarfile
@@ -51,12 +56,22 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from gwmock_noise.data.covariance_tolerance import SCHEMA_VERSION
+from gwmock_noise.data.covariance_tolerance._merge import (
+    RELEASE_SOURCE,
+    EvaluationMismatchError,
+    add_evaluation,
+    build_table,
+)
 from gwmock_noise.simulators._covariance_tolerance import error_band
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 #: Where the bundled table lives.
 TABLE_PATH = REPO_ROOT / "src" / "gwmock_noise" / "data" / "covariance_tolerance" / "crossfade_errors.json"
+
+#: Evaluations merged into the table, committed verbatim.
+EVALUATIONS_DIR = TABLE_PATH.parent / "evaluations"
 
 #: The bundled PSD presets.
 PSD_DIR = REPO_ROOT / "src" / "gwmock_noise" / "data" / "psd"
@@ -180,13 +195,14 @@ def build(archive: Path) -> dict[str, Any]:
             analysis_commits.add(record["analysis_commit"])
             rates[str(sampling_frequency)] = {
                 "error_band_hz": list(error_band(band, sampling_frequency)),
-                "windows": crossfade_rows(record),
+                "windows": [{**row, "source": RELEASE_SOURCE} for row in crossfade_rows(record)],
             }
         # The table pins the bundled file, so the bundled file must be the curve the release evaluated.
         bundled = (PSD_DIR / f"{preset}.txt").read_bytes()
         if bundled != read_curve(archive, curve):
             raise ValueError(f"the bundled {preset}.txt differs from psd/{curve}.txt, the curve the release evaluated.")
         spectra[preset] = {
+            "analysis_band_hz": list(band),
             "release_curve": curve,
             "sha256": hashlib.sha256(bundled).hexdigest(),
             "sampling_frequencies": rates,
@@ -194,16 +210,80 @@ def build(archive: Path) -> dict[str, Any]:
     if len(generator_commits) != 1:
         raise ValueError(f"the files evaluated different generators: {sorted(generator_commits)}.")
     return {
-        "source": {
-            "doi": DOI,
-            "archive": "results.tar.gz",
-            "archive_md5": ARCHIVE_MD5,
-            "generator_commit": generator_commits.pop(),
-            "analysis_commits": sorted(analysis_commits),
+        "schema_version": SCHEMA_VERSION,
+        "sources": {
+            RELEASE_SOURCE: {
+                "kind": "release",
+                "doi": DOI,
+                "archive": "results.tar.gz",
+                "archive_md5": ARCHIVE_MD5,
+                "generator_commit": generator_commits.pop(),
+                "analysis_commits": sorted(analysis_commits),
+            }
         },
         "target": TARGET,
         "spectra": spectra,
     }
+
+
+def write_atomically(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text`` in one step, so an interruption leaves the old table or the new one."""
+    partial = path.with_name(f"{path.name}.partial")
+    try:
+        partial.write_text(text, encoding="utf-8")
+        os.replace(partial, path)
+    finally:
+        partial.unlink(missing_ok=True)
+
+
+def _table_is(text: str) -> bool | None:
+    """Return whether the bundled table on disk is ``text``, or ``None`` if it cannot be read."""
+    try:
+        return TABLE_PATH.read_text(encoding="utf-8") == text
+    except OSError:
+        return None
+
+
+def _roll_back(added: Path, text: str) -> None:
+    """Remove the result ``--merge`` added, but only if the table on disk is confirmed not to be the new one.
+
+    Decided from the file, not from where the write stopped: an interruption after the replacement leaves the new
+    table, which cites the result, and the result must then stay. If the table cannot be read, its state is unknown,
+    and the result is kept.
+    """
+    state = _table_is(text)
+    if state is None:
+        print(
+            f"error: could not read {TABLE_PATH} after the failed write; kept {added}. Run --check, and --write or "
+            f"remove the file to repair.",
+            file=sys.stderr,
+        )
+    elif state is False:
+        try:
+            added.unlink(missing_ok=True)
+        except OSError as cleanup:
+            print(f"error: could not remove {added} after the failed write ({cleanup}).", file=sys.stderr)
+
+
+def write_table(text: str, added: Path | None) -> int:
+    """Write the table; if that fails, remove the result ``--merge`` just added, and report the failure.
+
+    A result copied into the evaluations without the table that cites it would make ``--check`` fail.
+    """
+    written = False
+    try:
+        write_atomically(TABLE_PATH, text)
+        written = True
+    except OSError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        if added is not None and not written:
+            _roll_back(added, text)
+    if added is not None:
+        print(f"added {added.relative_to(REPO_ROOT)}")
+    print(f"wrote {TABLE_PATH.relative_to(REPO_ROOT)}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -213,23 +293,52 @@ def main(argv: list[str] | None = None) -> int:
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--write", action="store_true", help=f"Rewrite {TABLE_PATH.relative_to(REPO_ROOT)}.")
     action.add_argument("--check", action="store_true", help="Compare with the bundled table; exit 1 if it differs.")
+    action.add_argument(
+        "--merge",
+        type=Path,
+        metavar="RESULT",
+        help="Add an evaluate-covariance-error result to the evaluations and rewrite the table.",
+    )
     args = parser.parse_args(argv)
     with tempfile.TemporaryDirectory() as directory:
         archive = args.archive
         if archive is None:
             archive = Path(directory) / "results.tar.gz"
             fetch_archive(archive)
-        table = build(archive)
+        release = build(archive)
+    added = None
+    try:
+        if args.merge is not None:
+            added, table = add_evaluation(release, EVALUATIONS_DIR, args.merge)
+            args.write = True
+        else:
+            table = build_table(release, EVALUATIONS_DIR)
+    except EvaluationMismatchError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except (ValueError, KeyError, TypeError) as exc:
+        # A file that is not what evaluate-covariance-error writes: not JSON, or JSON of another shape.
+        # Committed evaluations are reported by build_table with their names, so this is the --merge input.
+        print(
+            f"error: {args.merge or 'the table'}: not an evaluate-covariance-error result "
+            f"({type(exc).__name__}: {exc}).",
+            file=sys.stderr,
+        )
+        return 1
     text = json.dumps(table, indent=4, sort_keys=True) + "\n"
     if args.check:
         bundled = json.loads(TABLE_PATH.read_text(encoding="utf-8"))
         if bundled != table:
-            print(f"{TABLE_PATH.relative_to(REPO_ROOT)} differs from the table built from the release.")
+            print(
+                f"{TABLE_PATH.relative_to(REPO_ROOT)} differs from the table built from the release and the evaluations."
+            )
             return 1
-        print(f"{TABLE_PATH.relative_to(REPO_ROOT)} matches the release.")
+        print(f"{TABLE_PATH.relative_to(REPO_ROOT)} matches the release and the committed evaluations.")
     elif args.write:
-        TABLE_PATH.write_text(text, encoding="utf-8")
-        print(f"wrote {TABLE_PATH.relative_to(REPO_ROOT)}")
+        return write_table(text, added)
     else:
         sys.stdout.write(text)
     return 0

@@ -1,0 +1,663 @@
+"""Tests for merging an evaluated covariance error into the bundled table.
+
+A merge extends the table for the curves it covers, and records where each row comes from. It
+must refuse a result that describes another configuration, never replace a converged row, and
+replace an unconverged row only with a converged one. The table must not depend on the order in
+which evaluations are merged, so that ``--merge`` writes the table ``--check`` rebuilds.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import itertools
+import json
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+from gwmock_noise.cli.main import app
+from gwmock_noise.data.covariance_tolerance import describe_source, load_crossfade_errors
+from gwmock_noise.data.covariance_tolerance._merge import (
+    RELEASE_SOURCE,
+    EvaluationMismatchError,
+    add_evaluation,
+    build_table,
+    contributes,
+    merge_evaluation,
+    method_constants,
+    source_id,
+)
+from gwmock_noise.simulators import ColoredNoiseSimulator
+from gwmock_noise.simulators import _covariance_tolerance as covariance_tolerance
+
+ET_D = "ET_D_psd"
+O4 = "aLIGO_O4_high_projected_psd"
+
+
+def _table() -> dict:
+    """Return a fresh copy of the bundled table."""
+    return copy.deepcopy(load_crossfade_errors())
+
+
+def _record(preset: str = ET_D, sampling_frequency: float = 8192.0, windows: list | None = None) -> dict:
+    """Return a result in the shape ``evaluate-covariance-error`` writes, for a bundled curve."""
+    table = load_crossfade_errors()
+    band = table["spectra"][preset]["analysis_band_hz"]
+    error_band = covariance_tolerance.error_band((band[0], band[1]), sampling_frequency)
+    if windows is None:
+        windows = [(8.0, 0.02, True), (16.0, 0.01, True)]
+    return {
+        "gwmock_noise_version": "0.19.0",
+        "psd": {"argument": preset, "file": f"{preset}.txt", "sha256": table["spectra"][preset]["sha256"]},
+        "sampling_frequency": sampling_frequency,
+        "analysis_band_hz": list(band),
+        "target": table["target"],
+        "method": method_constants(),
+        "windows": [
+            {"window_duration": duration, "eps_total": error, "converged": converged, "error_band_hz": list(error_band)}
+            for duration, error, converged in windows
+        ],
+    }
+
+
+def _merge(table: dict, record: dict) -> str:
+    """Merge a record as if read from a file, and return its source id."""
+    data = json.dumps(record).encode("utf-8")
+    sha256 = hashlib.sha256(data).hexdigest()
+    merge_evaluation(table, record, file="evaluations/result.json", sha256=sha256)
+    return f"evaluation-{sha256[:12]}"
+
+
+def _rows(table: dict, preset: str, rate: str) -> dict[float, dict]:
+    """Return one curve's rows at one rate, by window."""
+    return {row["window_duration"]: row for row in table["spectra"][preset]["sampling_frequencies"][rate]["windows"]}
+
+
+def test_windows_at_a_new_rate_are_added_with_their_source() -> None:
+    """The release's 8192 Hz entry gains the evaluated short windows, in order, each naming the evaluation."""
+    table = _table()
+    source = _merge(table, _record())
+
+    rows = _rows(table, ET_D, "8192")
+    assert list(rows) == [8.0, 16.0, 2048.0, 4096.0]
+    assert rows[8.0] == {"window_duration": 8.0, "eps_total": 0.02, "converged": True, "source": source}
+    assert rows[2048.0]["source"] == RELEASE_SOURCE
+    assert table["sources"][source] == {
+        "kind": "evaluation",
+        "file": "evaluations/result.json",
+        "sha256": table["sources"][source]["sha256"],
+        "gwmock_noise_version": "0.19.0",
+    }
+
+
+def test_a_rate_the_table_lacks_gets_the_curve_band() -> None:
+    """A rate with no entry is created, measured over the curve's band cut 4 Hz below Nyquist."""
+    table = _table()
+    _merge(table, _record(sampling_frequency=16384.0))
+    assert table["spectra"][ET_D]["sampling_frequencies"]["16384"]["error_band_hz"] == [5.0, 2048.0]
+
+
+def test_a_converged_evaluation_replaces_an_unconverged_row() -> None:
+    """The release's unconverged 2048 s row at 4096 Hz is replaced by a converged evaluation of that window."""
+    table = _table()
+    assert not _rows(table, ET_D, "4096")[2048.0]["converged"]
+    source = _merge(table, _record(sampling_frequency=4096.0, windows=[(2048.0, 0.003, True)]))
+    row = _rows(table, ET_D, "4096")[2048.0]
+    assert row == {"window_duration": 2048.0, "eps_total": 0.003, "converged": True, "source": source}
+
+
+def test_an_unconverged_evaluation_does_not_replace_a_row() -> None:
+    """An unconverged evaluation of an evaluated window keeps the release's row, and contributes nothing."""
+    table = _table()
+    before = copy.deepcopy(table)
+    record = _record(sampling_frequency=4096.0, windows=[(2048.0, 0.003, False)])
+    assert not contributes(table, record)
+    source = _merge(table, record)
+    assert table["spectra"] == before["spectra"]
+    assert table["sources"][source]["kind"] == "evaluation"
+
+
+def test_a_converged_row_is_never_replaced_and_must_be_agreed_with() -> None:
+    """A converged evaluation of a converged window must agree with it; agreeing, it adds nothing."""
+    table = _table()
+    released = _rows(table, ET_D, "4096")[8.0]["eps_total"]
+    with pytest.raises(EvaluationMismatchError, match="must agree") as raised:
+        _merge(table, _record(sampling_frequency=4096.0, windows=[(8.0, released * (1 + 1e-6), True)]))
+    assert "doi:10.5281/zenodo.23243286" in str(raised.value)
+    agreeing = _record(sampling_frequency=4096.0, windows=[(8.0, released * (1 + 1e-12), True)])
+    assert not contributes(table, agreeing)
+    _merge(table, agreeing)
+    assert _rows(table, ET_D, "4096")[8.0] == {
+        "window_duration": 8.0,
+        "eps_total": released,
+        "converged": True,
+        "source": RELEASE_SOURCE,
+    }
+    assert set(table["sources"]) == {
+        RELEASE_SOURCE,
+        source_id(hashlib.sha256(json.dumps(agreeing).encode()).hexdigest()),
+    }
+
+
+def test_a_refused_merge_leaves_the_table_unchanged() -> None:
+    """A result refused for one window changes no window, even one it would have added."""
+    table = _table()
+    before = copy.deepcopy(table)
+    released = _rows(table, ET_D, "4096")[8.0]["eps_total"]
+    with pytest.raises(EvaluationMismatchError):
+        _merge(table, _record(sampling_frequency=4096.0, windows=[(4.0, 0.05, True), (8.0, 2 * released, True)]))
+    assert table == before
+
+
+def _changed(field: str, value: object) -> dict:
+    """Return a result with one top-level field replaced."""
+    record = _record()
+    record[field] = value
+    return record
+
+
+@pytest.mark.parametrize(
+    ("record", "message"),
+    [
+        (_changed("psd", {"argument": "x", "file": "x.txt", "sha256": "0" * 64}), "none of the bundled curves"),
+        (_changed("gwmock_noise_version", "0.18.4-post.3+8f8b4bb"), "not a plain release version"),
+        (_changed("gwmock_noise_version", "0.19.0.dev1"), "not a plain release version"),
+        (_changed("gwmock_noise_version", "0.19"), "not a plain release version"),
+        (_changed("gwmock_noise_version", "1"), "not a plain release version"),
+        (_changed("target", {"continuation_hz": 4.0, "slope_octave": 2.0, "continuation_points": 256}), "target"),
+        (_changed("method", {**method_constants(), "maximum_harmonics": 65536}), "method constants"),
+        (_changed("analysis_band_hz", [10.0, 2048.0]), "analysis band"),
+        (_changed("sampling_frequency", 8192.5), "not a positive integer"),
+        (_changed("windows", []), "no window"),
+        (_record(windows=[(8.0, float("nan"), True)]), "not positive and finite"),
+        (_record(windows=[(8.0, 0.0, True)]), "not positive and finite"),
+    ],
+)
+def test_a_result_for_another_configuration_is_refused(record: dict, message: str) -> None:
+    """Each part of the configuration the table describes must match, or the merge is refused."""
+    table = _table()
+    before = copy.deepcopy(table)
+    with pytest.raises(EvaluationMismatchError, match=message):
+        _merge(table, record)
+    assert table == before
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("converged", "false", "converged"),
+        ("converged", 1, "converged"),
+        ("eps_total", "0.003", "eps_total"),
+        ("eps_total", True, "eps_total"),
+        ("window_duration", "2048", "window_duration"),
+    ],
+)
+def test_a_window_field_of_the_wrong_type_is_refused(field: str, value: object, message: str) -> None:
+    """A field of the wrong JSON type is refused rather than coerced: the string "false" is not a convergence."""
+    table = _table()
+    before = copy.deepcopy(table)
+    record = _record(sampling_frequency=4096.0, windows=[(2048.0, 0.003, True)])
+    record["windows"][0][field] = value
+    with pytest.raises(EvaluationMismatchError, match=message):
+        _merge(table, record)
+    assert table == before
+
+
+def test_a_window_measured_over_another_band_is_refused() -> None:
+    """The error band of every window must be the curve's band at that rate."""
+    record = _record()
+    record["windows"][0]["error_band_hz"] = [5.0, 4092.0]
+    with pytest.raises(EvaluationMismatchError, match="measured over"):
+        _merge(_table(), record)
+
+
+def test_the_selector_cites_an_evaluated_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A window chosen from an evaluation is reported with that evaluation as its source."""
+    table = _table()
+    source = _merge(table, _record(sampling_frequency=4096.0, windows=[(4.0, 0.5, True)]))
+    monkeypatch.setattr(covariance_tolerance, "load_crossfade_errors", lambda: table)
+
+    simulator = ColoredNoiseSimulator(psd_file=ET_D, sampling_frequency=4096.0, covariance_tolerance=0.6)
+
+    recorded = simulator.metadata["colored_noise"]["covariance_tolerance"]
+    assert simulator.window_duration == 4.0
+    assert recorded["evaluated_error"] == 0.5
+    assert recorded["source"] == describe_source(table, source)
+    assert recorded["source"].startswith("gwmock-noise 0.19.0 evaluation evaluations/result.json (SHA-256 ")
+
+
+def test_a_result_the_command_wrote_merges(tmp_path: Path) -> None:
+    """The command's own output is accepted once it is from a release: the two agree on the configuration."""
+    out = tmp_path / "result.json"
+    result = CliRunner().invoke(
+        app,
+        [
+            "evaluate-covariance-error",
+            ET_D,
+            "--sampling-frequency",
+            "4096",
+            "--analysis-band",
+            "5",
+            "2048",
+            "--window-duration",
+            "4",
+            "--out",
+            str(out),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    record = json.loads(out.read_text(encoding="utf-8"))
+    table = _table()
+    with pytest.raises(EvaluationMismatchError, match="not a plain release version"):
+        _merge(table, record)
+    record["gwmock_noise_version"] = "0.19.0"
+    source = _merge(table, record)
+    row = _rows(table, ET_D, "4096")[4.0]
+    assert row["source"] == source
+    assert row["eps_total"] == record["windows"][0]["eps_total"]
+    assert row["converged"] is True
+
+
+def _with_smaller_id(record: dict, bound: str) -> dict:
+    """Return the record, varied in a field the merge ignores, so that its source id sorts before ``bound``."""
+    for attempt in range(1000):
+        varied = copy.deepcopy(record)
+        varied["psd"]["argument"] = f"{varied['psd']['argument']}#{attempt}"
+        if source_id(hashlib.sha256(_bytes(varied)).hexdigest()) < bound:
+            return varied
+    raise AssertionError(f"no variation of the record has an id below {bound}")
+
+
+def _bytes(record: dict) -> bytes:
+    """Return a result's bytes as the command writes them."""
+    return (json.dumps(record, indent=4, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _write(directory: Path, record: dict) -> Path:
+    """Write a result as the command would, under a name of its own."""
+    data = (json.dumps(record, indent=4, sort_keys=True) + "\n").encode("utf-8")
+    path = directory / f"{hashlib.sha256(data).hexdigest()[:12]}.json"
+    path.write_bytes(data)
+    return path
+
+
+#: Three evaluations of ET_D at 4096 Hz that share windows: two agree on 2 s, and the third
+#: converges where another did not.
+OVERLAPPING = [
+    [(2.0, 0.1, True), (32.0, 0.001, True)],
+    [(2.0, 0.1 * (1 + 1e-12), True), (4.0, 0.05, True)],
+    [(4.0, 0.05, False), (32.0, 0.001, True), (2048.0, 0.003, True)],
+]
+
+
+def test_the_table_does_not_depend_on_the_order_of_merging(tmp_path: Path) -> None:
+    """Every order of merging the same evaluations gives the same table, rows and sources alike."""
+    records = [_record(sampling_frequency=4096.0, windows=windows) for windows in OVERLAPPING]
+    tables = []
+    for order in itertools.permutations(records):
+        table = _table()
+        for record in order:
+            _merge(table, record)
+        tables.append(table)
+    assert all(table == tables[0] for table in tables)
+    rows = _rows(tables[0], ET_D, "4096")
+    assert rows[2048.0]["converged"] is True
+    assert rows[4.0]["converged"] is True
+    assert rows[2.0]["source"] == min(
+        source_id(hashlib.sha256(json.dumps(r).encode()).hexdigest()) for r in records[:2]
+    )
+
+
+def test_adding_an_evaluation_writes_the_table_the_rebuild_gives(tmp_path: Path) -> None:
+    """The table ``--merge`` writes is the one ``--check`` rebuilds, whatever the new file's name sorts as."""
+    release = _table()
+    directory = tmp_path / "evaluations"
+    directory.mkdir()
+    for windows in OVERLAPPING:
+        source = tmp_path / "incoming.json"
+        source.write_bytes((json.dumps(_record(sampling_frequency=4096.0, windows=windows)) + "\n").encode())
+        added, table = add_evaluation(release, directory, source)
+        assert added.read_bytes() == source.read_bytes()
+        assert table == build_table(release, directory)
+    assert len(list(directory.glob("*.json"))) == 3
+
+
+def test_a_result_that_adds_nothing_is_not_added(tmp_path: Path) -> None:
+    """A new result that only repeats the table is refused, and nothing is written."""
+    directory = tmp_path / "evaluations"
+    released = _rows(_table(), ET_D, "4096")[8.0]["eps_total"]
+    result = _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(8.0, released, True)]))
+    with pytest.raises(EvaluationMismatchError, match="adds nothing"):
+        add_evaluation(_table(), directory, result)
+    assert not directory.exists()
+
+
+def test_a_committed_evaluation_that_adds_nothing_does_not_stop_the_rebuild(tmp_path: Path) -> None:
+    """A committed result whose windows another one covers is merged, not refused, when the table is rebuilt."""
+    _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True)]))
+    _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True), (32.0, 0.001, True)]))
+    table = build_table(_table(), tmp_path)
+    assert set(_rows(table, ET_D, "4096")) >= {2.0, 32.0}
+    assert len([source for source in table["sources"] if source != RELEASE_SOURCE]) == 2
+
+
+def test_a_committed_evaluation_that_no_longer_fits_names_its_file(tmp_path: Path) -> None:
+    """When a committed result stops describing the table, such as after a change of method, the error names it."""
+    record = _record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True)])
+    record["method"] = {**method_constants(), "maximum_harmonics": 1}
+    path = _write(tmp_path, record)
+    with pytest.raises(EvaluationMismatchError, match=path.name):
+        build_table(_table(), tmp_path)
+
+
+def test_a_plain_release_version_is_accepted() -> None:
+    """The version check accepts the form this project tags releases with."""
+    for version in ("0.19.0", "1.0.0", "10.20.30"):
+        record = _record()
+        record["gwmock_noise_version"] = version
+        _merge(_table(), record)
+
+
+def test_a_curve_shared_by_two_presets_is_taken_from_the_argument(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If two presets had the same bytes, the evaluation's argument would choose, and an unnamed one is refused."""
+    table = _table()
+    table["spectra"]["copy_of_ET_D"] = copy.deepcopy(table["spectra"][ET_D])
+    record = _record()
+    _merge(table, record)
+    assert len(_rows(table, ET_D, "8192")) == 4
+    record = _record()
+    record["psd"]["argument"] = "/somewhere/else.txt"
+    with pytest.raises(EvaluationMismatchError, match="evaluate it by name"):
+        _merge(table, record)
+
+
+def test_a_table_in_another_layout_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A table that is not schema version 2 is refused with a reason, not read as if it were."""
+    from gwmock_noise.data import covariance_tolerance as package
+
+    class _OldTable:
+        def joinpath(self, _name: str) -> _OldTable:
+            return self
+
+        def read_text(self, encoding: str) -> str:
+            return json.dumps({"source": {}, "spectra": {}})
+
+    monkeypatch.setattr(package.resources, "files", lambda _name: _OldTable())
+    with pytest.raises(ValueError, match="schema version None"):
+        load_crossfade_errors()
+
+
+def test_the_build_script_imports() -> None:
+    """The build script loads, so a change to the package it imports from cannot break it unseen."""
+    import subprocess
+    import sys
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "build_covariance_tolerance_table.py"
+    if not script.exists():
+        pytest.skip("the build script is not part of an installed package")
+    result = subprocess.run([sys.executable, str(script), "--help"], capture_output=True, text=True, check=False)  # noqa: S603
+    assert result.returncode == 0, result.stderr
+    assert "--merge" in result.stdout
+
+
+def test_agreement_holds_across_every_converged_source(tmp_path: Path) -> None:
+    """Three converged errors of one window where each neighbour agrees but the extremes do not are refused.
+
+    Closeness to a relative 1e-10 is not transitive: A agrees with B and B with C, yet A and C differ by twice that.
+    Checking each result only against the row the table keeps would accept or refuse them depending on the order.
+    """
+    middle = 0.1
+    low, high = (
+        _record(sampling_frequency=4096.0, windows=[(2.0, middle * (1 + shift), True)]) for shift in (-0.9e-10, 0.9e-10)
+    )
+    sources = {source_id(hashlib.sha256(_bytes(record)).hexdigest()) for record in (low, high)}
+    # The order that checking against the kept row alone gets wrong: the middle value is merged first and is the row
+    # kept (its id sorts first), so each extreme is compared only with it.
+    center = _with_smaller_id(_record(sampling_frequency=4096.0, windows=[(2.0, middle, True)]), min(sources))
+    for name, record in (("0-center", center), ("1-low", low), ("2-high", high)):
+        (tmp_path / f"{name}.json").write_bytes(_bytes(record))
+    with pytest.raises(EvaluationMismatchError, match="converged errors of one window must agree"):
+        build_table(_table(), tmp_path)
+
+
+@pytest.mark.parametrize("duration", [-1.0, 0.0, float("nan"), float("inf")])
+def test_a_window_duration_that_is_not_positive_and_finite_is_refused(duration: float) -> None:
+    """A window must be a positive, finite duration; a negative one would sort first and be chosen."""
+    record = _record(windows=[(duration, 0.01, True)])
+    with pytest.raises(EvaluationMismatchError, match="window_duration"):
+        _merge(_table(), record)
+
+
+def test_every_committed_evaluation_is_pinned_even_when_overtaken(tmp_path: Path) -> None:
+    """A committed file whose windows another covers is still listed, so a change to it changes the table."""
+    covered = _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True)]))
+    _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True), (32.0, 0.001, True)]))
+    before = build_table(_table(), tmp_path)
+    assert source_id(hashlib.sha256(covered.read_bytes()).hexdigest()) in before["sources"]
+    covered.write_bytes(covered.read_bytes() + b" ")
+    assert build_table(_table(), tmp_path) != before
+
+
+def test_a_result_the_rebuild_refuses_is_not_written(tmp_path: Path) -> None:
+    """A new result that passes the first checks but fails the rebuild leaves the evaluations as they were."""
+    directory = tmp_path / "evaluations"
+    directory.mkdir()
+    # The middle value is the row kept (its id sorts below the low one's), and the incoming id sorts below both: a
+    # check against the kept row alone passes the incoming value, and only the check over all sources refuses it.
+    low = _record(sampling_frequency=4096.0, windows=[(2.0, 0.1 * (1 - 0.9e-10), True)])
+    low_id = source_id(hashlib.sha256(_bytes(low)).hexdigest())
+    middle = _with_smaller_id(_record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True)]), low_id)
+    for record in (low, middle):
+        (directory / f"{source_id(hashlib.sha256(_bytes(record)).hexdigest())}.json").write_bytes(_bytes(record))
+    before = sorted(path.name for path in directory.iterdir())
+    incoming = _with_smaller_id(
+        _record(sampling_frequency=4096.0, windows=[(2.0, 0.1 * (1 + 0.9e-10), True), (4.0, 0.05, True)]),
+        source_id(hashlib.sha256(_bytes(middle)).hexdigest()),
+    )
+    result = tmp_path / "incoming.json"
+    result.write_bytes(_bytes(incoming))
+    with pytest.raises(EvaluationMismatchError, match="must agree"):
+        add_evaluation(_table(), directory, result)
+    assert sorted(path.name for path in directory.iterdir()) == before
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b"not json at all\n", b'{"hello": 1}\n', b"[]\n"],
+)
+def test_a_committed_file_that_is_not_a_result_names_itself(tmp_path: Path, content: bytes) -> None:
+    """A committed file that is not JSON, or JSON of another shape, is reported by name like any other refusal."""
+    _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True)]))
+    (tmp_path / "broken.json").write_bytes(content)
+    with pytest.raises(
+        EvaluationMismatchError, match=rf"{tmp_path.name}/broken\.json: not an evaluate-covariance-error"
+    ):
+        build_table(_table(), tmp_path)
+
+
+def test_an_unreadable_committed_file_names_itself(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A committed file that cannot be read is reported by name, like one that is not a result."""
+    broken = _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True)]))
+    read_bytes = Path.read_bytes
+
+    def refuse(path: Path) -> bytes:
+        if path == broken:
+            raise PermissionError(13, "Permission denied", str(path))
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", refuse)
+    with pytest.raises(EvaluationMismatchError, match=rf"{tmp_path.name}/{broken.name}: cannot be read"):
+        build_table(_table(), tmp_path)
+
+
+def test_an_empty_error_band_is_refused() -> None:
+    """A rate whose cut band is empty (5 Hz to 4 Hz at 16 Hz) is refused, not stored."""
+    with pytest.raises(EvaluationMismatchError, match="empty"):
+        _merge(_table(), _record(sampling_frequency=16.0, windows=[(8.0, 0.01, True)]))
+
+
+def test_two_results_with_one_source_id_are_refused() -> None:
+    """Different bytes whose SHA-256 share the 12-character prefix would share a source; the second is refused."""
+    table = _table()
+    first, second = "a" * 12 + "0" * 52, "a" * 12 + "1" * 52
+    merge_evaluation(table, _record(windows=[(8.0, 0.02, True)]), file="evaluations/one.json", sha256=first)
+    before = copy.deepcopy(table)
+    with pytest.raises(EvaluationMismatchError, match="source id"):
+        merge_evaluation(table, _record(windows=[(16.0, 0.01, True)]), file="evaluations/two.json", sha256=second)
+    assert table == before
+
+
+def test_an_interrupted_write_leaves_no_evaluation_behind(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A write interrupted after part of the bytes are on disk leaves no ``.json`` for the next rebuild to refuse."""
+    write_bytes = Path.write_bytes
+    directory = tmp_path / "evaluations"
+
+    def write_half_then_interrupt(path: Path, data: bytes) -> int:
+        if path.parent == directory:  # the real directory, not the staging copy of the same name
+            write_bytes(path, data[: len(data) // 2])
+            raise KeyboardInterrupt
+        return write_bytes(path, data)
+
+    result = _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(4.0, 0.05, True)]))
+    monkeypatch.setattr(Path, "write_bytes", write_half_then_interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        add_evaluation(_table(), directory, result)
+    assert list(directory.iterdir()) == []
+
+
+def _build_script(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """Load the build script as a module, with its table path redirected under ``tmp_path``."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "build_covariance_tolerance_table.py"
+    if not path.exists():
+        pytest.skip("the build script is not part of an installed package")
+    spec = importlib.util.spec_from_file_location("build_covariance_tolerance_table", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "TABLE_PATH", tmp_path / "crossfade_errors.json")
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    return module
+
+
+def test_a_table_write_that_fails_removes_the_added_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """If the table cannot be written, the result --merge added is removed, so --check does not fail on it."""
+    script = _build_script(monkeypatch, tmp_path)
+    script.TABLE_PATH.write_text("old\n", encoding="utf-8")
+    added = tmp_path / "added.json"
+    added.write_text("{}\n", encoding="utf-8")
+
+    def fail(path: Path, text: str) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(script, "write_atomically", fail)
+    assert script.write_table("new\n", added) == 1
+    assert not added.exists()
+    assert script.TABLE_PATH.read_text(encoding="utf-8") == "old\n"
+
+
+def test_an_interruption_after_the_table_is_replaced_keeps_the_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Interrupted once the new table is in place, the result it cites is kept: removing it would break the table."""
+    script = _build_script(monkeypatch, tmp_path)
+    script.TABLE_PATH.write_text("old\n", encoding="utf-8")
+    added = tmp_path / "added.json"
+    added.write_text("{}\n", encoding="utf-8")
+
+    def replace_then_interrupt(path: Path, text: str) -> None:
+        path.write_text(text, encoding="utf-8")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(script, "write_atomically", replace_then_interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        script.write_table("new\n", added)
+    assert added.exists()
+
+
+def test_an_interruption_before_the_table_is_replaced_removes_the_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Interrupted before the new table is in place, the result --merge added goes, as on a failed write."""
+    script = _build_script(monkeypatch, tmp_path)
+    script.TABLE_PATH.write_text("old\n", encoding="utf-8")
+    added = tmp_path / "added.json"
+    added.write_text("{}\n", encoding="utf-8")
+
+    def interrupt(path: Path, text: str) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(script, "write_atomically", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        script.write_table("new\n", added)
+    assert not added.exists()
+
+
+def _unreadable_table(monkeypatch: pytest.MonkeyPatch, script) -> None:
+    """Make reading the bundled table back fail, as a transient I/O error would."""
+    read_text = Path.read_text
+
+    def refuse(path: Path, *args: object, **kwargs: object) -> str:
+        if path == script.TABLE_PATH:
+            raise OSError(5, "Input/output error")
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", refuse)
+
+
+def test_a_completed_write_keeps_the_result_without_reading_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once the table is written, the result stays and reports success, even if the table could not be read back."""
+    script = _build_script(monkeypatch, tmp_path)
+    added = tmp_path / "added.json"
+    added.write_text("{}\n", encoding="utf-8")
+    _unreadable_table(monkeypatch, script)
+    assert script.write_table("new\n", added) == 0
+    assert added.exists()
+
+
+def test_an_unknown_table_state_keeps_the_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """After an interruption, a table that cannot be read is not taken as the old one: the result is kept."""
+    script = _build_script(monkeypatch, tmp_path)
+    added = tmp_path / "added.json"
+    added.write_text("{}\n", encoding="utf-8")
+
+    def replace_then_interrupt(path: Path, text: str) -> None:
+        path.write_text(text, encoding="utf-8")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(script, "write_atomically", replace_then_interrupt)
+    _unreadable_table(monkeypatch, script)
+    with pytest.raises(KeyboardInterrupt):
+        script.write_table("new\n", added)
+    assert added.exists()
+
+
+def test_a_failed_cleanup_is_reported_with_the_write_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """If the added result cannot be removed after a failed write, both failures are reported, the write's first."""
+    script = _build_script(monkeypatch, tmp_path)
+    script.TABLE_PATH.write_text("old\n", encoding="utf-8")
+    added = tmp_path / "added.json"
+    added.write_text("{}\n", encoding="utf-8")
+
+    def fail(path: Path, text: str) -> None:
+        raise OSError(28, "No space left on device")
+
+    unlink = Path.unlink
+
+    def refuse(path: Path, missing_ok: bool = False) -> None:
+        if path == added:
+            raise PermissionError(13, "Permission denied")
+        unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(script, "write_atomically", fail)
+    monkeypatch.setattr(Path, "unlink", refuse)
+    assert script.write_table("new\n", added) == 1
+    errors = capsys.readouterr().err.splitlines()
+    assert "No space left on device" in errors[0]
+    assert errors[1].startswith(f"error: could not remove {added}")

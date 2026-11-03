@@ -41,7 +41,7 @@ from typing import Any
 
 import numpy as np
 
-from gwmock_noise.data.covariance_tolerance import load_crossfade_errors
+from gwmock_noise.data.covariance_tolerance import describe_source, load_crossfade_errors
 from gwmock_noise.simulators._spectral import _resolve_bundled_psd, load_spectral_series
 
 #: Where the documentation explains the evaluated configuration and how to add a curve.
@@ -76,7 +76,8 @@ class CrossfadeChoice:
             there when the curve is tabulated below it.
         slope_octave: The factor of frequency above the first point the continuing power law
             is fitted over, when the first point is above ``continuation_hz``.
-        source: The DOI of the data release the error was copied from.
+        source: Where the error comes from: the data release's DOI, or the evaluation file
+            and the gwmock-noise version that produced it.
     """
 
     preset: str
@@ -263,8 +264,8 @@ def _bundled_preset(psd_file: str | Path, spectra: dict[str, Any]) -> tuple[str,
             f"No covariance errors are bundled for the PSD {str(psd_file)!r}. A covariance tolerance is supported "
             f"only for the bundled curves {sorted(spectra)}, passed by name or as the bundled file's own path. For "
             f"another PSD, evaluate the crossfade's covariance error with `gwmock-noise evaluate-covariance-error`, "
-            f"which writes the target it evaluated and the ColoredNoiseSimulator settings that reproduce it; to add "
-            f"the PSD to the bundled errors, open a pull request with that result. See {DOCUMENTATION_SECTION}."
+            f"which writes the target it evaluated and the ColoredNoiseSimulator settings that reproduce it. To add "
+            f"a curve to the bundled errors, open an issue to propose it. See {DOCUMENTATION_SECTION}."
         )
     digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
     if digest != spectra[preset]["sha256"]:
@@ -346,7 +347,7 @@ def choose_crossfade_window(
             first_tabulated_hz=float(frequencies[0]),
             continuation_hz=float(target["continuation_hz"]),
             slope_octave=float(target["slope_octave"]),
-            source=f"doi:{table['source']['doi']}",
+            source=describe_source(table, row["source"]),
         )
     converged = [row["eps_total"] for row in rate["windows"] if row["converged"]]
     smallest = (
