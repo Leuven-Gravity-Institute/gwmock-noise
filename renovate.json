@@ -71,7 +71,7 @@
         },
         {
             "matchManagers": ["pre-commit"],
-            "description": "A cooldown, not a check: a hook's tag can come before the package the hook installs is published, so wait three days, measured from the tag (for a git tag, the tagged commit's date), to give a late upload time to land.",
+            "description": "A cooldown, not a check: a hook's tag can come before the package the hook installs is published, so wait three days, measured from the release date Renovate reports for the tag, to give a late upload time to land.",
             "minimumReleaseAge": "3 days",
             "automerge": true,
             "automergeType": "pr",
