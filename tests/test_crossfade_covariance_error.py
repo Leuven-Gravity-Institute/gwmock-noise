@@ -24,6 +24,13 @@ from gwmock_noise.simulators._spectral import _resolve_bundled_psd
 ET_CURVES = {"ET_D_psd": (5.0, 2048.0), "ET_10_full_cryo_psd": (5.0, 2048.0)}
 
 
+#: Relative tolerance against the released errors. The evaluation repeats the release's arithmetic, so with the
+#: locked numpy and scipy it agrees bit for bit; other supported versions round the FFTs and sums differently in the
+#: last digits (up to about 1e-12 relative, on the oldest supported numpy and scipy). Any error in the method moves
+#: these numbers by orders of magnitude more.
+RELEASE_RTOL = 1e-10
+
+
 def _released(preset: str, window_duration: float) -> dict:
     """Return the bundled table's row of a curve at 4096 Hz and one window."""
     rows = load_crossfade_errors()["spectra"][preset]["sampling_frequencies"]["4096"]["windows"]
@@ -32,10 +39,10 @@ def _released(preset: str, window_duration: float) -> dict:
 
 @pytest.mark.parametrize("preset", sorted(ET_CURVES))
 def test_reproduces_the_released_error(preset: str) -> None:
-    """The evaluation reproduces the published error exactly, over the band the table records."""
+    """The evaluation reproduces the published error, over the band the table records."""
     error = crossfade_covariance_error(preset, 4096.0, 8.0, ET_CURVES[preset])
     released = _released(preset, 8.0)
-    assert error.error_band.total == released["eps_total"]
+    assert error.error_band.total == pytest.approx(released["eps_total"], rel=RELEASE_RTOL, abs=0.0)
     assert error.converged is released["converged"] is True
     table_band = load_crossfade_errors()["spectra"][preset]["sampling_frequencies"]["4096"]["error_band_hz"]
     assert list(error.error_band.band_hz) == table_band
@@ -70,10 +77,10 @@ def test_every_part_matches_the_release(preset: str) -> None:
     """The stationary and cyclic parts, both bands and the harmonics summed equal the release's."""
     released = RELEASED_PARTS[preset]
     error = crossfade_covariance_error(preset, 4096.0, 8.0, released["band"])
-    assert error.error_band.total == released["eps_total"]
-    assert error.error_band.stationary == released["eps_stationary"]
-    assert error.error_band.cyclic == released["eps_cyclic"]
-    assert error.analysis_band.total == released["eps_total_to_nyquist"]
+    assert error.error_band.total == pytest.approx(released["eps_total"], rel=RELEASE_RTOL, abs=0.0)
+    assert error.error_band.stationary == pytest.approx(released["eps_stationary"], rel=RELEASE_RTOL, abs=0.0)
+    assert error.error_band.cyclic == pytest.approx(released["eps_cyclic"], rel=RELEASE_RTOL, abs=0.0)
+    assert error.analysis_band.total == pytest.approx(released["eps_total_to_nyquist"], rel=RELEASE_RTOL, abs=0.0)
     assert error.harmonics == released["harmonics"]
     assert error.converged is True
 
@@ -192,7 +199,7 @@ def test_a_curve_given_as_a_file_matches_it_given_by_name(tmp_path: Path) -> Non
     copy = tmp_path / "copy.txt"
     copy.write_bytes(bundled.read_bytes())
     by_path = crossfade_covariance_error(copy, 4096.0, 8.0, (5.0, 2048.0))
-    assert by_path.error_band.total == _released("ET_D_psd", 8.0)["eps_total"]
+    assert by_path.error_band.total == pytest.approx(_released("ET_D_psd", 8.0)["eps_total"], rel=RELEASE_RTOL, abs=0.0)
 
 
 def test_the_cli_writes_the_error_with_its_provenance(tmp_path: Path) -> None:
@@ -226,7 +233,7 @@ def test_the_cli_writes_the_error_with_its_provenance(tmp_path: Path) -> None:
     assert record["method"]["maximum_harmonics"] == crossfade_covariance.MAXIMUM_HARMONICS
     [window] = record["windows"]
     assert window["window_duration"] == 8.0
-    assert window["eps_total"] == _released("ET_D_psd", 8.0)["eps_total"]
+    assert window["eps_total"] == pytest.approx(_released("ET_D_psd", 8.0)["eps_total"], rel=RELEASE_RTOL, abs=0.0)
     assert window["error_band_hz"] == [5.0, 2044.0]
     assert window["converged"] is True
     target = tmp_path / "result_target.txt"
