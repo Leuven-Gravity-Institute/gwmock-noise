@@ -828,8 +828,9 @@ simulator adopts that configuration:
 - **Band.** The error is measured from 10 Hz on the aLIGO curves, and from 5 Hz
   on the ET curves. It runs to 2048 Hz, or to 4 Hz below the Nyquist frequency
   if that is lower.
-- **Curve.** The bundled curve must be passed by name and must be unmodified.
-  Each entry carries the SHA-256 of the curve it was evaluated for.
+- **Curve.** The bundled curve must be passed by name, or as the path of the
+  bundled file itself, and must be unmodified. Each entry carries the SHA-256 of
+  the curve it was evaluated for.
 
 For the same reason, a tolerance cannot be combined with `window_duration`,
 `low_frequency_cutoff`, `high_frequency_cutoff`, `psd_schedule` or `psd_array`.
