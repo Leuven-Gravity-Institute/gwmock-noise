@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
+from gwmock_noise.cli import evaluate_covariance_error as cli_module
 from gwmock_noise.cli.main import app
 from gwmock_noise.data.covariance_tolerance import load_crossfade_errors
 from gwmock_noise.diagnostics import crossfade_covariance
@@ -430,3 +431,75 @@ def test_a_band_where_the_psd_is_zero_is_refused_with_the_cause(tmp_path: Path) 
     np.savetxt(psd, [[0.0, 1e-46], [100.0, 1e-46], [101.0, 0.0], [512.0, 0.0]])
     with pytest.raises(ValueError, match="PSD is zero throughout the band"):
         crossfade_covariance_error(psd, 1024.0, 4.0, (200.0, 500.0))
+
+
+def _invoke(psd: str, out: Path, *windows: str, sampling_frequency: str = "1024", band: tuple = ("5", "512")):
+    """Run the command on a PSD with the given windows."""
+    arguments = ["evaluate-covariance-error", psd, "--sampling-frequency", sampling_frequency, "--analysis-band", *band]
+    for window in windows:
+        arguments += ["--window-duration", window]
+    return CliRunner().invoke(app, [*arguments, "--out", str(out)])
+
+
+def test_the_cli_refuses_a_missing_path_named_like_a_bundled_curve(tmp_path: Path) -> None:
+    """A path that does not exist is refused, not replaced by the bundled curve its file name matches."""
+    out = tmp_path / "result.json"
+    result = _invoke(str(tmp_path / "missing" / "ET_D_psd.txt"), out, "4")
+    assert result.exit_code != 0
+    assert "not a file" in result.output
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("name", ["result.json", "result_target.txt"])
+def test_the_cli_refuses_to_overwrite_the_psd(tmp_path: Path, name: str) -> None:
+    """Neither the result nor the target written beside it may be the input PSD."""
+    bundled = _resolve_bundled_psd("ET_D_psd")
+    assert bundled is not None
+    psd = tmp_path / name
+    psd.write_bytes(bundled.read_bytes())
+    result = _invoke(str(psd), tmp_path / "result.json", "4")
+    assert result.exit_code != 0
+    assert "overwrite" in result.output
+    assert psd.read_bytes() == bundled.read_bytes()
+
+
+def test_every_window_is_evaluated_from_the_psd_as_first_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A PSD changed during a run does not change the later windows, the recorded hash or the target."""
+    bundled = _resolve_bundled_psd("ET_D_psd")
+    assert bundled is not None
+    psd = tmp_path / "psd.txt"
+    psd.write_bytes(bundled.read_bytes())
+    evaluate = crossfade_covariance.crossfade_covariance_error
+
+    def evaluate_then_change_the_psd(*args, **kwargs):
+        error = evaluate(*args, **kwargs)
+        psd.write_text("not a PSD\n", encoding="utf-8")
+        return error
+
+    monkeypatch.setattr(crossfade_covariance, "crossfade_covariance_error", evaluate_then_change_the_psd)
+    out = tmp_path / "result.json"
+    result = _invoke(str(psd), out, "2", "4")
+    assert result.exit_code == 0, result.output
+    record = json.loads(out.read_text(encoding="utf-8"))
+    assert record["psd"]["sha256"] == crossfade_covariance.sha256_of(bundled)
+    assert [window["window_duration"] for window in record["windows"]] == [2.0, 4.0]
+    unchanged = evaluate(bundled, 1024.0, 4.0, (5.0, 512.0))
+    assert record["windows"][1]["eps_total"] == unchanged.error_band.total
+
+
+def test_an_interrupted_write_keeps_the_finished_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The result is replaced atomically, so an interruption while writing a window leaves the earlier ones intact."""
+    replace = cli_module.os.replace
+    calls = []
+
+    def replace_then_interrupt(source, destination):
+        calls.append(destination)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        replace(source, destination)
+
+    monkeypatch.setattr(cli_module.os, "replace", replace_then_interrupt)
+    out = tmp_path / "result.json"
+    _invoke("ET_D_psd", out, "2", "4")
+    record = json.loads(out.read_text(encoding="utf-8"))
+    assert [window["window_duration"] for window in record["windows"]] == [2.0]

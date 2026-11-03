@@ -12,6 +12,8 @@ __lazy_modules__ = [
 ]
 
 import json
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Annotated, Any
@@ -26,12 +28,24 @@ from gwmock_noise.version import __version__
 
 def _psd_path(psd: str) -> Path:
     """Return the file a PSD argument names: a path, or the name of a bundled curve."""
-    if Path(psd).is_file():
-        return Path(psd)
+    given = Path(psd)
+    if given.is_file():
+        return given
+    # Only a bare name selects a bundled curve; one with a directory part is a path, so a mistyped path is reported
+    # instead of falling back to the bundled curve its file name matches.
+    if given.name != psd:
+        raise typer.BadParameter(f"{psd!r} is not a file.", param_hint="PSD")
     bundled = _resolve_bundled_psd(psd)
     if bundled is None:
         raise typer.BadParameter(f"{psd!r} is neither a file nor a bundled PSD.", param_hint="PSD")
     return Path(bundled)
+
+
+def _write_atomically(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text`` in one step, so an interruption leaves the old file or the new one."""
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(text, encoding="utf-8")
+    os.replace(temporary, path)
 
 
 def evaluate_covariance_error(
@@ -61,6 +75,36 @@ def evaluate_covariance_error(
     """
     path = _psd_path(psd)
     target_out = out.with_name(f"{out.stem}_target.txt")
+    for written in (out, target_out):
+        if written.resolve() == path.resolve():
+            raise typer.BadParameter(f"writing {written} would overwrite the PSD it evaluates.", param_hint="--out")
+    with tempfile.TemporaryDirectory() as directory:
+        # Every window, the hash and the target come from one snapshot of the PSD, so a file changed during a long
+        # run cannot make them describe different curves.
+        snapshot = Path(directory) / path.name
+        snapshot.write_bytes(path.read_bytes())
+        _evaluate(
+            psd,
+            snapshot,
+            sampling_frequency=sampling_frequency,
+            analysis_band=analysis_band,
+            window_durations=window_durations,
+            out=out,
+            target_out=target_out,
+        )
+
+
+def _evaluate(  # noqa: PLR0913 - the command's arguments, passed through.
+    psd: str,
+    path: Path,
+    *,
+    sampling_frequency: float,
+    analysis_band: tuple[float, float],
+    window_durations: list[float],
+    out: Path,
+    target_out: Path,
+) -> None:
+    """Evaluate each window for the PSD at ``path`` and write the result after each one."""
     try:
         target_frequencies, target_psd = crossfade_covariance.crossfade_target(path, sampling_frequency)
     except ValueError as exc:
@@ -111,7 +155,7 @@ def evaluate_covariance_error(
             # Written once the first window is accepted, so a refused configuration leaves nothing behind.
             np.savetxt(target_out, np.column_stack([target_frequencies, target_psd]), fmt="%.17e")
             result["target_file"] = {"file": target_out.name, "sha256": crossfade_covariance.sha256_of(target_out)}
-        out.write_text(json.dumps(result, indent=4, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
+        _write_atomically(out, json.dumps(result, indent=4, sort_keys=True, allow_nan=False) + "\n")
         state = "converged" if error.converged else "NOT converged: not an upper bound"
         typer.echo(f"{error.window_duration:g} s: eps_total = {error.error_band.total:.4g} ({state})")
     settings = crossfade_covariance.simulator_settings(sampling_frequency, window_duration=0.0)

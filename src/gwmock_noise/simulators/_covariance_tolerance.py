@@ -110,6 +110,8 @@ def validate_table(
     starts above ``continuation_hz`` its lowest ``slope_octave`` factor of frequency is fitted
     with a power law in log-log, so it needs two or more points there, all positive; one point
     would leave the slope undetermined, and a zero would make it not a number.
+    The table must also extend beyond ``continuation_hz``, the value the target is held at
+    below it.
 
     Raises:
         ValueError: If any of these does not hold.
@@ -122,6 +124,12 @@ def validate_table(
         raise ValueError("the PSD table's frequencies must ascend strictly.")
     if not np.all(np.isfinite(table_psd) & (table_psd >= 0.0)):
         raise ValueError("the PSD table must be finite and non-negative at every point.")
+    last = float(table_frequencies[-1])
+    if last <= continuation_hz:
+        raise ValueError(
+            f"the PSD table ends at {last!r} Hz; it must extend beyond {continuation_hz!r} Hz, below which the target "
+            f"is held flat at its value there."
+        )
     first = float(table_frequencies[0])
     if first > continuation_hz:
         octave = fitted_octave(table_frequencies, slope_octave)

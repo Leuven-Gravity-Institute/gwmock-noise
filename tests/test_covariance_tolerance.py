@@ -290,6 +290,7 @@ def test_a_table_starting_above_nyquist_is_continued_only_up_to_nyquist() -> Non
         ([10.0, 20.0, 30.0], [1e-46, np.nan, 1e-46], "non-negative at every point"),
         ([10.0, 20.0, 30.0], [1e-46, 0.0, 1e-46], "two or more points there, all positive"),
         ([10.0, 100.0, 1000.0], [1e-44, 1e-48, 1e-52], "two or more points there, all positive"),
+        ([1.0, 2.0, 4.0], [1e-44, 1e-45, 1e-46], "beyond 5.0 Hz"),
     ],
 )
 def test_a_table_that_cannot_be_continued_is_refused(frequencies: list, psd: list, message: str) -> None:
