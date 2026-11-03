@@ -28,7 +28,7 @@ This is the method, and the code, of
 
     I. C. F. Wong, "Choosing a generator for streaming Gaussian noise in
     gravitational-wave mock data: accuracy, cost and reproducibility",
-    data: doi:10.5281/zenodo.23243286,
+    arXiv:2611.01624; data: doi:10.5281/zenodo.23243286,
 
 whose evaluated errors ``ColoredNoiseSimulator(covariance_tolerance=...)`` reads. The target is
 the paper's continued target (:func:`crossfade_target`), and the simulator is run from zero to
