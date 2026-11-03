@@ -510,15 +510,68 @@ def test_two_results_with_one_source_id_are_refused() -> None:
 
 
 def test_an_interrupted_write_leaves_no_evaluation_behind(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The new result is written under a temporary name and renamed, so an interruption leaves no partial ``.json``."""
-    from gwmock_noise.data.covariance_tolerance import _merge as merge_module
-
-    def interrupt(source: object, destination: object) -> None:
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr(merge_module.os, "replace", interrupt)
+    """A write interrupted after part of the bytes are on disk leaves no ``.json`` for the next rebuild to refuse."""
+    write_bytes = Path.write_bytes
     directory = tmp_path / "evaluations"
+
+    def write_half_then_interrupt(path: Path, data: bytes) -> int:
+        if path.parent == directory:  # the real directory, not the staging copy of the same name
+            write_bytes(path, data[: len(data) // 2])
+            raise KeyboardInterrupt
+        return write_bytes(path, data)
+
     result = _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(4.0, 0.05, True)]))
+    monkeypatch.setattr(Path, "write_bytes", write_half_then_interrupt)
     with pytest.raises(KeyboardInterrupt):
         add_evaluation(_table(), directory, result)
-    assert list(directory.glob("*.json")) == []
+    assert list(directory.iterdir()) == []
+
+
+def _build_script(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """Load the build script as a module, with its table path redirected under ``tmp_path``."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "build_covariance_tolerance_table.py"
+    if not path.exists():
+        pytest.skip("the build script is not part of an installed package")
+    spec = importlib.util.spec_from_file_location("build_covariance_tolerance_table", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "TABLE_PATH", tmp_path / "crossfade_errors.json")
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    return module
+
+
+def test_a_table_write_that_fails_removes_the_added_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """If the table cannot be written, the result --merge added is removed, so --check does not fail on it."""
+    script = _build_script(monkeypatch, tmp_path)
+    script.TABLE_PATH.write_text("old\n", encoding="utf-8")
+    added = tmp_path / "added.json"
+    added.write_text("{}\n", encoding="utf-8")
+
+    def fail(path: Path, text: str) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(script, "write_atomically", fail)
+    assert script.write_table("new\n", added) == 1
+    assert not added.exists()
+    assert script.TABLE_PATH.read_text(encoding="utf-8") == "old\n"
+
+
+def test_an_interruption_after_the_table_is_replaced_keeps_the_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Interrupted once the new table is in place, the result it cites is kept: removing it would break the table."""
+    script = _build_script(monkeypatch, tmp_path)
+    script.TABLE_PATH.write_text("old\n", encoding="utf-8")
+    added = tmp_path / "added.json"
+    added.write_text("{}\n", encoding="utf-8")
+
+    def replace_then_interrupt(path: Path, text: str) -> None:
+        path.write_text(text, encoding="utf-8")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(script, "write_atomically", replace_then_interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        script.write_table("new\n", added)
+    assert added.exists()

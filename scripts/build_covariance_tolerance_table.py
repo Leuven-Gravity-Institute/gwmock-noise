@@ -236,6 +236,14 @@ def write_atomically(path: Path, text: str) -> None:
         partial.unlink(missing_ok=True)
 
 
+def _table_is(text: str) -> bool:
+    """Return whether the bundled table on disk is ``text``."""
+    try:
+        return TABLE_PATH.read_text(encoding="utf-8") == text
+    except OSError:
+        return False
+
+
 def write_table(text: str, added: Path | None) -> int:
     """Write the table; if that fails, remove the result ``--merge`` just added, and report the failure.
 
@@ -244,12 +252,19 @@ def write_table(text: str, added: Path | None) -> int:
     try:
         write_atomically(TABLE_PATH, text)
     except BaseException as exc:
-        if added is not None:
-            added.unlink(missing_ok=True)
+        # Decided from the file, not from where the exception came: an interruption after the replacement leaves the
+        # new table, which cites the result, and the result must then stay.
+        if added is not None and not _table_is(text):
+            try:
+                added.unlink(missing_ok=True)
+            except OSError as cleanup:
+                print(f"error: could not remove {added} after the failed write ({cleanup}).", file=sys.stderr)
         if not isinstance(exc, OSError):
             raise
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    if added is not None:
+        print(f"added {added.relative_to(REPO_ROOT)}")
     print(f"wrote {TABLE_PATH.relative_to(REPO_ROOT)}")
     return 0
 
@@ -278,7 +293,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.merge is not None:
             added, table = add_evaluation(release, EVALUATIONS_DIR, args.merge)
-            print(f"added {added.relative_to(REPO_ROOT)}")
             args.write = True
         else:
             table = build_table(release, EVALUATIONS_DIR)
