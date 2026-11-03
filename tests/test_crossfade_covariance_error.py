@@ -111,7 +111,9 @@ def test_a_sum_of_every_distinct_harmonic_is_converged(monkeypatch: pytest.Monke
     assert complete.converged is True
     monkeypatch.setattr(crossfade_covariance, "MAXIMUM_HARMONICS", 31)
     cut = crossfade_covariance_error("ET_D_psd", 64.0, 2.0, (5.0, 20.0))
-    assert cut.harmonics < 32  # stopped at the first check, since the straddling pairs lie beyond the cap
+    # The straddling pairs lie beyond the cap, so the stopping rule is taken from the first check, where this sum
+    # stops: early, and without the pairs, so not converged.
+    assert cut.harmonics == 16
     assert cut.converged is False
 
 

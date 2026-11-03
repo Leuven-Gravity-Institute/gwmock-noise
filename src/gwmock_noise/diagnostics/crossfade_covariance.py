@@ -23,9 +23,10 @@ pairs start to straddle zero or the Nyquist frequency. A sum that reaches the ca
 whose straddling pairs lie beyond the cap so that it stops at the first check, omits part of
 the cyclic error and is marked not converged: it is not an upper bound. Long windows stop the
 second way, at the first check or soon after it (16 or 32 harmonics for the bundled curves).
-A window with no more distinct harmonics than the cap is summed in full instead: every pair is
-included, so the sum is complete and marked converged, whether or not the stopping rule was
-reached (an 8 s window at 8192 Hz, with 16384 distinct harmonics, is one).
+A window with no more distinct harmonics than the cap is never cut short: it stops at the
+stopping rule as usual, or, if the rule is not met first, sums every distinct harmonic, which
+includes every pair, so the sum is complete and marked converged (an 8 s window at 8192 Hz,
+with 16384 distinct harmonics, is summed in full).
 
 This is the method, and the code, of
 
