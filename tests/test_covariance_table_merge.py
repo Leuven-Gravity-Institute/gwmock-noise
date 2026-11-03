@@ -260,6 +260,16 @@ def test_a_result_the_command_wrote_merges(tmp_path: Path) -> None:
     assert row["converged"] is True
 
 
+def _with_smaller_id(record: dict, bound: str) -> dict:
+    """Return the record, varied in a field the merge ignores, so that its source id sorts before ``bound``."""
+    for attempt in range(1000):
+        varied = copy.deepcopy(record)
+        varied["psd"]["argument"] = f"{varied['psd']['argument']}#{attempt}"
+        if source_id(hashlib.sha256(_bytes(varied)).hexdigest()) < bound:
+            return varied
+    pytest.fail(f"no variation of the record has an id below {bound}")
+
+
 def _bytes(record: dict) -> bytes:
     """Return a result's bytes as the command writes them."""
     return (json.dumps(record, indent=4, sort_keys=True) + "\n").encode("utf-8")
@@ -405,11 +415,7 @@ def test_agreement_holds_across_every_converged_source(tmp_path: Path) -> None:
     sources = {source_id(hashlib.sha256(_bytes(record)).hexdigest()) for record in (low, high)}
     # The order that checking against the kept row alone gets wrong: the middle value is merged first and is the row
     # kept (its id sorts first), so each extreme is compared only with it.
-    for attempt in itertools.count():
-        center = _record(sampling_frequency=4096.0, windows=[(2.0, middle, True)])
-        center["psd"]["argument"] = f"{ET_D}.txt#{attempt}"
-        if source_id(hashlib.sha256(_bytes(center)).hexdigest()) < min(sources):
-            break
+    center = _with_smaller_id(_record(sampling_frequency=4096.0, windows=[(2.0, middle, True)]), min(sources))
     for name, record in (("0-center", center), ("1-low", low), ("2-high", high)):
         (tmp_path / f"{name}.json").write_bytes(_bytes(record))
     with pytest.raises(EvaluationMismatchError, match="converged errors of one window must agree"):
@@ -438,12 +444,34 @@ def test_a_result_the_rebuild_refuses_is_not_written(tmp_path: Path) -> None:
     """A new result that passes the first checks but fails the rebuild leaves the evaluations as they were."""
     directory = tmp_path / "evaluations"
     directory.mkdir()
-    for shift in (-0.9e-10, 0.0):
-        _write(directory, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1 * (1 + shift), True)]))
+    # The middle value is the row kept (its id sorts below the low one's), and the incoming id sorts below both: a
+    # check against the kept row alone passes the incoming value, and only the check over all sources refuses it.
+    low = _record(sampling_frequency=4096.0, windows=[(2.0, 0.1 * (1 - 0.9e-10), True)])
+    low_id = source_id(hashlib.sha256(_bytes(low)).hexdigest())
+    middle = _with_smaller_id(_record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True)]), low_id)
+    for record in (low, middle):
+        (directory / f"{source_id(hashlib.sha256(_bytes(record)).hexdigest())}.json").write_bytes(_bytes(record))
     before = sorted(path.name for path in directory.iterdir())
-    result = _write(
-        tmp_path, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1 * (1 + 0.9e-10), True), (4.0, 0.05, True)])
+    incoming = _with_smaller_id(
+        _record(sampling_frequency=4096.0, windows=[(2.0, 0.1 * (1 + 0.9e-10), True), (4.0, 0.05, True)]),
+        source_id(hashlib.sha256(_bytes(middle)).hexdigest()),
     )
+    result = tmp_path / "incoming.json"
+    result.write_bytes(_bytes(incoming))
     with pytest.raises(EvaluationMismatchError, match="must agree"):
         add_evaluation(_table(), directory, result)
     assert sorted(path.name for path in directory.iterdir()) == before
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b"not json at all\n", b'{"hello": 1}\n', b"[]\n"],
+)
+def test_a_committed_file_that_is_not_a_result_names_itself(tmp_path: Path, content: bytes) -> None:
+    """A committed file that is not JSON, or JSON of another shape, is reported by name like any other refusal."""
+    _write(tmp_path, _record(sampling_frequency=4096.0, windows=[(2.0, 0.1, True)]))
+    (tmp_path / "broken.json").write_bytes(content)
+    with pytest.raises(
+        EvaluationMismatchError, match=rf"{tmp_path.name}/broken\.json: not an evaluate-covariance-error"
+    ):
+        build_table(_table(), tmp_path)

@@ -257,7 +257,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except (ValueError, KeyError, TypeError) as exc:
         # A file that is not what evaluate-covariance-error writes: not JSON, or JSON of another shape.
-        print(f"error: not an evaluate-covariance-error result ({type(exc).__name__}: {exc}).", file=sys.stderr)
+        # Committed evaluations are reported by build_table with their names, so this is the --merge input.
+        print(
+            f"error: {args.merge}: not an evaluate-covariance-error result ({type(exc).__name__}: {exc}).",
+            file=sys.stderr,
+        )
         return 1
     text = json.dumps(table, indent=4, sort_keys=True) + "\n"
     if args.check:

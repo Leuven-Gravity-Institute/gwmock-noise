@@ -969,20 +969,21 @@ other method constants, another band, or a version that is not a plain release
 number (the check reads the version the result records; it cannot tell a release
 from a build that reports one). It also refuses a result that adds nothing: no
 window the table lacks, and no converged error where the table's is not. A
-converged error in the table is never replaced by an unconverged or a
-disagreeing one, and all converged errors of one window, from the release and
-every evaluation, must agree to a relative 1e-10. Where several sources give a
-window, the table keeps a converged error before an unconverged one, the release
-before an evaluation, and otherwise the evaluation whose id sorts first, so the
-table does not depend on the order of merging. The result is copied, byte for
-byte, to `src/gwmock_noise/data/covariance_tolerance/evaluations/`, and the
-table lists it with its SHA-256, even once other results cover all its windows,
-so `--check`, which rebuilds the table from the release and those files, notices
-a change to any of them. The target file written beside the result is not
-copied: the result records its SHA-256, and the target can be regenerated from
-the bundled curve with `crossfade_target`. Open a pull request with both. A
-curve the table does not cover needs a bundled PSD first, and is not added by a
-merge; open an issue to propose one.
+converged error in the table is never replaced by an unconverged one, and all
+converged errors of one window, from the release and every evaluation, must
+agree to a relative 1e-10: a result that disagrees is refused. Where several
+sources give a window, the table keeps a converged error before an unconverged
+one, the release before an evaluation, and otherwise the evaluation whose id
+sorts first, so the table does not depend on the order of merging. The result is
+copied, byte for byte, to
+`src/gwmock_noise/data/covariance_tolerance/evaluations/`, and the table lists
+it with its SHA-256, even once other results cover all its windows, so
+`--check`, which rebuilds the table from the release and those files, notices a
+change to any of them. The target file written beside the result is not copied:
+the result records its SHA-256, and the target can be regenerated from the
+bundled curve with `crossfade_target`. Open a pull request with both. A curve
+the table does not cover needs a bundled PSD first, and is not added by a merge;
+open an issue to propose one.
 
 ## Spectral covariance utilities
 

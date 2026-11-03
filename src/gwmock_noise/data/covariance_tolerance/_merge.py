@@ -40,7 +40,8 @@ RELEASE_SOURCE = "zenodo-23243286"
 
 #: Relative tolerance within which two converged errors of one window must agree. Two
 #: evaluations by the same method differ only by rounding, which depends on the numpy and
-#: scipy versions (up to about 1e-12 relative).
+#: scipy versions: the oldest supported (numpy 2.2, scipy 1.15) reproduce the released errors
+#: of the bundled curves to within 8e-13 relative, and the locked versions bit for bit.
 AGREEMENT_RTOL = 1e-10
 
 #: A plain release version, as this project tags them (``0.19.0``). A development or local
@@ -252,21 +253,28 @@ def build_table(release_table: dict[str, Any], directory: Path) -> dict[str, Any
                         (row["eps_total"], describe_source(release_table, row["source"]))
                     )
     for path in sorted(directory.glob("*.json")):
+        label = f"{directory.name}/{path.name}"
         data = path.read_bytes()
-        record = json.loads(data)
         try:
-            merge_evaluation(
-                table, record, file=f"{directory.name}/{path.name}", sha256=hashlib.sha256(data).hexdigest()
-            )
+            record = json.loads(data)
+            merge_evaluation(table, record, file=label, sha256=hashlib.sha256(data).hexdigest())
+            preset = evaluated_preset(table, record)
+            key = str(round(float(record["sampling_frequency"])))
+            windows = [
+                (float(window["window_duration"]), float(window["eps_total"]))
+                for window in record["windows"]
+                if window["converged"]
+            ]
         except EvaluationMismatchError as exc:
-            raise EvaluationMismatchError(f"{directory.name}/{path.name}: {exc} Remove or replace that file.") from exc
-        preset = evaluated_preset(table, record)
-        key = str(round(float(record["sampling_frequency"])))
-        for window in record["windows"]:
-            if window["converged"]:
-                converged.setdefault((preset, key, float(window["window_duration"])), []).append(
-                    (float(window["eps_total"]), f"{directory.name}/{path.name}")
-                )
+            raise EvaluationMismatchError(f"{label}: {exc} Remove or replace that file.") from exc
+        except (ValueError, KeyError, TypeError) as exc:
+            # Not JSON, or JSON of another shape: name the file, as for any other refusal.
+            raise EvaluationMismatchError(
+                f"{label}: not an evaluate-covariance-error result ({type(exc).__name__}: {exc}). Remove or replace "
+                f"that file."
+            ) from exc
+        for duration, eps_total in windows:
+            converged.setdefault((preset, key, duration), []).append((eps_total, label))
     for (preset, key, duration), values in sorted(converged.items()):
         (low, low_source), (high, high_source) = min(values), max(values)
         if not math.isclose(low, high, rel_tol=AGREEMENT_RTOL, abs_tol=0.0):
