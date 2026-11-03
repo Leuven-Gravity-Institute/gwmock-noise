@@ -99,7 +99,7 @@ def test_a_sum_stopped_at_the_cap_is_not_converged(monkeypatch: pytest.MonkeyPat
 
 
 def test_a_sum_of_every_distinct_harmonic_is_converged(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A window with no more distinct harmonics than the cap is summed in full, so it is converged.
+    """A window whose distinct harmonics do not exceed the cap is never cut by it: here every one is summed.
 
     The same case as an 8 s window at 8192 Hz (16384 distinct harmonics, the cap) at a size a test can afford: at
     64 Hz a 2 s window has 32 distinct harmonics, and with a 5-20 Hz band the pairs straddle the Nyquist frequency
@@ -111,8 +111,8 @@ def test_a_sum_of_every_distinct_harmonic_is_converged(monkeypatch: pytest.Monke
     assert complete.converged is True
     monkeypatch.setattr(crossfade_covariance, "MAXIMUM_HARMONICS", 31)
     cut = crossfade_covariance_error("ET_D_psd", 64.0, 2.0, (5.0, 20.0))
-    # The straddling pairs lie beyond the cap, so the stopping rule is taken from the first check, where this sum
-    # stops: early, and without the pairs, so not converged.
+    # Twice the straddling onset (48) lies beyond the cap of 31, so the stopping rule is taken from the first check
+    # (16), where this sum stops: before the straddling pairs start at 24, so not converged.
     assert cut.harmonics == 16
     assert cut.converged is False
 

@@ -19,14 +19,15 @@ frequency, or beyond the Nyquist frequency, is the component at the folded frequ
 
 The cyclic sum is taken harmonic by harmonic until doubling the number of harmonics changes
 ``eps_tot^2`` by less than a relative tolerance, no earlier than twice the harmonic at which
-pairs start to straddle zero or the Nyquist frequency. A sum that reaches the cap first, or
-whose straddling pairs lie beyond the cap so that it stops at the first check, omits part of
-the cyclic error and is marked not converged: it is not an upper bound. Long windows stop the
-second way, at the first check or soon after it (16 or 32 harmonics for the bundled curves).
-A window with no more distinct harmonics than the cap is never cut short: it stops at the
-stopping rule as usual, or, if the rule is not met first, sums every distinct harmonic, which
-includes every pair, so the sum is complete and marked converged (an 8 s window at 8192 Hz,
-with 16384 distinct harmonics, is summed in full).
+pairs start to straddle zero or the Nyquist frequency. Where the window has more distinct
+harmonics than the cap, a sum that reaches the cap first, or whose straddling pairs lie beyond
+the cap so that it stops at the first check, omits part of the cyclic error and is marked not
+converged: it is not an upper bound. Long windows stop the second way, at the first check or
+soon after it (16 or 32 harmonics for the bundled curves). A window with no more distinct
+harmonics than the cap is never cut short: it stops at the stopping rule as usual, or, if the
+rule is not met first, sums every distinct harmonic, which includes every pair, so the sum is
+complete and marked converged (an 8 s window at 8192 Hz, with 16384 distinct harmonics, is
+summed in full).
 
 This is the method, and the code, of
 
