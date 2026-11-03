@@ -9,7 +9,7 @@ it reads the errors evaluated for the paper
 
     I. C. F. Wong, "Choosing a generator for streaming Gaussian noise in
     gravitational-wave mock data: accuracy, cost and reproducibility",
-    data: doi:10.5281/zenodo.23243286,
+    arXiv:2611.01624; data: doi:10.5281/zenodo.23243286,
 
 bundled in :mod:`gwmock_noise.data.covariance_tolerance`, and takes the shortest evaluated
 window that meets the tolerance. It does not interpolate between evaluated windows: the error
