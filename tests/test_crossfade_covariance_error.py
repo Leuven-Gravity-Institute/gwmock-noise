@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
+from gwmock_noise._spectral import _resolve_bundled_psd
 from gwmock_noise.cli import evaluate_covariance_error as cli_module
 from gwmock_noise.cli.main import app
 from gwmock_noise.data.covariance_tolerance import load_crossfade_errors
@@ -19,7 +20,6 @@ from gwmock_noise.diagnostics.crossfade_covariance import (
     simulator_settings,
 )
 from gwmock_noise.simulators import colored
-from gwmock_noise.simulators._spectral import _resolve_bundled_psd
 
 #: The cheapest bundled curves to evaluate, with the analysis band their table entries hold.
 ET_CURVES = {"ET_D_psd": (5.0, 2048.0), "ET_10_full_cryo_psd": (5.0, 2048.0)}

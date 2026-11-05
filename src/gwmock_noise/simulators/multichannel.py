@@ -37,8 +37,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from gwmock_noise._spectral import load_spectral_series, median_frequency_spacing
 from gwmock_noise.simulators._fit import FitError
-from gwmock_noise.simulators._spectral import load_spectral_series, median_frequency_spacing
 from gwmock_noise.simulators._stitching import warn_if_underresolved
 from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
 from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window

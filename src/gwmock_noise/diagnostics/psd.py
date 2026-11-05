@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from scipy.signal import welch
 
-from gwmock_noise.simulators._spectral import load_spectral_series
+from gwmock_noise._spectral import load_spectral_series
 
 _MATPLOTLIB_IMPORT_ERROR = "matplotlib is required to use plot_psd. Install it with `pip install matplotlib`."
 

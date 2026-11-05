@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from scipy.signal import lfilter
 
+from gwmock_noise._spectral import load_spectral_series
 from gwmock_noise.simulators._fit import (
     DEFAULT_FIT_BANDS,
     FitError,
@@ -28,7 +29,6 @@ from gwmock_noise.simulators._fit import (
     require_nonnegative_spectrum,
     toeplitz_condition_number,
 )
-from gwmock_noise.simulators._spectral import load_spectral_series
 from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
 
 if TYPE_CHECKING:

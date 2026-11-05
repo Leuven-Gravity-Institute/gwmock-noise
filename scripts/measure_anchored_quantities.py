@@ -34,8 +34,8 @@ from typing import NamedTuple
 import numpy as np
 from scipy.signal import welch
 
+from gwmock_noise._spectral import load_spectral_series
 from gwmock_noise.simulators import ARMANoiseSimulator, ARNoiseSimulator
-from gwmock_noise.simulators._spectral import load_spectral_series
 from gwmock_noise.simulators.arma import (
     DEFAULT_LINE_PROMINENCE,
     DEFAULT_LINE_WIDTH_HZ,

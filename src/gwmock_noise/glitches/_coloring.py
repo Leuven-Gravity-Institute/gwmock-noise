@@ -7,12 +7,12 @@ from typing import NamedTuple
 
 import numpy as np
 
-from gwmock_noise.glitches.snr import SNRDistribution
-from gwmock_noise.simulators._spectral import (
+from gwmock_noise._spectral import (
     _resolve_bundled_psd,
     load_spectral_series,
     normalize_spectral_reference,
 )
+from gwmock_noise.glitches.snr import SNRDistribution
 from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
 
 

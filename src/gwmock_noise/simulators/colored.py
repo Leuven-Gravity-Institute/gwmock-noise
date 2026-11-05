@@ -9,15 +9,15 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from gwmock_noise._spectral import (
+    load_spectral_series,
+    median_frequency_spacing,
+    normalize_spectral_reference,
+)
 from gwmock_noise.simulators._covariance_tolerance import (
     CrossfadeChoice,
     UnsupportedCovarianceToleranceError,
     choose_crossfade_window,
-)
-from gwmock_noise.simulators._spectral import (
-    load_spectral_series,
-    median_frequency_spacing,
-    normalize_spectral_reference,
 )
 from gwmock_noise.simulators._stitching import (
     DEFAULT_WINDOW_DURATION,

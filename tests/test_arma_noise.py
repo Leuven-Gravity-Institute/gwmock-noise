@@ -18,9 +18,9 @@ import numpy as np
 import pytest
 from scipy.signal import welch
 
+from gwmock_noise._spectral import load_spectral_series
 from gwmock_noise.simulators import ARMANoiseSimulator
 from gwmock_noise.simulators._fit import FitError
-from gwmock_noise.simulators._spectral import load_spectral_series
 
 ALIGO_PSD = "aLIGO_O4_high_projected_psd"
 ET_PSD = "ET_D_psd"

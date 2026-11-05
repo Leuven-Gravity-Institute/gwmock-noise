@@ -41,8 +41,8 @@ from typing import Any
 
 import numpy as np
 
+from gwmock_noise._spectral import _resolve_bundled_psd, load_spectral_series
 from gwmock_noise.data.covariance_tolerance import describe_source, load_crossfade_errors
-from gwmock_noise.simulators._spectral import _resolve_bundled_psd, load_spectral_series
 
 #: Where the documentation explains the evaluated configuration and how to add a curve.
 DOCUMENTATION_SECTION = "the 'Choosing the window from a covariance tolerance' section of the noise simulation guide"

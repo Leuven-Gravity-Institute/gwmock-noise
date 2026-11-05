@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from importlib import import_module
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from gwmock_noise.naming import (
     check_artifact_names,
@@ -13,8 +14,9 @@ from gwmock_noise.naming import (
     reject_unsafe,
 )
 from gwmock_noise.output.gwpy import GWpyAdapter
-from gwmock_noise.simulators.glitches import apply_segment_gps_start
-from gwmock_noise.simulators.protocol import NoiseSimulator
+
+if TYPE_CHECKING:
+    from gwmock_noise.simulators.protocol import NoiseSimulator
 
 _FRAME_IMPORT_ERROR = (
     "gwpy with a GWF backend is required to use FrameWriter. Install it with `pip install gwmock-noise[frame]`."
@@ -210,6 +212,10 @@ class FrameWriter:
         # for each consumer to derive. A glitch injector anywhere beneath this writer
         # stamps its truth catalogue with it, so a run that jumps epochs between segments
         # keeps the catalogue and the frame name describing the same instant.
+        # Imported here: the simulators package imports this writer, so importing it at the top
+        # would make importing this module first circular.
+        from gwmock_noise.simulators.glitches import apply_segment_gps_start  # noqa: PLC0415
+
         apply_segment_gps_start(self.base, segment_start)
         adapter = GWpyAdapter(self.base, gps_start=segment_start)
         series_by_detector = adapter.generate(
