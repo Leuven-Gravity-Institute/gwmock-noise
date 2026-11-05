@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from gwmock_noise.simulators._spectral import load_spectral_series
+from gwmock_noise._spectral import load_spectral_series
 
 
 def test_load_spectral_series_rejects_complex_frequency_column(tmp_path: Path) -> None:

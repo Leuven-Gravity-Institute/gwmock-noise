@@ -5,10 +5,10 @@ from __future__ import annotations
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
-from gwmock_noise.simulators.protocol import NoiseSimulator
-
 if TYPE_CHECKING:
     from gwpy.timeseries import TimeSeries
+
+    from gwmock_noise.simulators.protocol import NoiseSimulator
 
 _GWPY_IMPORT_ERROR = "gwpy is required to use GWpyAdapter. Install it with `pip install gwmock-noise[gwpy]`."
 

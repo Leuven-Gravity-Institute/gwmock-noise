@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from scipy.special import eval_legendre
 
-from gwmock_noise.simulators._spectral import load_spectral_series
+from gwmock_noise._spectral import load_spectral_series
 from gwmock_noise.simulators._stitching import (
     DEFAULT_WINDOW_DURATION,
     OverlapAddStitcher,

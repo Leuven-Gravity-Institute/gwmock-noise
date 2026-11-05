@@ -8,7 +8,7 @@ __lazy_modules__ = [
     "numpy",
     "gwmock_noise.diagnostics",
     "gwmock_noise.diagnostics.crossfade_covariance",
-    "gwmock_noise.simulators._spectral",
+    "gwmock_noise._spectral",
 ]
 
 import json
@@ -21,8 +21,8 @@ from typing import Annotated, Any
 import numpy as np
 import typer
 
+from gwmock_noise._spectral import _resolve_bundled_psd
 from gwmock_noise.diagnostics import crossfade_covariance
-from gwmock_noise.simulators._spectral import _resolve_bundled_psd
 from gwmock_noise.version import __version__
 
 

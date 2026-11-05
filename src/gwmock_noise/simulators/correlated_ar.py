@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
-from gwmock_noise.simulators._spectral import load_spectral_series
+from gwmock_noise._spectral import load_spectral_series
 from gwmock_noise.simulators.base import ConfigurableNoiseSimulator
 from gwmock_noise.simulators.colored import _resolve_taper_alpha, _tukey_window
 from gwmock_noise.simulators.correlated import parse_csd_file_map

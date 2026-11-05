@@ -30,6 +30,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from gwmock_noise._spectral import _resolve_bundled_psd
 from gwmock_noise.config import NoiseConfig, OutputConfig
 from gwmock_noise.data.covariance_tolerance import load_crossfade_errors
 from gwmock_noise.simulators import ColoredNoiseSimulator, UnsupportedCovarianceToleranceError
@@ -40,7 +41,6 @@ from gwmock_noise.simulators._covariance_tolerance import (
     continued_target,
     error_band,
 )
-from gwmock_noise.simulators._spectral import _resolve_bundled_psd
 
 TABLE = load_crossfade_errors()
 PRESETS = sorted(TABLE["spectra"])

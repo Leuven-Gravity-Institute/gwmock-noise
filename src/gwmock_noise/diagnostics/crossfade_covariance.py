@@ -55,9 +55,9 @@ from pathlib import Path
 import numpy as np
 from scipy.signal import fftconvolve
 
+from gwmock_noise._spectral import load_spectral_series
 from gwmock_noise.data.covariance_tolerance import load_crossfade_errors
 from gwmock_noise.simulators._covariance_tolerance import NYQUIST_GUARD_HZ, continued_psd, continued_target, error_band
-from gwmock_noise.simulators._spectral import load_spectral_series
 
 #: Grid points per ``f_s / (4 P)``, the scale on which the crossfade's spectra vary.
 OVERSAMPLE = 4

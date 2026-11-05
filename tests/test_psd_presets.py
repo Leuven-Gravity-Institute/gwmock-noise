@@ -10,9 +10,9 @@ import pytest
 import pytest_mock
 
 from gwmock_noise import DefaultNoiseSimulator
+from gwmock_noise._spectral import load_spectral_series
 from gwmock_noise.config import NoiseConfig, OutputConfig
 from gwmock_noise.glitches import BlipGlitch, LogNormalAmplitudeDistribution
-from gwmock_noise.simulators._spectral import load_spectral_series
 from gwmock_noise.simulators.colored import ColoredNoiseSimulator
 
 PSD_PACKAGE = "gwmock_noise.data.psd"

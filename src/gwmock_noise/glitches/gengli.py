@@ -10,6 +10,7 @@ from typing import Any, Literal
 import numpy as np
 from gwmock_data import hdf5
 
+from gwmock_noise._spectral import load_spectral_series
 from gwmock_noise.glitches._coloring import ColoredWaveform, color_whitened_waveform, optimal_snr
 from gwmock_noise.glitches.models import GlitchDraw, GlitchModel
 from gwmock_noise.glitches.snr import (
@@ -19,7 +20,6 @@ from gwmock_noise.glitches.snr import (
     normalize_snr,
     serialize_snr,
 )
-from gwmock_noise.simulators._spectral import load_spectral_series
 
 POPULATION_SNR_DATASET = "snr"
 UINT32_EXCLUSIVE_MAX = 2**32

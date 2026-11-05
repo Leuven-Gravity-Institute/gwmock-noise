@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from gwmock_noise.simulators._spectral import load_spectral_series
+from gwmock_noise._spectral import load_spectral_series
 from gwmock_noise.utils.log import LOGGER_NAME
 
 logger = logging.getLogger(LOGGER_NAME)

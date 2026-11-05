@@ -31,13 +31,13 @@ import pytest
 from scipy.signal import csd as cross_spectral_density
 from scipy.signal import welch
 
+from gwmock_noise._spectral import load_spectral_series
 from gwmock_noise.config import NoiseComponentConfig, NoiseConfig
 from gwmock_noise.simulators import (
     CorrelatedARNoiseSimulator,
     MultichannelNoiseSimulator,
 )
 from gwmock_noise.simulators._fit import FitError
-from gwmock_noise.simulators._spectral import load_spectral_series
 from gwmock_noise.simulators.matrix_factorization import matrix_autocovariance
 from gwmock_noise.simulators.registry import available_simulator_names
 

@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from scipy.fft import next_fast_len
 
-from gwmock_noise.simulators._spectral import (
+from gwmock_noise._spectral import (
     load_spectral_series,
     median_frequency_spacing,
     normalize_spectral_reference,
