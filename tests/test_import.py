@@ -35,19 +35,15 @@ def test_import_submodule(module_name):
     __import__(module_name)
 
 
-_FIRST_IMPORT = """
-import importlib, json, sys
+def _import_first(module_name: str) -> str | None:
+    """Import ``module_name`` in a fresh interpreter; return the error's last line, or ``None``."""
+    import subprocess
+    import sys
 
-failures = {}
-for name in json.loads(sys.argv[1]):
-    for loaded in [key for key in sys.modules if key == "gwmock_noise" or key.startswith("gwmock_noise.")]:
-        del sys.modules[loaded]
-    try:
-        importlib.import_module(name)
-    except Exception as exc:
-        failures[name] = f"{type(exc).__name__}: {exc}"
-print(json.dumps(failures))
-"""
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", f"import {module_name}"], capture_output=True, text=True, check=False
+    )
+    return result.stderr.strip().splitlines()[-1] if result.returncode else None
 
 
 def test_every_submodule_imports_first():
@@ -55,15 +51,14 @@ def test_every_submodule_imports_first():
 
     ``test_import_submodule`` imports them after the package, which has loaded most of them already, so
     a circular import between two submodules only fails when one of them is imported first: as
-    ``gwmock_noise.spectral`` is by a caller that needs nothing else. One interpreter, with the
-    package's modules cleared before each import, keeps third-party imports loaded and the test fast.
+    ``gwmock_noise.spectral`` is by a caller that needs nothing else. Each import runs in its own
+    interpreter, so no module loaded for one can satisfy another; the interpreters run in parallel.
     """
-    import json
-    import subprocess
-    import sys
+    import os
+    from concurrent.futures import ThreadPoolExecutor
 
     names = get_all_submodules(gwmock_noise)
-    result = subprocess.run(  # noqa: S603
-        [sys.executable, "-c", _FIRST_IMPORT, json.dumps(names)], capture_output=True, text=True, check=True
-    )
-    assert json.loads(result.stdout) == {}
+    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 1)) as pool:
+        errors = dict(zip(names, pool.map(_import_first, names), strict=True))
+    failing = sorted(name for name, error in errors.items() if error)
+    assert failing == [], {name: errors[name] for name in failing}
