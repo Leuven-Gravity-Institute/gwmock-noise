@@ -162,6 +162,8 @@ def simulate_duty_cycle(
     n = len(names)
     model.maintenance.check_network(n)
     end = start + duration
+    if not math.isfinite(end):
+        raise ValueError(f"start={start!r} plus duration={duration!r} overflows to {end!r}.")
     if end <= start:
         raise ValueError(f"a duration of {duration!r} s does not move the end past start={start!r} in floating point.")
     rng = np.random.default_rng(seed)
@@ -179,7 +181,9 @@ def simulate_duty_cycle(
     while now < end:
         boundary_time = boundaries[next_boundary][0] if next_boundary < len(boundaries) else end
         stop = min(boundary_time, end)
-        event_time = chain.next_event(now)
+        # An event closer than one floating-point step would leave time where it is, and the
+        # loop would never end; it happens one step later instead.
+        event_time = max(chain.next_event(now), float(np.nextafter(now, math.inf)))
         if event_time < stop:
             now = event_time
             chain.apply_event(now)

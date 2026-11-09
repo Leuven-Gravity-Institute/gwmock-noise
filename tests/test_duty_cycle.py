@@ -392,3 +392,21 @@ def test_a_duration_lost_to_rounding_is_refused() -> None:
     """At GPS 1e9 a duration of 1e-8 s leaves the end equal to the start."""
     with pytest.raises(ValueError, match="does not move the end"):
         simulate_duty_cycle(DutyCycleModel(), TRIANGLE, START, 1e-8, seed=0)
+
+
+def test_a_span_whose_end_overflows_is_refused() -> None:
+    """Finite inputs whose sum is infinite are refused before the event loop."""
+    with pytest.raises(ValueError, match="overflows"):
+        simulate_duty_cycle(DutyCycleModel(), TRIANGLE, 1e308, 1e308, seed=0)
+
+
+def test_a_span_coarser_than_the_event_times_still_terminates() -> None:
+    """At GPS 1e25 one floating-point step is about 2e9 s, far longer than any lock or gap.
+
+    Every drawn wait then rounds to no time at all; each event moves time on by one step instead,
+    so the draw ends after about as many events as there are steps in the span.
+    """
+    start = 1e25
+    duration = 500 * float(np.spacing(start))
+    realization = simulate_duty_cycle(DutyCycleModel(maintenance=NO_MAINTENANCE), TRIANGLE, start, duration, seed=0)
+    assert realization.end > realization.start
