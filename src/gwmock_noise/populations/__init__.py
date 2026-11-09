@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from gwmock_noise.populations.deepextractor_o3 import deepextractor_o3_population
 from gwmock_noise.populations.et_o3_anchored import (
     POPULATION_NAME,
     REFERENCES,
@@ -27,6 +28,7 @@ __all__ = [
     "GlitchPopulation",
     "GlitchRealization",
     "available_glitch_populations",
+    "deepextractor_o3_population",
     "et_o3_anchored_population",
     "get_glitch_population",
 ]

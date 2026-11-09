@@ -594,7 +594,7 @@ to have used the same model rather than asserted to have:
 ```python
 from gwmock_noise import available_glitch_populations, get_glitch_population
 
-available_glitch_populations()  # ['et-o3-anchored-v1']
+available_glitch_populations()  # ['deepextractor-o3-v1', 'et-o3-anchored-v1']
 
 population = get_glitch_population("et-o3-anchored-v1")
 population.digest()  # 'sha256:58fb23aef4b4dd0d0038ebdae09da51bdaf638821aca0df97ead74dcbc1dc3b0'
@@ -607,6 +607,42 @@ longer, low-frequency, network-coherent class drawn from the Scattered Light
 population. Its short class is supported to 780 Hz, so it needs a sampling
 frequency of at least 1560 Hz; a lower one is refused rather than quietly
 narrowed.
+
+`deepextractor-o3-v1` registers the seven DeepExtractor classes (see
+[DeepExtractor glitches](#deepextractor-glitches)), each at its measured O3 rate
+per interferometer and with its measured O3 SNR tail above 7.5, truncated at its
+largest observed SNR. Every interferometer glitches independently. The rates
+count every trigger Gravity Spy labelled with the class, at any confidence, over
+the pooled H1 and L1 observing time; they total 8.50e-3 Hz, 30.6 per hour. Its
+builder takes a run's own settings — `psd_file`, `detectors`,
+`low_frequency_cutoff` and `revision` — and a changed setting changes the
+digest:
+
+```python
+population = get_glitch_population("deepextractor-o3-v1", psd_file="ET_15_full_cryo_psd")
+```
+
+`docs/dev/deepextractor_o3_population.md` records how each number was measured
+and how well the power laws describe the O3 data.
+
+### In a configuration
+
+A `glitches` component's `models` list accepts a `population` entry in place of
+a model. It expands to the population's class models. Its other keys are the
+builder's settings, and `digest`, when given, must equal the digest of the
+population those settings build, so the configuration fails if the registered
+rates, tails or settings have changed:
+
+```toml
+[[components]]
+simulator = "glitches"
+models = [
+  { population = "deepextractor-o3-v1", psd_file = "ET_15_full_cryo_psd", digest = "sha256:..." }
+]
+```
+
+`get_glitch_population(name, **settings).digest()` prints the value to pin. A
+`population` entry can sit beside ordinary model entries.
 
 Three things a population adds over a bare list of models.
 

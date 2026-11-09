@@ -705,6 +705,30 @@ def validate_glitch_detector_coverage(models: Sequence[GlitchModel], detectors: 
         )
 
 
+def _expand_glitch_population(entry: dict[str, Any]) -> list[GlitchModel]:
+    """Expand a ``population`` config entry into the models of the population's classes."""
+    # Imported here: the populations package imports this module.
+    from gwmock_noise.populations.registry import get_glitch_population  # noqa: PLC0415
+
+    arguments = dict(entry)
+    name = arguments.pop("population")
+    pinned = arguments.pop("digest", None)
+    try:
+        population = get_glitch_population(name, **arguments)
+    except KeyError as error:
+        raise ValueError(error.args[0]) from error
+    except TypeError as error:
+        raise ValueError(
+            f"glitch population {name!r} does not take the arguments {sorted(arguments)}: {error}"
+        ) from error
+    if pinned is not None and population.digest() != pinned:
+        raise ValueError(
+            f"glitch population {name!r} built with {sorted(arguments)} has digest {population.digest()}, "
+            f"not the pinned {pinned}."
+        )
+    return [glitch_class.model for glitch_class in population.classes]
+
+
 def normalize_glitch_models(value: Any) -> list[GlitchModel]:
     """Normalize heterogeneous glitch-config inputs.
 
@@ -715,6 +739,12 @@ def normalize_glitch_models(value: Any) -> list[GlitchModel]:
     :func:`validate_glitch_detector_coverage`'s question, because it is the run that
     supplies the interferometers.
 
+    An entry with a ``population`` key names a registered glitch population instead of a
+    single model, and expands to the models of its classes. Its other keys are the
+    population builder's arguments (for example ``psd_file``), except ``digest``: when
+    given, the built population's digest must equal it, so a configuration pins the exact
+    rates, tails and settings it was written for.
+
     Args:
         value: The configured list of models or model mappings.
 
@@ -724,7 +754,8 @@ def normalize_glitch_models(value: Any) -> list[GlitchModel]:
     Raises:
         TypeError: If the value is not a list, or an entry is not a mapping.
         ValueError: If an entry names an unsupported kind or omits its amplitude
-            distribution.
+            distribution, names an unknown population or an argument its builder does
+            not take, or pins a digest the built population does not have.
     """
     if not isinstance(value, list):
         raise TypeError("glitch component options must provide a list of models.")
@@ -737,6 +768,10 @@ def normalize_glitch_models(value: Any) -> list[GlitchModel]:
             continue
         if not isinstance(entry, dict):
             raise TypeError("glitch model entries must be mappings or GlitchModel instances.")
+
+        if "population" in entry:
+            normalized.extend(_expand_glitch_population(entry))
+            continue
 
         kind = entry.get("kind")
         if kind not in kinds:

@@ -1,7 +1,8 @@
-"""Re-measure the quantities the ``et-o3-anchored-v1`` glitch population is anchored to.
+"""Re-measure the quantities the registered O3 glitch populations are anchored to.
 
 Every rate, amplitude-law parameter and frequency edge in
-:mod:`gwmock_noise.populations.et_o3_anchored` is measured over two published data
+:mod:`gwmock_noise.populations.et_o3_anchored` and
+:mod:`gwmock_noise.populations.deepextractor_o3` is measured over two published data
 products rather than chosen by hand:
 
 1. the Gravity Spy machine-learning classifications of LIGO glitches from O1-O3b
@@ -10,12 +11,11 @@ products rather than chosen by hand:
 2. the Gravitational Wave Open Science Center's O3 observing segments, which supply the
    livetime the counts are divided by.
 
-This script downloads both (about 560 MB, cached), measures everything, prints it, and
-optionally rewrites the small summary the package bundles at
-``src/gwmock_noise/data/glitch_population/o3_reference_summary.json``. That summary is
-what ``docs/dev/glitch_population.md`` quotes and what ``tests/test_glitch_population.py``
-asserts the registered constants against, so the page, this printout and the assertions
-cannot drift apart.
+This script downloads both (about 560 MB, cached), measures one population's classes under
+that population's selection, prints everything, and optionally rewrites the small summary the
+package bundles for it under ``src/gwmock_noise/data/glitch_population/``. That summary is what
+``docs/dev/glitch_population.md`` quotes and what the tests assert the registered constants
+against, so the page, this printout and the assertions cannot drift apart.
 
 It is a measurement harness, not a test: it needs the network, it takes a few minutes on a
 cold cache, and it changes nothing unless asked to.
@@ -25,6 +25,7 @@ Usage::
     uv run python scripts/measure_glitch_population_anchors.py
     uv run python scripts/measure_glitch_population_anchors.py --write-summary
     uv run python scripts/measure_glitch_population_anchors.py --data-dir /scratch/gspy
+    uv run python scripts/measure_glitch_population_anchors.py --population deepextractor-o3-v1
 """
 
 from __future__ import annotations
@@ -72,6 +73,39 @@ CONFIDENCE_MINIMUM = 0.9
 
 #: Percentiles reported for every measured column.
 PERCENTILES = (1.0, 5.0, 25.0, 50.0, 75.0, 95.0, 99.0)
+
+#: Where the ``deepextractor-o3-v1`` summary is bundled.
+DEEPEXTRACTOR_SUMMARY_PATH = SUMMARY_PATH.parent / "deepextractor_o3_summary.json"
+
+#: The seven Gravity Spy classes the DeepExtractor glitch reconstructions cover.
+DEEPEXTRACTOR_CLASSES = (
+    "Blip",
+    "Fast_Scattering",
+    "Koi_Fish",
+    "Low_Frequency_Burst",
+    "Scattered_Light",
+    "Tomte",
+    "Whistle",
+)
+
+
+class Measurement(NamedTuple):
+    """Which classes one population is measured over, under which selection, and where its summary goes.
+
+    ``confidence_minimum`` of ``None`` keeps every trigger the classifier labelled with the class,
+    whatever its confidence.
+    """
+
+    classes: tuple[str, ...]
+    confidence_minimum: float | None
+    summary_path: Path
+
+
+#: The registered populations this harness measures, by name.
+MEASUREMENTS = {
+    "et-o3-anchored-v1": Measurement(MEASURED_CLASSES, CONFIDENCE_MINIMUM, SUMMARY_PATH),
+    "deepextractor-o3-v1": Measurement(DEEPEXTRACTOR_CLASSES, None, DEEPEXTRACTOR_SUMMARY_PATH),
+}
 
 #: Thresholds the Hill index is reported at, so its threshold dependence -- the statement
 #: that neither class is a pure power law from 7.5 upward -- is visible rather than hidden
@@ -273,18 +307,21 @@ def observing_livetime(data_dir: Path) -> dict[str, float]:
     return livetime
 
 
-def read_triggers(data_dir: Path) -> dict[tuple[str, str], Triggers]:
+def read_triggers(
+    data_dir: Path, measurement: Measurement = MEASUREMENTS["et-o3-anchored-v1"]
+) -> dict[tuple[str, str], Triggers]:
     """Read the selected triggers of every measured class, per interferometer.
 
     Args:
         data_dir: Cache directory for the classification files.
+        measurement: The classes to read and the confidence they must exceed.
 
     Returns:
         The triggers keyed by ``(interferometer, Gravity Spy class)``, pooled over O3a and
         O3b.
     """
     collected: dict[tuple[str, str], list[list[float]]] = {
-        (detector, name): [] for detector in ("H1", "L1") for name in MEASURED_CLASSES
+        (detector, name): [] for detector in ("H1", "L1") for name in measurement.classes
     }
     for (detector, run), filename in sorted(CLASSIFICATION_FILES.items()):
         url = f"https://zenodo.org/api/records/{ZENODO_RECORD}/files/{filename}/content"
@@ -293,9 +330,10 @@ def read_triggers(data_dir: Path) -> dict[tuple[str, str], Triggers]:
         with path.open(newline="") as handle:
             for row in csv.DictReader(handle):
                 label = row["ml_label"]
-                if label not in MEASURED_CLASSES:
+                if label not in measurement.classes or float(row["snr"]) <= SNR_MINIMUM:
                     continue
-                if float(row["ml_confidence"]) <= CONFIDENCE_MINIMUM or float(row["snr"]) <= SNR_MINIMUM:
+                confidence_minimum = measurement.confidence_minimum
+                if confidence_minimum is not None and float(row["ml_confidence"]) <= confidence_minimum:
                     continue
                 collected[(detector, label)].append(
                     [
@@ -317,32 +355,38 @@ def _percentiles(values: np.ndarray) -> dict[str, float]:
     }
 
 
-def summarize(triggers: dict[tuple[str, str], Triggers], livetime: dict[str, float]) -> dict[str, Any]:
+def summarize(
+    triggers: dict[tuple[str, str], Triggers],
+    livetime: dict[str, float],
+    population: str = "et-o3-anchored-v1",
+) -> dict[str, Any]:
     """Build the bundled summary from the raw triggers and the observing time.
 
     Args:
         triggers: The selected triggers per ``(interferometer, class)``.
         livetime: Observing time per interferometer, in seconds.
+        population: The registered population the summary is for.
 
     Returns:
         The summary, in the shape the bundled JSON has.
     """
+    measurement = MEASUREMENTS[population]
     pooled_livetime = float(sum(livetime.values()))
     summary: dict[str, Any] = {
         "description": (
-            "Measured reference statistics for the et-o3-anchored-v1 glitch population. "
+            f"Measured reference statistics for the {population} glitch population. "
             "Regenerated by scripts/measure_glitch_population_anchors.py; quoted by "
-            "docs/dev/glitch_population.md; asserted against by tests/test_glitch_population.py."
+            "docs/dev/glitch_population.md; asserted against by the tests."
         ),
         "sources": {
             "classifications": "doi:10.5281/zenodo.5649212 (Gravity Spy machine-learning classifications, O1-O3b)",
             "livetime": "Gravitational Wave Open Science Center O3 observing segments (H1_DATA, L1_DATA)",
         },
-        "selection": {"snr_minimum": SNR_MINIMUM, "confidence_minimum": CONFIDENCE_MINIMUM},
+        "selection": {"snr_minimum": SNR_MINIMUM, "confidence_minimum": measurement.confidence_minimum},
         "livetime_seconds": {**{key: float(value) for key, value in livetime.items()}, "pooled": pooled_livetime},
         "classes": {},
     }
-    for name in MEASURED_CLASSES:
+    for name in measurement.classes:
         pooled = Triggers.concatenate([triggers[(detector, name)] for detector in ("H1", "L1")])
         alpha, stderr, _ = hill_index(pooled.snr, SNR_MINIMUM)
         maximum = float(pooled.snr.max())
@@ -467,22 +511,29 @@ def main(argv: list[str] | None = None) -> int:
         help="Where the downloaded classification and segment files are cached.",
     )
     parser.add_argument(
+        "--population",
+        choices=sorted(MEASUREMENTS),
+        default="et-o3-anchored-v1",
+        help="The registered population to measure.",
+    )
+    parser.add_argument(
         "--write-summary",
         action="store_true",
-        help=f"Rewrite {SUMMARY_PATH.relative_to(REPO_ROOT)} with the measured summary.",
+        help="Rewrite the population's bundled summary with the measured one.",
     )
     arguments = parser.parse_args(argv)
+    measurement = MEASUREMENTS[arguments.population]
 
     print("== Fetching inputs ==", file=sys.stderr)
     livetime = observing_livetime(arguments.data_dir)
-    triggers = read_triggers(arguments.data_dir)
-    summary = summarize(triggers, livetime)
+    triggers = read_triggers(arguments.data_dir, measurement)
+    summary = summarize(triggers, livetime, arguments.population)
     report(summary)
 
     if arguments.write_summary:
-        SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
-        SUMMARY_PATH.write_text(render_summary(summary))
-        print(f"\nwrote {SUMMARY_PATH.relative_to(REPO_ROOT)}")
+        measurement.summary_path.parent.mkdir(parents=True, exist_ok=True)
+        measurement.summary_path.write_text(render_summary(summary))
+        print(f"\nwrote {measurement.summary_path.relative_to(REPO_ROOT)}")
     return 0
 
 

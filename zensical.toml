@@ -59,6 +59,7 @@ nav = [
     { "Adding Simulation Types" = "dev/adding_simulators.md" },
     { "Anchored Quantities" = "dev/anchored_quantities.md" },
     { "Glitch Population" = "dev/glitch_population.md" },
+    { "DeepExtractor O3 Population" = "dev/deepextractor_o3_population.md" },
     { "Troubleshooting" = "dev/troubleshooting.md" },
   ] },
   { "Security" = "security.md" },

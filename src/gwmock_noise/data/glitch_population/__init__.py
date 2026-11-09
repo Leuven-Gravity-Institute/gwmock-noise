@@ -28,3 +28,21 @@ def load_o3_reference_summary() -> dict[str, Any]:
     """
     payload = resources.files(__name__).joinpath(O3_REFERENCE_SUMMARY).read_text(encoding="utf-8")
     return json.loads(payload)
+
+
+#: File name of the bundled ``deepextractor-o3-v1`` summary.
+DEEPEXTRACTOR_O3_SUMMARY = "deepextractor_o3_summary.json"
+
+
+def load_deepextractor_o3_summary() -> dict[str, Any]:
+    """Return the bundled measurement the ``deepextractor-o3-v1`` population is registered from.
+
+    Regenerate it with
+    ``scripts/measure_glitch_population_anchors.py --population deepextractor-o3-v1 --write-summary``.
+
+    Returns:
+        The measured counts, observing times, rates and distribution statistics of the seven
+        DeepExtractor classes, in the shape the measurement harness writes.
+    """
+    payload = resources.files(__name__).joinpath(DEEPEXTRACTOR_O3_SUMMARY).read_text(encoding="utf-8")
+    return json.loads(payload)
