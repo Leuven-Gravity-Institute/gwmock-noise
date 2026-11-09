@@ -112,9 +112,10 @@ time observing, so the chain's own uptime is 0.76 / 0.9 with 10 % maintenance.
 
 The paper also reports 3 % of the time with no triangle interferometer observing
 under rotating maintenance, against 1.1 % here. Its other figures are reproduced
-to within 2.1 points, so the difference lies in that state alone. Raising the
-correlated share does not resolve it. At 40 % of the downtime correlated, no
-interferometer observes 3.4 % of the time, but all three then observe 45.3 %
-(paper 41 %) and exactly one 10.9 % (paper about 12 %). The paper's printed
-fractions are therefore not all reachable with its stated 2 %. The paper does
-not give the length, period or phase of its windows.
+to within 2.1 points, so the difference lies in that state alone. With this
+implementation's default schedule, raising the correlated share does not resolve
+it. At 40 % of the downtime correlated, no interferometer observes 3.4 % of the
+time, but all three then observe 45.3 % (paper 41 %) and exactly one 10.9 %
+(paper about 12 %). Under that schedule the paper's printed fractions are not
+all reachable with its stated 2 %. The paper does not give the length, period or
+phase of its windows, and a different schedule may account for the difference.
