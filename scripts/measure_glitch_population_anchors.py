@@ -321,7 +321,7 @@ def observing_livetime(data_dir: Path) -> dict[str, float]:
         for run, (tag, start, span) in GWOSC_RUNS.items():
             url = f"https://gwosc.org/timeline/segments/json/{tag}/{detector}_DATA/{start}/{span}/"
             path = _download(url, data_dir / f"segments_{detector}_{run}.json")
-            segments = json.loads(path.read_text())["segments"]
+            segments = json.loads(path.read_text(encoding="utf-8"))["segments"]
             seconds = float(sum(stop - begin for begin, stop in segments))
             print(f"  {detector} {run}: {len(segments)} segments, {seconds:.0f} s, duty {seconds / span:.4f}")
             total += seconds
@@ -363,7 +363,7 @@ def read_triggers(
         url = f"https://zenodo.org/api/records/{ZENODO_RECORD}/files/{filename}/content"
         path = _download(url, data_dir / filename)
         print(f"  reading {detector} {run} from {path.name}", file=sys.stderr)
-        with path.open(newline="") as handle:
+        with path.open(newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
                 label = row["ml_label"]
                 if float(row["snr"]) <= SNR_MINIMUM:
@@ -601,7 +601,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if arguments.write_summary:
         measurement.summary_path.parent.mkdir(parents=True, exist_ok=True)
-        measurement.summary_path.write_text(render_summary(summary))
+        measurement.summary_path.write_text(render_summary(summary), encoding="utf-8", newline="\n")
         print(f"\nwrote {measurement.summary_path.relative_to(REPO_ROOT)}")
     return 0
 
