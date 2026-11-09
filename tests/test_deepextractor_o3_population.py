@@ -15,19 +15,22 @@ from __future__ import annotations
 
 import json
 import math
-import re
 from pathlib import Path
 
 import numpy as np
 import pytest
 from measure_glitch_population_anchors import (
+    CLASSIFICATION_FILES,
     DEEPEXTRACTOR_CLASSES,
     DEEPEXTRACTOR_SUMMARY_PATH,
     MEASUREMENTS,
     NON_GLITCH_LABELS,
+    PUBLISHED_BLIP_SNR_CEILING,
     SNR_MINIMUM,
     Triggers,
     expected_hill_of_truncated_draws,
+    power_law_median,
+    read_triggers,
     render_summary,
     summarize,
 )
@@ -37,19 +40,19 @@ from gwmock_noise.glitches import normalize_glitch_models
 from gwmock_noise.glitches.deepextractor import DeepExtractorGlitch
 from gwmock_noise.populations import (
     GlitchPopulation,
+    UnknownPopulationArgumentError,
     available_glitch_populations,
     deepextractor_o3_population,
     get_glitch_population,
 )
 from gwmock_noise.populations import deepextractor_o3 as preset
-from gwmock_noise.populations.registry import UnknownPopulationArgumentError
 
 #: The population's record page, whose tables are asserted against the summary.
 RECORD_PAGE = Path(__file__).resolve().parents[1] / "docs" / "dev" / "deepextractor_o3_population.md"
 
 #: The registered population's digest, as a campaign pins it. Moving it is the act of saying
 #: that what the registered population injects has changed.
-REGISTERED_DIGEST = "sha256:bd91a26c59c817bb9310e1c223fd7d2562dd8b5bf7885e9b2a6040b74b28918c"
+REGISTERED_DIGEST = "sha256:bbed35de51be13f949aa63e51b1a4af1017c8e80ec2866e1ab97b9ba76844bb7"
 
 
 @pytest.fixture(name="summary")
@@ -282,17 +285,144 @@ def test_the_bundled_summary_carries_the_label_census(summary: dict) -> None:
         assert 0 < kept < summary["classes"][name]["counts"]["pooled"]
 
 
+def _table(page: str, header: str) -> dict[str, list[str]]:
+    """The page's table whose header row starts with ``header``, as cells keyed by first cell."""
+    lines = page.splitlines()
+    start = next(n for n, line in enumerate(lines) if line.startswith(header))
+    rows: dict[str, list[str]] = {}
+    for line in lines[start + 2 :]:
+        if not line.startswith("|"):
+            break
+        cells = [cell.strip().strip("*") for cell in line.strip("|").split("|")]
+        rows[cells[0]] = cells[1:]
+    return rows
+
+
+def _written(value: float, spec: str) -> str:
+    """A number as the page writes it: Python's format, without the exponent's leading zero."""
+    return format(value, spec).replace("e-0", "e-")
+
+
 def test_the_record_page_quotes_the_summary(summary: dict) -> None:
-    """The confidence-cut table, the share of the glitch rate and the rate table, as the page prints them."""
+    """Every number in the page's tables, and its prose shares, from the summary and the constants."""
     page = RECORD_PAGE.read_text(encoding="utf-8")
     census = summary["label_census"]
-    for name, block in summary["classes"].items():
-        total, kept = block["counts"]["pooled"], census["counts_above_confidence_minimum"][name]
-        row = rf"\| {name} +\| {total:,} +\| {kept:,} +\| {kept / total:.0%} ?\|".replace("%", " %")
-        assert re.search(row, page), row
+    classes = summary["classes"]
+
+    confidence = _table(page, "| Class               | All confidences")
+    assert set(confidence) == set(DEEPEXTRACTOR_CLASSES)
+    for name, cells in confidence.items():
+        total, kept = classes[name]["counts"]["pooled"], census["counts_above_confidence_minimum"][name]
+        assert cells == [f"{total:,}", f"{kept:,}", f"{kept / total:.0%}".replace("%", " %")], name
+
+    rates = _table(page, "| Class               | Registered (Hz)")
+    for name in DEEPEXTRACTOR_CLASSES:
         rate = preset.CLASS_PARAMETERS[name][0]
-        written = f"{rate:.4e}".replace("e-0", "e-")
-        assert re.search(rf"\| {name} +\| {written} +\| {rate * 3600.0:.2f} ", page), name
-    share = sum(b["rate_hz"]["pooled"] for b in summary["classes"].values()) / census["glitch_rate_hz"]
-    assert f"The seven classes are {share:.0%}".replace("%", " %") in page
-    assert f"({census['glitch_rate_hz']:.3e} Hz over every label".replace("e-0", "e-") in page
+        h1, l1 = classes[name]["rate_hz"]["H1"], classes[name]["rate_hz"]["L1"]
+        ratio = h1 / l1
+        assert rates[name] == [
+            _written(rate, ".4e"),
+            f"{rate * 3600.0:.2f}",
+            _written(h1, ".3e"),
+            _written(l1, ".3e"),
+            f"{ratio:.2f}" if ratio >= 0.1 else f"{ratio:.2g}",
+        ], name
+    total = sum(rate for rate, _, _ in preset.CLASS_PARAMETERS.values())
+    assert rates["Total"][:2] == [_written(total, ".4e"), f"{total * 3600.0:.2f}"]
+
+    tails = _table(page, "| Class               | \u03b1 (registered)")
+    for name in DEEPEXTRACTOR_CLASSES:
+        _, alpha, cap = preset.CLASS_PARAMETERS[name]
+        snr = classes[name]["snr"]
+        assert tails[name] == [
+            f"{alpha:.4f}",
+            f"{snr['hill_alpha']:.4f}",
+            f"{cap:,.2f}",
+            f"{power_law_median(SNR_MINIMUM, alpha, cap):.1f}",
+            f"{snr['median']:.1f}",
+            f"{snr['hill_by_threshold']['30']:.2f}",
+        ], name
+
+    loud = _table(page, "| Class               | O3 count")
+    for name in DEEPEXTRACTOR_CLASSES:
+        _, alpha, cap = preset.CLASS_PARAMETERS[name]
+        if cap <= PUBLISHED_BLIP_SNR_CEILING:
+            assert name not in loud
+            continue
+        observed = classes[name]["snr"]["count_above_published_ceiling"]
+        floor = (cap / SNR_MINIMUM) ** -alpha
+        law = classes[name]["counts"]["pooled"] * (
+            ((PUBLISHED_BLIP_SNR_CEILING / SNR_MINIMUM) ** -alpha - floor) / (1.0 - floor)
+        )
+        assert loud[name] == [f"{observed:,}", f"{law:,.0f}", f"{law / observed:.3g}"], name
+
+    prose = " ".join(page.split())  # the formatter may wrap a sentence anywhere
+    share = sum(b["rate_hz"]["pooled"] for b in classes.values()) / census["glitch_rate_hz"]
+    assert f"The seven classes are {share:.0%}".replace("%", " %") in prose
+    assert f"glitch rate of {_written(census['glitch_rate_hz'], '.3e')} Hz" in prose
+    departures = {
+        name: power_law_median(SNR_MINIMUM, alpha, cap) / classes[name]["snr"]["median"] - 1.0
+        for name, (_, alpha, cap) in preset.CLASS_PARAMETERS.items()
+    }
+    assert [name for name, d in departures.items() if abs(d) > 0.1] == ["Koi_Fish"]
+    assert f"by {departures['Koi_Fish']:.0%}".replace("-", "\u2212").replace("%", " %") in prose
+
+
+@pytest.mark.parametrize("population", sorted(MEASUREMENTS))
+def test_the_bundled_summary_has_the_description_the_harness_writes(population: str) -> None:
+    """The committed file names what the harness would name; a stale or hand-edited one fails.
+
+    The full content needs the downloads; the description is the part that depends only on the
+    harness, and it is what drifted when one population's wording was reused for another.
+    """
+    measurement = MEASUREMENTS[population]
+    snr = np.array([8.0, 9.0, 12.0, 20.0, 40.0])
+    few = Triggers(snr, np.ones(5), np.ones(5), np.ones(5), np.ones(5))
+    triggers = {(detector, name): few for detector in ("H1", "L1") for name in measurement.classes}
+    written = summarize(triggers, {"H1": 1.0, "L1": 1.0}, population)["description"]
+    bundled = json.loads(measurement.summary_path.read_text(encoding="utf-8"))
+    assert bundled["description"] == written
+
+
+def _classification_rows(rows: list[tuple[str, float, float]]) -> str:
+    """A classification file with the columns the harness reads."""
+    header = "ml_label,snr,ml_confidence,duration,peak_frequency,central_freq,bandwidth"
+    body = [f"{label},{snr},{confidence},0.1,100.0,200.0,50.0" for label, snr, confidence in rows]
+    return "\n".join([header, *body]) + "\n"
+
+
+def test_the_census_counts_through_the_selection_the_triggers_use(tmp_path: Path) -> None:
+    """One pass, one rule: the census's confidence counts are what the 0.9-cut population reads."""
+    rows = [
+        ("Blip", 8.0, 0.95),
+        ("Blip", 8.0, 0.9),  # at the cut: excluded by both
+        ("Blip", 7.5, 0.99),  # at the SNR threshold: excluded by both
+        ("Blip", 20.0, 0.2),
+        ("Scattered_Light", 9.0, 0.91),
+        ("Koi_Fish", 30.0, 0.5),
+        ("No_Glitch", 9.0, 0.99),
+        ("None_of_the_Above", 9.0, 0.99),
+        ("Whistle", 12.0, 0.99),
+    ]
+    for filename in CLASSIFICATION_FILES.values():
+        (tmp_path / filename).write_text(_classification_rows(rows))
+
+    cut, no_census = read_triggers(tmp_path, MEASUREMENTS["et-o3-anchored-v1"])
+    every, census = read_triggers(tmp_path, MEASUREMENTS[preset.POPULATION_NAME])
+
+    assert no_census is None
+    assert census is not None
+    files = len(CLASSIFICATION_FILES)
+    assert census["glitch_count"] == 6 * files
+    for name in ("Blip", "Scattered_Light"):
+        cut_count = sum(cut[(detector, name)].snr.size for detector in ("H1", "L1"))
+        assert census["counts_above_confidence_minimum"][name] == cut_count
+    assert census["counts_above_confidence_minimum"]["Blip"] == files
+    assert sum(every[(detector, "Blip")].snr.size for detector in ("H1", "L1")) == 3 * files
+    assert census["counts_above_confidence_minimum"]["Koi_Fish"] == 0
+
+
+def test_a_kind_beside_an_unknown_population_reports_the_name() -> None:
+    """The typo is the likelier mistake, so it is reported first."""
+    with pytest.raises(ValueError, match="unknown glitch population 'deepextractor-o3-v2'"):
+        normalize_glitch_models([{"population": "deepextractor-o3-v2", "kind": "deepextractor"}])

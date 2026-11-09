@@ -110,7 +110,7 @@ UNANCHORED = (
     ),
     (
         "One power law above SNR 7.5 does not describe every class's loud end. Above SNR 150 the law "
-        "predicts 13 times the observed count for Blip, a fiftieth of it for Fast_Scattering, and 3 to 5 "
+        "predicts 13 times the observed count for Blip, 2 % of it for Fast_Scattering, and 3 to 5 "
         "times it for Scattered_Light and Whistle. The truncation keeps draws within what O3 recorded."
     ),
     (

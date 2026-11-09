@@ -329,10 +329,20 @@ def observing_livetime(data_dir: Path) -> dict[str, float]:
     return livetime
 
 
+def _passes(row: dict[str, str], confidence_minimum: float | None) -> bool:
+    """Whether a trigger of a counted label passes a confidence cut; ``None`` is no cut."""
+    return confidence_minimum is None or float(row["ml_confidence"]) > confidence_minimum
+
+
 def read_triggers(
     data_dir: Path, measurement: Measurement = MEASUREMENTS["et-o3-anchored-v1"]
-) -> dict[tuple[str, str], Triggers]:
-    """Read the selected triggers of every measured class, per interferometer.
+) -> tuple[dict[tuple[str, str], Triggers], dict[str, Any] | None]:
+    """Read the selected triggers of every measured class, per interferometer, in one pass.
+
+    A trigger is counted when its SNR exceeds ``SNR_MINIMUM``; a class's trigger is selected when
+    it also passes the measurement's confidence cut. For a measurement with ``census``, the same
+    pass counts every glitch label (every label except ``NON_GLITCH_LABELS``) and each class's
+    triggers above ``CONFIDENCE_MINIMUM``, through the same cut.
 
     Args:
         data_dir: Cache directory for the classification files.
@@ -340,11 +350,13 @@ def read_triggers(
 
     Returns:
         The triggers keyed by ``(interferometer, Gravity Spy class)``, pooled over O3a and
-        O3b.
+        O3b; and the census, or ``None`` for a measurement without one.
     """
     collected: dict[tuple[str, str], list[list[float]]] = {
         (detector, name): [] for detector in ("H1", "L1") for name in measurement.classes
     }
+    glitches = 0
+    confident = dict.fromkeys(measurement.classes, 0)
     for (detector, run), filename in sorted(CLASSIFICATION_FILES.items()):
         url = f"https://zenodo.org/api/records/{ZENODO_RECORD}/files/{filename}/content"
         path = _download(url, data_dir / filename)
@@ -352,10 +364,15 @@ def read_triggers(
         with path.open(newline="") as handle:
             for row in csv.DictReader(handle):
                 label = row["ml_label"]
-                if label not in measurement.classes or float(row["snr"]) <= SNR_MINIMUM:
+                if float(row["snr"]) <= SNR_MINIMUM:
                     continue
-                confidence_minimum = measurement.confidence_minimum
-                if confidence_minimum is not None and float(row["ml_confidence"]) <= confidence_minimum:
+                if label not in NON_GLITCH_LABELS:
+                    glitches += 1
+                if label not in measurement.classes:
+                    continue
+                if _passes(row, CONFIDENCE_MINIMUM):
+                    confident[label] += 1
+                if not _passes(row, measurement.confidence_minimum):
                     continue
                 collected[(detector, label)].append(
                     [
@@ -366,7 +383,16 @@ def read_triggers(
                         float(row["bandwidth"]),
                     ]
                 )
-    return {key: Triggers(*np.asarray(values, dtype=float).T) for key, values in collected.items()}
+    triggers = {key: Triggers(*np.asarray(values, dtype=float).reshape(-1, 5).T) for key, values in collected.items()}
+    census = None
+    if measurement.census:
+        census = {
+            "non_glitch_labels": ", ".join(sorted(NON_GLITCH_LABELS)),
+            "glitch_count": glitches,
+            "confidence_minimum": CONFIDENCE_MINIMUM,
+            "counts_above_confidence_minimum": confident,
+        }
+    return triggers, census
 
 
 def _percentiles(values: np.ndarray) -> dict[str, float]:
@@ -374,40 +400,6 @@ def _percentiles(values: np.ndarray) -> dict[str, float]:
     return {
         f"p{percentile:g}": float(value)
         for percentile, value in zip(PERCENTILES, np.percentile(values, PERCENTILES), strict=True)
-    }
-
-
-def label_census(data_dir: Path, classes: tuple[str, ...]) -> dict[str, Any]:
-    """Count every glitch label above the SNR threshold, and the given classes above the confidence cut.
-
-    Args:
-        data_dir: Cache directory for the classification files.
-        classes: The classes whose counts above ``CONFIDENCE_MINIMUM`` are reported.
-
-    Returns:
-        The pooled count of every trigger above ``SNR_MINIMUM`` whose label is a glitch class
-        (every label except ``NON_GLITCH_LABELS``), and each class's pooled count with confidence
-        above ``CONFIDENCE_MINIMUM``.
-    """
-    glitches = 0
-    confident = dict.fromkeys(classes, 0)
-    for (detector, run), filename in sorted(CLASSIFICATION_FILES.items()):
-        url = f"https://zenodo.org/api/records/{ZENODO_RECORD}/files/{filename}/content"
-        path = _download(url, data_dir / filename)
-        print(f"  counting labels in {detector} {run}", file=sys.stderr)
-        with path.open(newline="") as handle:
-            for row in csv.DictReader(handle):
-                label = row["ml_label"]
-                if float(row["snr"]) <= SNR_MINIMUM or label in NON_GLITCH_LABELS:
-                    continue
-                glitches += 1
-                if label in confident and float(row["ml_confidence"]) > CONFIDENCE_MINIMUM:
-                    confident[label] += 1
-    return {
-        "non_glitch_labels": ", ".join(sorted(NON_GLITCH_LABELS)),
-        "glitch_count": glitches,
-        "confidence_minimum": CONFIDENCE_MINIMUM,
-        "counts_above_confidence_minimum": confident,
     }
 
 
@@ -423,7 +415,7 @@ def summarize(
         triggers: The selected triggers per ``(interferometer, class)``.
         livetime: Observing time per interferometer, in seconds.
         population: The registered population the summary is for.
-        census: :func:`label_census`'s counts, for a population that reports them; its glitch
+        census: :func:`read_triggers`'s census, for a population that reports one; its glitch
             rate over the pooled livetime is added.
 
     Returns:
@@ -599,8 +591,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print("== Fetching inputs ==", file=sys.stderr)
     livetime = observing_livetime(arguments.data_dir)
-    triggers = read_triggers(arguments.data_dir, measurement)
-    census = label_census(arguments.data_dir, measurement.classes) if measurement.census else None
+    triggers, census = read_triggers(arguments.data_dir, measurement)
     summary = summarize(triggers, livetime, arguments.population, census)
     report(summary)
 

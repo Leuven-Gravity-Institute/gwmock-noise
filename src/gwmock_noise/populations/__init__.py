@@ -16,7 +16,11 @@ from gwmock_noise.populations.population import (
     GlitchPopulation,
     GlitchRealization,
 )
-from gwmock_noise.populations.registry import available_glitch_populations, get_glitch_population
+from gwmock_noise.populations.registry import (
+    UnknownPopulationArgumentError,
+    available_glitch_populations,
+    get_glitch_population,
+)
 
 __all__ = [
     "GLITCH_POPULATION_SCHEMA_VERSION",
@@ -27,6 +31,7 @@ __all__ = [
     "GlitchClass",
     "GlitchPopulation",
     "GlitchRealization",
+    "UnknownPopulationArgumentError",
     "available_glitch_populations",
     "deepextractor_o3_population",
     "et_o3_anchored_population",

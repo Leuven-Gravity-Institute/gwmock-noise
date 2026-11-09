@@ -25,8 +25,8 @@ the GWOSC O3 observing segments, 42,952,865 s pooled over H1 and L1.
 The selection differs in one rule. Every trigger labelled with the class above
 the Omicron threshold of SNR 7.5 is counted, at any classification confidence. A
 DeepExtractor class is defined by Gravity Spy's label, so its rate is the rate
-of that label. A cut at confidence 0.9 would keep (the summary's
-`label_census`):
+of that label. A cut at confidence 0.9 would keep the following, counted in the
+summary's `label_census`:
 
 | Class               | All confidences | Confidence > 0.9 | Kept |
 | ------------------- | --------------- | ---------------- | ---- |
@@ -54,10 +54,10 @@ interferometer glitches like an average O3 LIGO interferometer.
 | Whistle             | 4.1674e-4       | 1.50     | 4.105e-4 | 4.228e-4 | 0.97  |
 | **Total**           | 8.5036e-3       | 30.61    |          |          |       |
 
-The seven classes are 77 % of the O3 glitch rate (1.104e-2 Hz over every label
-except `No_Glitch`, `Chirp` and `None_of_the_Above`, the summary's
-`label_census`). The other fourteen classes have no DeepExtractor waveforms and
-are absent.
+The seven classes are 77 % of the O3 glitch rate of 1.104e-2 Hz, counted in the
+summary's `label_census` over every label except `No_Glitch`, `Chirp` and
+`None_of_the_Above`. The other fourteen classes have no DeepExtractor waveforms
+and are absent.
 
 The site ratios are the largest systematic: Fast_Scattering and Tomte are
 Livingston phenomena, and the pooled rate is half the Livingston rate.
@@ -82,20 +82,20 @@ and α equals the Hill index; for Koi_Fish it matters most.
 | Tomte               | 1.2492         | 1.3956 | 128.71    | 12.8        | 14.0       | 3.17            |
 | Whistle             | 1.7077         | 1.7097 | 1,397.99  | 11.3        | 11.1       | 2.91            |
 
-The medians agree within 10 % except for Koi_Fish (−29 %); Tomte is next, at −9
-%.
+Only Koi_Fish's law median departs from the O3 median by more than 10 %: by −29
+%. Tomte's departs by −9 %.
 
 **The loud end.** The Hill index moves with threshold for every class, so one
 power law from 7.5 upward does not describe it. Above SNR 150:
 
 | Class               | O3 count | Law's count | Law / O3 |
 | ------------------- | -------- | ----------- | -------- |
-| Blip                | 22       | 295         | 13       |
-| Fast_Scattering     | 105      | 2           | 0.02     |
+| Blip                | 22       | 295         | 13.4     |
+| Fast_Scattering     | 105      | 2           | 0.0224   |
 | Koi_Fish            | 10,505   | 10,848      | 1.03     |
 | Low_Frequency_Burst | 430      | 470         | 1.09     |
-| Scattered_Light     | 587      | 1,982       | 3.4      |
-| Whistle             | 22       | 105         | 4.8      |
+| Scattered_Light     | 587      | 1,982       | 3.38     |
+| Whistle             | 22       | 105         | 4.78     |
 
 Tomte's largest O3 SNR is 128.7, so it has none. A study sensitive to loud
 glitches should measure its own tail for the classes it cares about.

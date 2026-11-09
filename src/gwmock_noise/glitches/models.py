@@ -710,13 +710,14 @@ def _expand_glitch_population(entry: dict[str, Any]) -> list[GlitchModel]:
     # Imported here: the populations package imports this module.
     from gwmock_noise.populations.registry import (  # noqa: PLC0415
         UnknownPopulationArgumentError,
+        available_glitch_populations,
         get_glitch_population,
     )
 
     arguments = dict(entry)
     name = arguments.pop("population")
     pinned = arguments.pop("digest", None)
-    if "kind" in arguments:
+    if name in available_glitch_populations() and "kind" in arguments:
         raise ValueError(
             "a population entry expands to the population's own models and takes no 'kind'; "
             f"remove 'kind' from the entry naming {name!r}."
@@ -749,7 +750,7 @@ def normalize_glitch_models(value: Any) -> list[GlitchModel]:
     single model, and expands to the models of its classes. Its other keys are the
     population builder's arguments (for example ``psd_file``), except ``digest``: when
     given, the built population's digest must equal it, so a configuration pins the exact
-    rates, tails and settings it was written for.
+    rates, tails and settings it was written for. It takes no ``kind``: it is not one model.
 
     Args:
         value: The configured list of models or model mappings.
@@ -760,8 +761,9 @@ def normalize_glitch_models(value: Any) -> list[GlitchModel]:
     Raises:
         TypeError: If the value is not a list, or an entry is not a mapping.
         ValueError: If an entry names an unsupported kind or omits its amplitude
-            distribution, names an unknown population or an argument its builder does
-            not take, or pins a digest the built population does not have.
+            distribution, or if a population entry names an unknown population, carries
+            ``kind``, gives a setting its builder does not take, or pins a digest the built
+            population does not have.
     """
     if not isinstance(value, list):
         raise TypeError("glitch component options must provide a list of models.")
