@@ -403,7 +403,9 @@ def test_the_record_page_prose_quotes_the_summary(summary: dict) -> None:
     (tomte_cap,) = (classes[name]["snr"]["maximum"] for name in DEEPEXTRACTOR_CLASSES if name not in loud)
     assert f"largest O3 SNR is {tomte_cap:.1f}, so it has none" in prose
 
-    guide = " ".join((RECORD_PAGE.parents[1] / "user_guide" / "noise_simulation.md").read_text().split())
+    guide = " ".join(
+        (RECORD_PAGE.parents[1] / "user_guide" / "noise_simulation.md").read_text(encoding="utf-8").split()
+    )
     assert f"they total {_written(total, '.2e')} Hz, {total * 3600.0:.1f} per hour" in guide
     departures = {
         name: power_law_median(SNR_MINIMUM, alpha, cap) / classes[name]["snr"]["median"] - 1.0
