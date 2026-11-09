@@ -8,6 +8,9 @@ network fractions it reports for the ET designs at a single-interferometer uptim
 from __future__ import annotations
 
 import math
+import os
+import subprocess
+import sys
 
 import numpy as np
 import pytest
@@ -403,10 +406,26 @@ def test_a_span_whose_end_overflows_is_refused() -> None:
 def test_a_span_coarser_than_the_event_times_still_terminates() -> None:
     """At GPS 1e25 one floating-point step is about 2e9 s, far longer than any lock or gap.
 
-    Every drawn wait then rounds to no time at all; each event moves time on by one step instead,
-    so the draw ends after about as many events as there are steps in the span.
+    Every drawn wait then rounds to no time at all; each event moves time on by one step instead, so
+    the draw ends after about as many events as there are steps in the span. It runs in a subprocess
+    with a timeout, so a loop that stalls fails the test instead of hanging the suite, and the child
+    checks that the realization it returns is a valid one.
     """
-    start = 1e25
-    duration = 500 * float(np.spacing(start))
-    realization = simulate_duty_cycle(DutyCycleModel(maintenance=NO_MAINTENANCE), TRIANGLE, start, duration, seed=0)
-    assert realization.end > realization.start
+    script = (
+        "import numpy as np\n"
+        "from gwmock_noise.duty_cycle import DutyCycleModel, MaintenanceSchedule, simulate_duty_cycle\n"
+        "start = 1e25\n"
+        "model = DutyCycleModel(maintenance=MaintenanceSchedule(strategy='none'))\n"
+        "r = simulate_duty_cycle(model, ['E1', 'E2', 'E3'], start, 500 * float(np.spacing(start)), seed=0)\n"
+        "f = r.fraction_with_n_observing()\n"
+        "assert np.isfinite(f).all() and abs(f.sum() - 1.0) < 1e-12, f\n"
+        "assert all(r.observing[name].size for name in r.detectors)\n"
+        "print('ok')\n"
+    )
+    # The child imports the package this process imports, a mutated copy included.
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(path for path in sys.path if path)}
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False, timeout=60, env=env
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ok"

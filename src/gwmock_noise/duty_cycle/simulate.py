@@ -183,7 +183,9 @@ def simulate_duty_cycle(
         stop = min(boundary_time, end)
         # An event closer than one floating-point step would leave time where it is, and the
         # loop would never end; it happens one step later instead.
-        event_time = max(chain.next_event(now), float(np.nextafter(now, math.inf)))
+        event_time = chain.next_event(now)
+        if event_time <= now:
+            event_time = float(np.nextafter(now, math.inf))
         if event_time < stop:
             now = event_time
             chain.apply_event(now)
