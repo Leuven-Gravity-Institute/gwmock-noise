@@ -53,6 +53,7 @@ nav = [
     { "GWOSC Real Noise" = "user_guide/gwosc_noise.md" },
     { "Custom Simulators" = "user_guide/custom_simulators.md" },
     { "Joint Strain and Witness Channels" = "user_guide/joint_strain_witness.md" },
+    { "Duty Cycle" = "user_guide/duty_cycle.md" },
   ] },
   { "Development" = [
     { "Code Quality" = "dev/code_quality.md" },
