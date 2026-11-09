@@ -78,9 +78,9 @@ from is not documented here.
 `ET2026a_10km_psd` and `ET2026a_15km_psd` are the ET2026a curves: one preset per
 arm length, each the combination of that arm length's low-frequency (LF) and
 high-frequency (HF) interferometers. The Einstein Telescope's page for
-scientists, <https://einsteintelescope.eu/get-involved/for-scientists/>,
-recommends them for new work: "We recommend the use of this curve for future
-works".
+scientists, <https://einsteintelescope.eu/get-involved/for-scientists/>
+(accessed 2026-11-09), recommends the ET2026a curve for new work: "We recommend
+the use of this curve for future works".
 
 Source: the public repository
 [`pub/et-sensitivity-curves`](https://gitlab.et-gw.eu/pub/et-sensitivity-curves)
@@ -101,13 +101,23 @@ a 90° opening angle between the arms.
 1. Column 3 of each file is read. It is the curve's default sensitivity, with
    the high-frequency correction for a signal 15° off zenith.
 2. The column is squared. The README calls the files power spectral densities,
-   but the values are amplitude spectral densities, about 1e-24 Hz^-1/2 at high
-   frequency.
+   but the values are amplitude spectral densities: about 4e-25 Hz^-1/2 at 100
+   Hz, rising at 10 kHz to 9e-24 (10 km) and 1e-24 (15 km).
 3. The LF and HF curves share one grid and are combined as two co-located
    detectors with independent noise, `S = 1 / (1 / S_LF + 1 / S_HF)`.
 
 The grid is the 3000-point logarithmic grid from 1 Hz to 10 kHz that the other
 ET presets use.
+
+The combination is never above the better of the two curves. The LF curve is the
+better one from 1.33 Hz to 23.2 Hz (10 km) or 21.7 Hz (15 km), and the HF curve
+everywhere else, including the 93 rows below 1.33 Hz. There the two published
+curves differ by up to a factor 2132 in amplitude, at both arm lengths, and the
+preset follows the HF curve. Use the presets from 5 Hz, as the other ET presets
+are.
+
+Like the source curves, the presets tabulate no spectral lines; the other ET
+presets carry one or two.
 
 **Checks.** The integration test in `tests/test_psd_presets.py` downloads the
 four files, checks their digests and rebuilds both presets byte for byte. It

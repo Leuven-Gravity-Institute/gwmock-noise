@@ -57,11 +57,11 @@ being explicit about where it is soft. Narrow isolated features are labelled
 identically by any reasonable window: the Advanced LIGO violin-mode fundamental
 near 500 Hz and its harmonics near 1000, 1500 and 2000 Hz, the 60.01 Hz mains
 harmonic and the 306.33 Hz calibration line in the O4 projections, the 166.75 Hz
-line in each of the seven earlier Einstein Telescope curves, the 420.28 Hz line
-in ET-D. Broad low-frequency structure is not: a few of the 20-25 Hz features in
-the measured O3 curves move in and out of the list as the window widens, and the
-numbers below inherit that ambiguity. Over the thirteen presets the criterion
-labels 96 lines, 94 of which have a measurable width.
+line in each of the six HF and full-cryo Einstein Telescope curves, the 420.28
+Hz line in ET-D. Broad low-frequency structure is not: a few of the 20-25 Hz
+features in the measured O3 curves move in and out of the list as the window
+widens, and the numbers below inherit that ambiguity. Over the thirteen presets
+the criterion labels 96 lines, 94 of which have a measurable width.
 
 ## 1. The per-band fit tolerances
 

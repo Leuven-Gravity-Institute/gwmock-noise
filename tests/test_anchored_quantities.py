@@ -91,3 +91,17 @@ def test_default_detection_places_only_the_tabulated_et_d_line() -> None:
     assert [round(line["frequency"]) for line in placed] == [420]
     assert placed[0]["width"] == DEFAULT_LINE_WIDTH_HZ
     assert simulator.metadata["autoregressive_moving_average"]["fit_residual"]["worst_relative_error"] < 1.0
+
+
+def test_the_population_is_every_bundled_preset() -> None:
+    """The record calls the population every bundled preset, so a preset added without it fails."""
+    from importlib import resources
+
+    from measure_anchored_quantities import PRESETS
+
+    bundled = {
+        entry.name.removesuffix(".txt")
+        for entry in resources.files("gwmock_noise.data.psd").iterdir()
+        if entry.name.endswith(".txt")
+    }
+    assert set(PRESETS) == bundled
