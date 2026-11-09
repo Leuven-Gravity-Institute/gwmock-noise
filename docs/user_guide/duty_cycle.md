@@ -6,10 +6,10 @@ interferometer of a network observes, so a mock data set can say which
 interferometers were observing at any time.
 
 ```python
-from gwmock_noise.duty_cycle import DutyCycleModel, MaintenanceSchedule, simulate_duty_cycle
+from gwmock_noise.duty_cycle import DAY, DutyCycleModel, MaintenanceSchedule, simulate_duty_cycle
 
 model = DutyCycleModel(maintenance=MaintenanceSchedule(strategy="rotating"))
-realization = simulate_duty_cycle(model, ["E1", "E2", "E3"], start=1_000_000_000, duration=30 * 86400, seed=1)
+realization = simulate_duty_cycle(model, ["E1", "E2", "E3"], start=1_000_000_000, duration=30 * DAY, seed=1)
 
 realization.observing["E1"]  # (n, 2) array of [start, end) observing intervals, GPS seconds
 realization.fraction_with_n_observing()  # time with 0, 1, 2, 3 interferometers observing
@@ -19,7 +19,7 @@ realization.state_vector("E1", start=1_000_000_000, sampling_frequency=1.0, n_sa
 The realization does not change the strain. It is a record laid over it: segment
 lists, flags in an injection catalogue, or a state-vector channel. Bit 0 of a
 state-vector sample is set while the interferometer observes, and bit 1 while it
-is in planned maintenance.
+is in planned maintenance. A sample outside the realization's span is 0.
 
 ## The model
 
@@ -50,8 +50,10 @@ observes again. There are two strategies:
 
 `strategy="none"` turns maintenance off.
 
-The simulation is exact, one event at a time, and starts in the chain's
-stationary distribution. Correlated unlocks couple the interferometers, so a
+The simulation is exact, one event at a time. The lock states at the start are
+drawn from the stationary distribution of the chain without maintenance, so a
+span that starts inside or just after a window begins with a transient lasting
+about the mean downtime. Correlated unlocks couple the interferometers, so a
 realization depends on the whole network and on its order. The same seed,
 detectors and order give the same realization. Maintenance windows are fixed in
 GPS time and do not depend on the span.
@@ -61,24 +63,31 @@ GPS time and do not depend on the span.
 Every parameter is free. The defaults are the paper's, except the maintenance
 period, phase and strategy, which the paper does not give.
 
-| Parameter                                                     | Default           | Source                                                                                                                                                                                                                                                                                  |
-| ------------------------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DutyCycleModel.mean_uptime`                                  | 5.4 h             | The paper, fitted to LIGO's O4a observing segments                                                                                                                                                                                                                                      |
-| `DutyCycleModel.mean_downtime`                                | 1.6 h             | The same fit                                                                                                                                                                                                                                                                            |
-| `DutyCycleModel.correlated_downtime_fraction`                 | 0.02              | The paper: weather-induced simultaneous unlocks cause 2 % of the downtime. `q_c` is solved from it for the network at hand.                                                                                                                                                             |
-| `MaintenanceSchedule.duration` / `MaintenanceSchedule.period` | 10 %              | The paper's planned maintenance                                                                                                                                                                                                                                                         |
-| `MaintenanceSchedule.period`                                  | 1 week            | LVK practice. Every LIGO and Virgo detector is maintained on Tuesday mornings, local time, in a window scheduled at 4 h ([LIGO-L1800079](https://dcc-llo.ligo.org/public/0151/L1800079/004/O3CoincidentRunningStrategy.pdf); [arXiv:2607.26872](https://arxiv.org/abs/2607.26872), §8). |
-| `MaintenanceSchedule.offset`                                  | Tuesday 07:00 UTC | Virgo's O3 window opened then. The offset is in GPS seconds modulo the period; GPS 0 is a Sunday at 00:00 UTC, and the leap-second offset is ignored.                                                                                                                                   |
-| `MaintenanceSchedule.strategy`                                | `rotating`        | One of the paper's two for the triangle; it uses `coincident` for the 2L                                                                                                                                                                                                                |
+| Parameter                                     | Default           | Source                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DutyCycleModel.mean_uptime`                  | 5.4 h             | The paper, fitted to LIGO's O4a observing segments                                                                                                                                                                                                                                      |
+| `DutyCycleModel.mean_downtime`                | 1.6 h             | The same fit                                                                                                                                                                                                                                                                            |
+| `DutyCycleModel.correlated_downtime_fraction` | 0.02              | The paper: weather-induced simultaneous unlocks cause 2 % of the downtime. `q_c` is solved from it for the network at hand.                                                                                                                                                             |
+| `MaintenanceSchedule.duration`                | 16.8 h            | 10 % of the period: the paper's planned maintenance, read as 10 % of the time (below)                                                                                                                                                                                                   |
+| `MaintenanceSchedule.period`                  | 1 week            | LVK practice. Every LIGO and Virgo detector is maintained on Tuesday mornings, local time, in a window scheduled at 4 h ([LIGO-L1800079](https://dcc-llo.ligo.org/public/0151/L1800079/004/O3CoincidentRunningStrategy.pdf); [arXiv:2607.26872](https://arxiv.org/abs/2607.26872), §8). |
+| `MaintenanceSchedule.offset`                  | Tuesday 07:00 UTC | Virgo's O3 window, Tuesday 07:00-11:00 UTC (LIGO-L1800079-v3, §2.1). The offset is in GPS seconds modulo the period; GPS 0 is a Sunday at 00:00 UTC, and the leap-second offset is ignored.                                                                                             |
+| `MaintenanceSchedule.strategy`                | `rotating`        | One of the paper's two for the triangle; it uses `coincident` for the 2L                                                                                                                                                                                                                |
 
 With these defaults each interferometer observes about 70 % of the time, the
 paper's Appendix C figure.
+
+**The maintenance fraction.** The paper states its planned maintenance two ways:
+as 10 % of the time (the Fig. 1 caption and Appendix C), and as 10 % of the
+downtime (§II.1.3). At 76 % observing, 10 % of the downtime would be 2.4 % of
+the time. This implementation reads it as 10 % of the time, which reproduces the
+paper's network fractions below.
 
 The LVK's scheduled windows are shorter than the paper's 10 %. LIGO's 4 h of
 weekly maintenance plus 6 h of commissioning is 6 % of a week (LIGO-L1800079).
 Virgo spent 10 % of O4b and O4c in planned downtime, counting maintenance,
 calibration and commissioning (arXiv:2607.26872, Table 3). To model the 4 h
-maintenance window alone, set `duration=4 * 3600`.
+maintenance window alone, set `duration=4 * HOUR`: with a weekly period that is
+2.4 % of the time.
 
 ## How well it reproduces the paper
 
@@ -102,6 +111,10 @@ time observing, so the chain's own uptime is 0.76 / 0.9 with 10 % maintenance.
 | 2L, coincident       | both observing        | 64 %  | 64.4 %     |
 
 The paper also reports 3 % of the time with no triangle interferometer observing
-under rotating maintenance, against 1.1 % here. It does not give its maintenance
-schedule or the details of its correlated unlocks, which may account for the
-difference.
+under rotating maintenance, against 1.1 % here. Its other figures are reproduced
+to within 2.1 points, so the difference lies in that state alone. Raising the
+correlated share does not resolve it. At 40 % of the downtime correlated, no
+interferometer observes 3.4 % of the time, but all three then observe 45.3 %
+(paper 41 %) and exactly one 10.9 % (paper about 12 %). The paper's printed
+fractions are therefore not all reachable with its stated 2 %. The paper does
+not give the length, period or phase of its windows.

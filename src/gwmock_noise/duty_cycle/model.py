@@ -18,17 +18,21 @@ interferometers are maintained in the same window (``coincident``), or one after
 so that the others observe meanwhile.
 
 The defaults are the paper's: mean uptime 5.4 h and mean downtime 1.6 h, fitted to LIGO's O4a
-observing segments; correlated unlocks causing 2 % of the downtime; and 10 % of the time in planned
-maintenance. The maintenance period is a week, the LVK's practice: every LIGO and Virgo detector is
-maintained on Tuesday mornings in local time, in a window scheduled at 4 h (LIGO-L1800079;
-arXiv:2607.26872, §8). The default window opens on Tuesdays at 07:00 UTC, the hour the European
-detector's weekly maintenance has opened.
+observing segments; correlated unlocks causing 2 % of the downtime; and planned maintenance taking
+10 % of the time. The paper states that last figure two ways: as 10 % of the time (its Fig. 1 caption
+and Appendix C) and as 10 % of the downtime (§II.1.3). This implementation reads it as 10 % of the
+time, which reproduces the network fractions of the paper's §III.1.
+
+The paper gives no maintenance schedule. The default period is a week, the LVK's practice: every
+LIGO and Virgo detector is maintained on Tuesday mornings in local time, in a window scheduled at
+4 h (arXiv:2607.26872, §8; LIGO-L1800079-v3, §2.1). The default window opens on Tuesdays at 07:00
+UTC, when Virgo's O3 window opened (LIGO-L1800079-v3, §2.1: Tuesday 07:00-11:00 UTC).
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 import numpy as np
@@ -83,14 +87,15 @@ class MaintenanceSchedule:
         """Validate the schedule.
 
         Raises:
-            ValueError: If the strategy is unknown, the period or duration is not positive and
-                finite, the duration exceeds the period, or the offset is not finite.
+            ValueError: If the strategy is unknown, the period is not positive and finite, the
+                duration of a schedule with windows is not positive or exceeds the period, or the
+                offset is not finite.
         """
         if self.strategy not in ("coincident", "rotating", "none"):
             raise ValueError(f"maintenance strategy must be 'coincident', 'rotating' or 'none', not {self.strategy!r}.")
         if not (math.isfinite(self.period) and self.period > 0.0):
             raise ValueError(f"maintenance period must be positive and finite, not {self.period!r}.")
-        if not (math.isfinite(self.duration) and 0.0 < self.duration <= self.period):
+        if self.strategy != "none" and not (math.isfinite(self.duration) and 0.0 < self.duration <= self.period):
             raise ValueError(
                 f"maintenance duration must be positive and at most the period ({self.period} s), not {self.duration!r}."
             )
@@ -157,7 +162,7 @@ class DutyCycleModel:
     mean_uptime: float = DEFAULT_MEAN_UPTIME
     mean_downtime: float = DEFAULT_MEAN_DOWNTIME
     correlated_downtime_fraction: float = DEFAULT_CORRELATED_DOWNTIME_FRACTION
-    maintenance: MaintenanceSchedule = MaintenanceSchedule()
+    maintenance: MaintenanceSchedule = field(default_factory=MaintenanceSchedule)
 
     def __post_init__(self) -> None:
         """Validate the model.

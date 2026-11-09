@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         load_config,
     )
     from gwmock_noise.diagnostics import DiagnosticResult, compare_psd, estimate_psd, run_diagnostics
+    from gwmock_noise.duty_cycle import DutyCycleModel, MaintenanceSchedule, simulate_duty_cycle
     from gwmock_noise.gaussian import (
         SpectralLine,
     )
@@ -148,6 +149,9 @@ _LAZY_EXPORTS = {
     "CorrelatedARNoiseSimulator": "gwmock_noise.simulators",
     "CorrelatedNoiseSimulator": "gwmock_noise.simulators",
     "DeepExtractorGlitch": "gwmock_noise.glitches",
+    "DutyCycleModel": "gwmock_noise.duty_cycle",
+    "MaintenanceSchedule": "gwmock_noise.duty_cycle",
+    "simulate_duty_cycle": "gwmock_noise.duty_cycle",
     "DefaultNoiseSimulator": "gwmock_noise.simulators",
     "discover_joint_backends": "gwmock_noise.simulators",
     "EmpiricalSNRDistribution": "gwmock_noise.glitches",
@@ -243,6 +247,7 @@ __all__ = [
     "DeepExtractorGlitch",
     "DefaultNoiseSimulator",
     "DiagnosticResult",
+    "DutyCycleModel",
     "EmpiricalSNRDistribution",
     "ExpectedCount",
     "FilterType",
@@ -267,6 +272,7 @@ __all__ = [
     "JointRealization",
     "JointStrainWitnessSimulator",
     "LogNormalAmplitudeDistribution",
+    "MaintenanceSchedule",
     "MultichannelNoiseSimulator",
     "NetworkCoherence",
     "NoiseComponentConfig",
@@ -311,6 +317,7 @@ __all__ = [
     "regularized_cholesky",
     "run_diagnostics",
     "sample_complex_frequency_coefficients",
+    "simulate_duty_cycle",
     "simulate_spectral_covariance_chunk",
     "take",
     "time_series_from_frequency_coefficients",

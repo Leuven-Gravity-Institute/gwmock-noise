@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -16,9 +16,11 @@ OBSERVING_BIT = 1
 MAINTENANCE_BIT = 2
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class DutyCycleRealization:
     """When each interferometer observed, over one span.
+
+    Two realizations are equal when every field is, comparing the interval arrays by value.
 
     Attributes:
         detectors: The interferometers, in the order the model was drawn for.
@@ -34,10 +36,23 @@ class DutyCycleRealization:
     detectors: tuple[str, ...]
     start: float
     end: float
-    observing: dict[str, np.ndarray]
-    maintenance: dict[str, np.ndarray]
+    observing: dict[str, np.ndarray] = field(repr=False)
+    maintenance: dict[str, np.ndarray] = field(repr=False)
     model: DutyCycleModel
     seed: int | None
+
+    def __eq__(self, other: object) -> bool:
+        """Compare every field, the interval arrays by value."""
+        if not isinstance(other, DutyCycleRealization):
+            return NotImplemented
+        return (
+            (self.detectors, self.start, self.end, self.model, self.seed)
+            == (other.detectors, other.start, other.end, other.model, other.seed)
+            and all(np.array_equal(self.observing[d], other.observing[d]) for d in self.detectors)
+            and all(np.array_equal(self.maintenance[d], other.maintenance[d]) for d in self.detectors)
+        )
+
+    __hash__ = None  # type: ignore[assignment]  # holds arrays, like any mutable container
 
     def observing_fraction(self, detector: str) -> float:
         """Fraction of the span the interferometer observed."""
@@ -60,7 +75,9 @@ class DutyCycleRealization:
         """The interferometer's state at each sample of a uniform grid.
 
         Bit 0 (:data:`OBSERVING_BIT`) is set while it observes; bit 1 (:data:`MAINTENANCE_BIT`) while it is
-        in planned maintenance. A sample takes the state at its own time.
+        in planned maintenance. A sample takes the state at its own time. A sample outside the
+        realization's span is ``0``, the same value as an interferometer that is down and not in
+        maintenance: the realization says nothing about it.
 
         Args:
             detector: The interferometer.
@@ -70,7 +87,12 @@ class DutyCycleRealization:
 
         Returns:
             A ``uint8`` array of ``n_samples`` states.
+
+        Raises:
+            ValueError: If the sampling frequency is not positive and finite.
         """
+        if not (math.isfinite(sampling_frequency) and sampling_frequency > 0.0):
+            raise ValueError(f"sampling_frequency must be positive and finite, not {sampling_frequency!r}.")
         times = start + np.arange(n_samples) / sampling_frequency
         state = np.where(_inside(self.observing[detector], times), OBSERVING_BIT, 0)
         state |= np.where(_inside(self.maintenance[detector], times), MAINTENANCE_BIT, 0)
@@ -108,8 +130,9 @@ def simulate_duty_cycle(
 ) -> DutyCycleRealization:
     """Draw when each interferometer observes over ``[start, start + duration)``.
 
-    The chain is simulated exactly, one event at a time, and starts in its stationary distribution, so
-    the realization has no burn-in. Correlated unlocks couple the interferometers, so the draw depends
+    The chain is simulated exactly, one event at a time, and its lock states are drawn at ``start`` from
+    the stationary distribution of the chain without maintenance. With maintenance that is the
+    stationary state only away from a window; the transient it leaves lasts about the mean downtime. Correlated unlocks couple the interferometers, so the draw depends
     on the whole network and on its order: the same seed gives the same realization for the same
     detectors in the same order. Maintenance windows are fixed in GPS time, independent of the span.
 

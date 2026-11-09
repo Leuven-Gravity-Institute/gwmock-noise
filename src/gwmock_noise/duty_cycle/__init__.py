@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from gwmock_noise.duty_cycle.model import (
+    DAY,
     DEFAULT_CORRELATED_DOWNTIME_FRACTION,
     DEFAULT_MAINTENANCE_FRACTION,
     DEFAULT_MAINTENANCE_OFFSET,
     DEFAULT_MEAN_DOWNTIME,
     DEFAULT_MEAN_UPTIME,
+    HOUR,
+    WEEK,
     DutyCycleModel,
     MaintenanceSchedule,
     correlated_unlock_share,
@@ -22,13 +25,16 @@ from gwmock_noise.duty_cycle.simulate import (
 )
 
 __all__ = [
+    "DAY",
     "DEFAULT_CORRELATED_DOWNTIME_FRACTION",
     "DEFAULT_MAINTENANCE_FRACTION",
     "DEFAULT_MAINTENANCE_OFFSET",
     "DEFAULT_MEAN_DOWNTIME",
     "DEFAULT_MEAN_UPTIME",
+    "HOUR",
     "MAINTENANCE_BIT",
     "OBSERVING_BIT",
+    "WEEK",
     "DutyCycleModel",
     "DutyCycleRealization",
     "MaintenanceSchedule",

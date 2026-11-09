@@ -123,7 +123,9 @@ def test_the_papers_network_fractions_at_76_percent_uptime(
     The paper's planned maintenance is 10 % of the time, so the chain's own uptime is 0.76 / 0.9. It
     reports two or more observing for 85 % (rotating) and 82 % (coincident) of the time, and all three
     for 41 % and 53 %; for ET-2L, both for 64 %. The model reproduces each to within 2.5 points, which
-    the paper's rounding and its unstated maintenance schedule allow.
+    the paper's rounding and its unstated maintenance schedule allow. The seed makes the simulated
+    fractions exact (86.9, 42.4, 84.1, 54.6 and 64.4 %), so the margin is the distance to the paper,
+    not a statistical allowance.
     """
     uptime = 0.76 / 0.9
     model = DutyCycleModel(
@@ -323,3 +325,47 @@ def test_an_invalid_draw_is_refused(detectors: tuple, duration: float, message: 
     """An empty or repeated network, or an empty span, is refused."""
     with pytest.raises(ValueError, match=message):
         simulate_duty_cycle(DutyCycleModel(), detectors, START, duration, seed=0)
+
+
+def test_realizations_compare_by_value() -> None:
+    """The same seed gives an equal realization; another seed an unequal one; neither is hashable."""
+    model = DutyCycleModel()
+    first = simulate_duty_cycle(model, TRIANGLE, START, WEEK, seed=21)
+    assert first == simulate_duty_cycle(model, TRIANGLE, START, WEEK, seed=21)
+    assert first != simulate_duty_cycle(model, TRIANGLE, START, WEEK, seed=22)
+    assert "observing" not in repr(first)
+    with pytest.raises(TypeError):
+        hash(first)
+
+
+@pytest.mark.parametrize("sampling_frequency", [0.0, -1.0, math.inf, math.nan])
+def test_the_state_vector_refuses_a_bad_sampling_frequency(sampling_frequency: float) -> None:
+    """A sampling frequency that is not positive and finite is refused."""
+    realization = simulate_duty_cycle(DutyCycleModel(), TRIANGLE, START, DAY, seed=0)
+    with pytest.raises(ValueError, match="sampling_frequency"):
+        realization.state_vector("E1", START, sampling_frequency, 10)
+
+
+def test_an_unreachable_correlated_share_is_refused() -> None:
+    """Three interferometers cannot have 95 % of their downtime correlated with q_c < q_u."""
+    with pytest.raises(ValueError, match=r"cannot cause 0\.95"):
+        DutyCycleModel(correlated_downtime_fraction=0.95).correlated_rate(3)
+
+
+def test_a_span_inside_a_coincident_window_observes_nothing() -> None:
+    """Every interferometer is maintained throughout, so none observes."""
+    schedule = MaintenanceSchedule(strategy="coincident", period=WEEK, duration=DAY, offset=0.0)
+    realization = simulate_duty_cycle(DutyCycleModel(maintenance=schedule), TRIANGLE, 0.0, 0.5 * DAY, seed=0)
+    for name in TRIANGLE:
+        assert realization.observing[name].shape == (0, 2)
+        assert realization.observing_fraction(name) == 0.0
+    np.testing.assert_array_equal(realization.fraction_with_n_observing(), [1.0, 0.0, 0.0, 0.0])
+
+
+def test_without_maintenance_the_maintenance_bit_is_never_set() -> None:
+    """``strategy="none"`` has no windows, whatever its unused duration."""
+    model = DutyCycleModel(maintenance=MaintenanceSchedule(strategy="none", duration=2 * WEEK))
+    realization = simulate_duty_cycle(model, TRIANGLE, START, WEEK, seed=0)
+    state = realization.state_vector("E1", START, 1.0 / 60.0, int(WEEK / 60.0))
+    assert not np.any(state & MAINTENANCE_BIT)
+    assert realization.maintenance["E1"].shape == (0, 2)
