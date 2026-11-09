@@ -369,3 +369,26 @@ def test_without_maintenance_the_maintenance_bit_is_never_set() -> None:
     state = realization.state_vector("E1", START, 1.0 / 60.0, int(WEEK / 60.0))
     assert not np.any(state & MAINTENANCE_BIT)
     assert realization.maintenance["E1"].shape == (0, 2)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        ((2, 0.01, 0.1, 0.03), "must not exceed unlock_rate"),
+        ((2, -0.01, 0.1, 0.0), "unlock_rate must be finite"),
+        ((2, 0.01, math.nan, 0.0), "relock_rate must be finite"),
+        ((0, 0.01, 0.1, 0.0), "at least one interferometer"),
+    ],
+)
+def test_the_rate_matrix_refuses_rates_that_would_make_it_invalid(arguments: tuple, message: str) -> None:
+    """A correlated rate above the unlock rate would give a negative transition rate."""
+    with pytest.raises(ValueError, match=message):
+        rate_matrix(*arguments)
+    with pytest.raises(ValueError, match=message):
+        stationary_distribution(*arguments)
+
+
+def test_a_duration_lost_to_rounding_is_refused() -> None:
+    """At GPS 1e9 a duration of 1e-8 s leaves the end equal to the start."""
+    with pytest.raises(ValueError, match="does not move the end"):
+        simulate_duty_cycle(DutyCycleModel(), TRIANGLE, START, 1e-8, seed=0)

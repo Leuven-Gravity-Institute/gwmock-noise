@@ -242,7 +242,22 @@ def rate_matrix(n_interferometers: int, unlock_rate: float, relock_rate: float, 
     Returns:
         The ``(N + 1, N + 1)`` generator: ``Q[i, j]`` is the rate from ``i`` observing to ``j`` observing,
         and each row sums to zero.
+
+    Raises:
+        ValueError: If ``N`` is not positive, a rate is negative or not finite, or ``q_c`` exceeds
+            ``q_u``, which would make a transition rate negative.
     """
+    if n_interferometers < 1:
+        raise ValueError(f"the network needs at least one interferometer, not {n_interferometers}.")
+    rates = {"unlock_rate": unlock_rate, "relock_rate": relock_rate, "correlated_rate": correlated_rate}
+    for name, value in rates.items():
+        if not (math.isfinite(value) and value >= 0.0):
+            raise ValueError(f"{name} must be finite and non-negative, not {value!r}.")
+    if correlated_rate > unlock_rate:
+        raise ValueError(
+            f"correlated_rate ({correlated_rate}) must not exceed unlock_rate ({unlock_rate}): each "
+            "interferometer's independent unlock rate is their difference."
+        )
     n = n_interferometers
     q = np.zeros((n + 1, n + 1))
     for i in range(n + 1):

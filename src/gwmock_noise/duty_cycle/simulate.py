@@ -162,6 +162,8 @@ def simulate_duty_cycle(
     n = len(names)
     model.maintenance.check_network(n)
     end = start + duration
+    if end <= start:
+        raise ValueError(f"a duration of {duration!r} s does not move the end past start={start!r} in floating point.")
     rng = np.random.default_rng(seed)
     maintenance = {name: model.maintenance.windows(index, start, end) for index, name in enumerate(names)}
     chain = _Chain(model, n, rng)
