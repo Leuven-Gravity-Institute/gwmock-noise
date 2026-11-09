@@ -341,7 +341,8 @@ def read_triggers(
 
     A trigger is counted when its SNR exceeds ``SNR_MINIMUM``; a class's trigger is selected when
     it also passes the measurement's confidence cut. For a measurement with ``census``, the same
-    pass counts every glitch label (every label except ``NON_GLITCH_LABELS``) and each class's
+    pass counts the triggers of every glitch label (every label except ``NON_GLITCH_LABELS``), how
+    many such labels there are, and each class's
     triggers above ``CONFIDENCE_MINIMUM``, through the same cut.
 
     Args:
@@ -356,6 +357,7 @@ def read_triggers(
         (detector, name): [] for detector in ("H1", "L1") for name in measurement.classes
     }
     glitches = 0
+    glitch_labels: set[str] = set()
     confident = dict.fromkeys(measurement.classes, 0)
     for (detector, run), filename in sorted(CLASSIFICATION_FILES.items()):
         url = f"https://zenodo.org/api/records/{ZENODO_RECORD}/files/{filename}/content"
@@ -368,6 +370,7 @@ def read_triggers(
                     continue
                 if label not in NON_GLITCH_LABELS:
                     glitches += 1
+                    glitch_labels.add(label)
                 if label not in measurement.classes:
                     continue
                 if _passes(row, CONFIDENCE_MINIMUM):
@@ -389,6 +392,7 @@ def read_triggers(
         census = {
             "non_glitch_labels": ", ".join(sorted(NON_GLITCH_LABELS)),
             "glitch_count": glitches,
+            "glitch_label_count": len(glitch_labels),
             "confidence_minimum": CONFIDENCE_MINIMUM,
             "counts_above_confidence_minimum": confident,
         }

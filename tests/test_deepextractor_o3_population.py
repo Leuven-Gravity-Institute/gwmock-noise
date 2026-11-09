@@ -285,17 +285,27 @@ def test_the_bundled_summary_carries_the_label_census(summary: dict) -> None:
         assert 0 < kept < summary["classes"][name]["counts"]["pooled"]
 
 
-def _table(page: str, header: str) -> dict[str, list[str]]:
-    """The page's table whose header row starts with ``header``, as cells keyed by first cell."""
+def _table(page: str, first_column: str) -> tuple[list[str], dict[str, list[str]]]:
+    """The page's table whose second header cell is ``first_column``: its header and its rows.
+
+    Rows are keyed by their first cell; a repeated key fails rather than shadowing.
+    """
+
+    def cells(line: str) -> list[str]:
+        return [cell.strip().strip("*") for cell in line.strip().strip("|").split("|")]
+
     lines = page.splitlines()
-    start = next(n for n, line in enumerate(lines) if line.startswith(header))
+    start = next(
+        n for n, line in enumerate(lines) if line.startswith("|") and cells(line)[:2] == ["Class", first_column]
+    )
     rows: dict[str, list[str]] = {}
     for line in lines[start + 2 :]:
         if not line.startswith("|"):
             break
-        cells = [cell.strip().strip("*") for cell in line.strip("|").split("|")]
-        rows[cells[0]] = cells[1:]
-    return rows
+        row = cells(line)
+        assert row[0] not in rows, f"row {row[0]} repeated"
+        rows[row[0]] = row[1:]
+    return cells(lines[start]), rows
 
 
 def _written(value: float, spec: str) -> str:
@@ -309,13 +319,16 @@ def test_the_record_page_quotes_the_summary(summary: dict) -> None:
     census = summary["label_census"]
     classes = summary["classes"]
 
-    confidence = _table(page, "| Class               | All confidences")
+    header, confidence = _table(page, "All confidences")
+    assert header == ["Class", "All confidences", "Confidence > 0.9", "Kept"]
     assert set(confidence) == set(DEEPEXTRACTOR_CLASSES)
     for name, cells in confidence.items():
         total, kept = classes[name]["counts"]["pooled"], census["counts_above_confidence_minimum"][name]
         assert cells == [f"{total:,}", f"{kept:,}", f"{kept / total:.0%}".replace("%", " %")], name
 
-    rates = _table(page, "| Class               | Registered (Hz)")
+    header, rates = _table(page, "Registered (Hz)")
+    assert header == ["Class", "Registered (Hz)", "Per hour", "H1 (Hz)", "L1 (Hz)", "H1/L1"]
+    assert set(rates) == {*DEEPEXTRACTOR_CLASSES, "Total"}
     for name in DEEPEXTRACTOR_CLASSES:
         rate = preset.CLASS_PARAMETERS[name][0]
         h1, l1 = classes[name]["rate_hz"]["H1"], classes[name]["rate_hz"]["L1"]
@@ -330,7 +343,17 @@ def test_the_record_page_quotes_the_summary(summary: dict) -> None:
     total = sum(rate for rate, _, _ in preset.CLASS_PARAMETERS.values())
     assert rates["Total"][:2] == [_written(total, ".4e"), f"{total * 3600.0:.2f}"]
 
-    tails = _table(page, "| Class               | \u03b1 (registered)")
+    header, tails = _table(page, "\u03b1 (registered)")
+    assert header == [
+        "Class",
+        "\u03b1 (registered)",
+        "Hill \u03b1",
+        "Cap",
+        "Median, law",
+        "Median, O3",
+        "Hill \u03b1 above 30",
+    ]
+    assert set(tails) == set(DEEPEXTRACTOR_CLASSES)
     for name in DEEPEXTRACTOR_CLASSES:
         _, alpha, cap = preset.CLASS_PARAMETERS[name]
         snr = classes[name]["snr"]
@@ -343,7 +366,11 @@ def test_the_record_page_quotes_the_summary(summary: dict) -> None:
             f"{snr['hill_by_threshold']['30']:.2f}",
         ], name
 
-    loud = _table(page, "| Class               | O3 count")
+    header, loud = _table(page, "O3 count")
+    assert header == ["Class", "O3 count", "Law's count", "Law / O3"]
+    assert set(loud) == {
+        name for name, (_, _, cap) in preset.CLASS_PARAMETERS.items() if cap > PUBLISHED_BLIP_SNR_CEILING
+    }
     for name in DEEPEXTRACTOR_CLASSES:
         _, alpha, cap = preset.CLASS_PARAMETERS[name]
         if cap <= PUBLISHED_BLIP_SNR_CEILING:
@@ -356,10 +383,28 @@ def test_the_record_page_quotes_the_summary(summary: dict) -> None:
         )
         assert loud[name] == [f"{observed:,}", f"{law:,.0f}", f"{law / observed:.3g}"], name
 
+
+def test_the_record_page_prose_quotes_the_summary(summary: dict) -> None:
+    """The shares, counts and totals the page and the user guide state in prose."""
+    page = RECORD_PAGE.read_text(encoding="utf-8")
+    census = summary["label_census"]
+    classes = summary["classes"]
+    loud = {name for name, (_, _, cap) in preset.CLASS_PARAMETERS.items() if cap > PUBLISHED_BLIP_SNR_CEILING}
+    total = sum(rate for rate, _, _ in preset.CLASS_PARAMETERS.values())
     prose = " ".join(page.split())  # the formatter may wrap a sentence anywhere
     share = sum(b["rate_hz"]["pooled"] for b in classes.values()) / census["glitch_rate_hz"]
     assert f"The seven classes are {share:.0%}".replace("%", " %") in prose
     assert f"glitch rate of {_written(census['glitch_rate_hz'], '.3e')} Hz" in prose
+    assert f"{summary['livetime_seconds']['pooled']:,.0f} s pooled over H1 and L1" in prose
+    absent = census["glitch_label_count"] - len(DEEPEXTRACTOR_CLASSES)
+    words = {14: "fourteen"}
+    assert f"The other {words[absent]} classes have no DeepExtractor waveforms" in prose
+    assert f"the {words[absent]} absent classes, {1.0 - share:.0%} of the O3 glitch rate".replace("%", " %") in prose
+    (tomte_cap,) = (classes[name]["snr"]["maximum"] for name in DEEPEXTRACTOR_CLASSES if name not in loud)
+    assert f"largest O3 SNR is {tomte_cap:.1f}, so it has none" in prose
+
+    guide = " ".join((RECORD_PAGE.parents[1] / "user_guide" / "noise_simulation.md").read_text().split())
+    assert f"they total {_written(total, '.2e')} Hz, {total * 3600.0:.1f} per hour" in guide
     departures = {
         name: power_law_median(SNR_MINIMUM, alpha, cap) / classes[name]["snr"]["median"] - 1.0
         for name, (_, alpha, cap) in preset.CLASS_PARAMETERS.items()

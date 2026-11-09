@@ -483,6 +483,7 @@
             "Whistle": 13892
         },
         "glitch_count": 474074,
+        "glitch_label_count": 21,
         "glitch_rate_hz": 0.011037075175311356,
         "non_glitch_labels": "Chirp, No_Glitch, None_of_the_Above"
     },
