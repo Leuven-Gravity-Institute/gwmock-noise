@@ -72,3 +72,58 @@ They are tabulated on a 3000-point logarithmic grid from 1 Hz to 10 kHz, and
 `ET_D_psd` reproduces the ET-D design sensitivity to the precision of a read-off
 (3.9e-25 strain/sqrt(Hz) at 100 Hz), but the exact data release each was drawn
 from is not documented here.
+
+### ET2026a
+
+`ET2026a_10km_psd` and `ET2026a_15km_psd` are the ET2026a curves, which the
+Einstein Telescope recommends for new work: one preset per arm length, each the
+combination of that arm length's low-frequency (LF) and high-frequency (HF)
+interferometers.
+
+Source: the public repository
+[`pub/et-sensitivity-curves`](https://gitlab.et-gw.eu/pub/et-sensitivity-curves)
+on the Einstein Telescope GitLab, commit
+`66177ccf4626c77fee243ef21367ac934b2c0ccc` (2026-03-30). Its README describes
+the curves as a snapshot of a work in progress, as of January 2026, computed for
+a 90° opening angle between the arms.
+
+| Source file               | SHA-256                                                            |
+| ------------------------- | ------------------------------------------------------------------ |
+| `10_km/LF/data/total.txt` | `2e4477e0d2dc30228a7cbc7ede804355b5b307486859a82ed9c6d4cd9bd16375` |
+| `10_km/HF/data/total.txt` | `35bedf22facefd325148ef787caebb582348b91c1e37fd2b586de8510e7be355` |
+| `15_km/LF/data/total.txt` | `ba58ade04eb74e9c2f148a16abf6d57da377c0b817d973d0f784a2b7ffa39854` |
+| `15_km/HF/data/total.txt` | `b6f003e0224aaee67b62bb2aa788c87b3a93b100bf94a38f5019bc76932ba838` |
+
+`scripts/build_et2026a_psd_presets.py` builds both presets from these files:
+
+1. Column 3 of each file is read. It is the curve's default sensitivity, with
+   the high-frequency correction for a signal 15° off zenith.
+2. The column is squared. The README calls the files power spectral densities,
+   but the values are amplitude spectral densities, about 1e-24 Hz^-1/2 at high
+   frequency.
+3. The LF and HF curves share one grid and are combined as two co-located
+   detectors with independent noise, `S = 1 / (1 / S_LF + 1 / S_HF)`.
+
+The grid is the 3000-point logarithmic grid from 1 Hz to 10 kHz that the other
+ET presets use.
+
+**Checks.** The integration test in `tests/test_psd_presets.py` downloads the
+four files, checks their digests and rebuilds both presets byte for byte. It
+also checks two properties of the source files the presets rely on:
+
+- Below 50 Hz, column 3 is column 2 (the displacement noise) divided by the arm
+  length, to 2e-5 (10 km) and 4e-5 (15 km). The column is therefore strain.
+- Above 300 Hz, where the LF interferometer contributes nothing, the combination
+  equals the HF curve, to 4e-6 (10 km) and 8e-4 (15 km).
+
+Column 4 is the same correction for a signal at zenith. It departs from column 3
+by 1.2e-6 (10 km) and 2.8e-6 (15 km) at 100 Hz, growing to 2.0e-3 and 4.0e-3 at
+4096 Hz.
+
+**Not anchored.** No published figure for the absolute level of these curves was
+found to check them against. For comparison only: the 1.4+1.4 solar-mass
+inspiral range the tests compute, a Euclidean figure from 10 Hz with no
+cosmology, is 2824 Mpc for `ET2026a_10km_psd` and 3745 Mpc for
+`ET2026a_15km_psd`, against 2468 Mpc and 3404 Mpc for `ET_10_full_cryo_psd` and
+`ET_15_full_cryo_psd`. Between 5 and 30 Hz the ET2026a PSDs are about half the
+`full_cryo` ones (median ratio 0.49 for 10 km, 0.54 for 15 km).

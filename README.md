@@ -126,7 +126,8 @@ DefaultNoiseSimulator().run(config)
 `psd_file="ET_10_full_cryo_psd"` without managing the PSD file yourself.
 Einstein Telescope presets are `ET_D_psd`, `ET_10_HF_psd`,
 `ET_10_full_cryo_psd`, `ET_15_HF_psd`, `ET_15_full_cryo_psd`, `ET_20_HF_psd`,
-and `ET_20_full_cryo_psd`. Advanced LIGO presets are `aLIGO_O3_actual_H1_psd`,
+`ET_20_full_cryo_psd`, and the ET2026a curves `ET2026a_10km_psd` and
+`ET2026a_15km_psd`. Advanced LIGO presets are `aLIGO_O3_actual_H1_psd`,
 `aLIGO_O3_actual_L1_psd`, `aLIGO_O4_high_projected_psd`, and
 `aLIGO_O4_low_projected_psd` — the O3 pair are measured representative spectra
 (lines included), the O4 pair are pre-run projections.

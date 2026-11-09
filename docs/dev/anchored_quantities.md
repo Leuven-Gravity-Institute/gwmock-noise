@@ -24,7 +24,7 @@ printout and the assertion cannot drift apart.
 
 ## Source data
 
-The population is the eleven PSD presets bundled in
+The population is the thirteen PSD presets bundled in
 `src/gwmock_noise/data/psd/`, whose own provenance is recorded in
 `src/gwmock_noise/data/psd/PROVENANCE.md`. They fall into two kinds that matter
 here:
@@ -32,7 +32,7 @@ here:
 - the **measured** Advanced LIGO O3 curves (`aLIGO_O3_actual_H1_psd`,
   `aLIGO_O3_actual_L1_psd`), real detector spectra on a uniform 0.25 Hz grid
   which still carry instrumental lines; and
-- the **design or forecast** curves (the O4 projections and the seven Einstein
+- the **design or forecast** curves (the O4 projections and the nine Einstein
   Telescope curves), smooth models that nevertheless tabulate a small number of
   lines each.
 
@@ -60,7 +60,7 @@ harmonic and the 306.33 Hz calibration line in the O4 projections, the 166.75 Hz
 line in every Einstein Telescope curve, the 420.28 Hz line in ET-D. Broad
 low-frequency structure is not: a few of the 20-25 Hz features in the measured
 O3 curves move in and out of the list as the window widens, and the numbers
-below inherit that ambiguity. Over the eleven presets the criterion labels 96
+below inherit that ambiguity. Over the thirteen presets the criterion labels 96
 lines, 94 of which have a measurable width.
 
 ## 1. The per-band fit tolerances
@@ -111,11 +111,11 @@ Three consequences worth stating plainly.
   reading.** `1.25 × 0.5306 + 5 × 0.0175 = 0.751` is above the old 0.6: the
   population that test asserts on sits closer to its bound than five standard
   deviations, so 0.6 was a latent flake rather than a tight bound.
-- **The tolerances are scoped to these two presets.** Across all eleven, and
-  both models, the worst fitted band ranges from 0.0183 to 0.9541, mostly
-  because the high-frequency-only Einstein Telescope variants are being fitted
-  from 5 Hz, well below where they have any sensitivity. A bound covering that
-  spread would assert nothing.
+- **The tolerances are scoped to these two presets.** Across all thirteen, and
+  both models, the worst fitted band ranges from 0.0183 to 41.91, mostly because
+  the high-frequency-only Einstein Telescope variants are being fitted from 5
+  Hz, well below where they have any sensitivity. A bound covering that spread
+  would assert nothing.
 
 ## 2. The default line width
 
@@ -175,7 +175,7 @@ reported `fit_residual` rather than assume the lines were reproduced.
 of the whole fitted band for that maximum to be placed as a pole.
 
 **What was measured.** Detections at the shipped `max_lines = 8`, scored against
-the reference line list, over all eleven presets.
+the reference line list, over all thirteen presets.
 
 | Threshold | True   | False | Missed | Precision | Recall    | F1        |
 | --------- | ------ | ----- | ------ | --------- | --------- | --------- |
@@ -214,7 +214,7 @@ rather than silently degrade the default.
 
 **A different statistic, and not the one that governs.** Scoring _every_ local
 maximum instead of only the selected ones gives a much larger floor: the
-strongest non-line local maximum anywhere in the eleven presets is the 24.0096
+strongest non-line local maximum anywhere in the thirteen presets is the 24.0096
 Hz feature of `aLIGO_O3_actual_H1_psd` at **46.30**, which 15.0 does not clear.
 That is not a contradiction, and it does not weaken the anchor: that feature is
 nowhere near its own preset's top eight -- the O3 Hanford curve's eight selected
