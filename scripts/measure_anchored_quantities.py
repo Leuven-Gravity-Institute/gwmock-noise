@@ -65,6 +65,8 @@ PRESETS: dict[str, float] = {
     "ET_15_full_cryo_psd": 5.0,
     "ET_20_HF_psd": 5.0,
     "ET_20_full_cryo_psd": 5.0,
+    "ET2026a_10km_psd": 5.0,
+    "ET2026a_15km_psd": 5.0,
 }
 
 #: The two presets the fit tolerance tests assert on.
@@ -344,7 +346,7 @@ def detection_population() -> list[DetectionCase]:
     """Return the line-detection population, one entry per bundled preset.
 
     Returns:
-        The eleven presets as :class:`DetectionCase` entries.
+        Every preset in :data:`PRESETS` as a :class:`DetectionCase` entry.
     """
     population = []
     for psd_file, low_frequency in PRESETS.items():
@@ -561,7 +563,7 @@ def report_tolerances() -> None:
             row.append(f"order {order}: {worst_band(simulator, low_frequency):.4f}")
         print(f"    {psd_file:30s} " + "  ".join(row))
 
-    print("  worst fitted band across all eleven presets, both models, no lines placed:")
+    print(f"  worst fitted band across all {len(PRESETS)} presets, both models, no lines placed:")
     spread = [
         worst_band(build(model, psd_file, low_frequency), low_frequency)
         for model in ("AR", "ARMA")

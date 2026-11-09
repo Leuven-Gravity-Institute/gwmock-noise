@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 from importlib import resources
 from pathlib import Path
 
@@ -201,3 +202,105 @@ def test_bundled_psd_provenance_is_recorded() -> None:
     assert bundled
     missing = [name for name in bundled if name not in provenance]
     assert not missing, f"presets absent from PROVENANCE.md: {missing}"
+
+
+# ---------------------------------------------------------------------------------------
+# ET2026a
+# ---------------------------------------------------------------------------------------
+
+ET2026A_PRESETS = ("ET2026a_10km_psd", "ET2026a_15km_psd")
+
+
+@pytest.mark.parametrize("preset", ET2026A_PRESETS)
+def test_et2026a_preset_is_a_usable_psd_table_on_the_et_grid(preset: str) -> None:
+    """Resolvable by name, strictly ordered and positive, on the other ET presets' 3000-point grid."""
+    frequencies, values = load_spectral_series(preset, kind="PSD")
+    by_path = load_spectral_series(_bundled_psd_path(preset), kind="PSD")
+    np.testing.assert_array_equal(frequencies, by_path[0])
+    np.testing.assert_array_equal(values, by_path[1])
+
+    assert frequencies.size == 3000
+    assert np.all(np.diff(frequencies) > 0.0)
+    assert np.all(np.isfinite(values))
+    assert np.all(values > 0.0)
+    grid, _ = load_spectral_series("ET_10_full_cryo_psd", kind="PSD")
+    np.testing.assert_allclose(frequencies, grid, rtol=1e-15, atol=0.0)
+
+
+#: The 1.4+1.4 solar-mass inspiral range :func:`_bns_inspiral_range_mpc` gives for each ET2026a
+#: preset, as PROVENANCE.md records it. Not a published figure: it guards the presets' absolute
+#: scale, which a wrong column, a missed squaring or a wrong combination would move.
+ET2026A_RANGE_MPC = {"ET2026a_10km_psd": 2824.0, "ET2026a_15km_psd": 3745.0}
+
+
+@pytest.mark.parametrize("preset", ET2026A_PRESETS)
+def test_et2026a_preset_has_the_recorded_inspiral_range(preset: str) -> None:
+    """The range PROVENANCE.md records, to the megaparsec it is written to."""
+    frequencies, values = load_spectral_series(preset, kind="PSD")
+    assert round(_bns_inspiral_range_mpc(frequencies, values)) == ET2026A_RANGE_MPC[preset]
+    provenance = resources.files(PSD_PACKAGE).joinpath("PROVENANCE.md").read_text(encoding="utf-8")
+    assert f"{ET2026A_RANGE_MPC[preset]:.0f} Mpc for `{preset}`" in " ".join(provenance.split())
+
+
+@pytest.mark.parametrize("preset", ET2026A_PRESETS)
+def test_et2026a_preset_is_written_in_the_bundled_format(preset: str) -> None:
+    """The builder's renderer reproduces the file byte for byte, as it does the older presets."""
+    from build_et2026a_psd_presets import render
+
+    for name in (preset, "ET_10_full_cryo_psd"):
+        text = _bundled_psd_path(name).read_text(encoding="utf-8")
+        assert render(np.loadtxt(_bundled_psd_path(name))) == text
+
+
+def test_the_et2026a_combination_is_the_optimal_combination_of_two_detectors() -> None:
+    """``S = 1 / (1 / S_LF + 1 / S_HF)`` of the squared third columns, on one grid."""
+    from build_et2026a_psd_presets import combine
+
+    frequencies = np.array([1.0, 10.0, 100.0])
+    low = np.column_stack((frequencies, [9.0, 9.0, 9.0], [1.0, 2.0, 10.0], [7.0, 7.0, 7.0]))
+    high = np.column_stack((frequencies, [9.0, 9.0, 9.0], [3.0, 2.0, 1.0], [7.0, 7.0, 7.0]))
+    combined = combine(low, high)
+    np.testing.assert_array_equal(combined[:, 0], frequencies)
+    np.testing.assert_allclose(combined[:, 1], [9.0 / 10.0, 2.0, 100.0 / 101.0], rtol=1e-15, atol=0.0)
+
+    shifted = high.copy()
+    shifted[1, 0] = 11.0
+    with pytest.raises(ValueError, match="same frequency grid"):
+        combine(low, shifted)
+
+
+def test_the_et2026a_builder_refuses_a_source_file_with_another_digest(tmp_path: Path) -> None:
+    """A cached source file that is not the recorded one is refused, not used."""
+    from build_et2026a_psd_presets import SOURCE_COMMIT, fetch
+
+    path = "10_km/LF/data/total.txt"
+    cached = tmp_path / SOURCE_COMMIT / path
+    cached.parent.mkdir(parents=True)
+    cached.write_bytes(b"1.0 1.0 1.0 1.0\n")
+    with pytest.raises(ValueError, match="not the recorded"):
+        fetch(path, tmp_path)
+
+
+@pytest.mark.integration
+def test_the_bundled_et2026a_presets_are_the_build_of_the_published_curves(tmp_path: Path) -> None:
+    """Downloads the four published files, checks their digests, and rebuilds the presets byte for byte.
+
+    Also checks two properties of the published files the presets rely on: below 50 Hz the
+    sensitivity column is the displacement column over the arm length (so it is strain), and above
+    300 Hz, where the LF detector contributes nothing, the combination is the HF curve.
+    """
+    from build_et2026a_psd_presets import PRESETS, build, fetch
+
+    for name, content in build(tmp_path).items():
+        assert _bundled_psd_path(name).read_text(encoding="utf-8") == content
+
+    for length, arm_metres, high_band_tolerance in (("10_km", 1.0e4, 1e-5), ("15_km", 1.5e4, 1e-3)):
+        low, high = (
+            np.loadtxt(io.BytesIO(fetch(f"{length}/{band}/data/total.txt", tmp_path))) for band in ("LF", "HF")
+        )
+        below = low[:, 0] < 50.0
+        for table in (low, high):
+            np.testing.assert_allclose(table[below, 2] * arm_metres, table[below, 1], rtol=5e-5, atol=0.0)
+        frequencies, combined = load_spectral_series(PRESETS[length], kind="PSD")
+        above = frequencies >= 300.0
+        np.testing.assert_allclose(combined[above], high[above, 2] ** 2, rtol=high_band_tolerance, atol=0.0)
