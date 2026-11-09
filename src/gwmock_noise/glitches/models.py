@@ -708,19 +708,25 @@ def validate_glitch_detector_coverage(models: Sequence[GlitchModel], detectors: 
 def _expand_glitch_population(entry: dict[str, Any]) -> list[GlitchModel]:
     """Expand a ``population`` config entry into the models of the population's classes."""
     # Imported here: the populations package imports this module.
-    from gwmock_noise.populations.registry import get_glitch_population  # noqa: PLC0415
+    from gwmock_noise.populations.registry import (  # noqa: PLC0415
+        UnknownPopulationArgumentError,
+        get_glitch_population,
+    )
 
     arguments = dict(entry)
     name = arguments.pop("population")
     pinned = arguments.pop("digest", None)
+    if "kind" in arguments:
+        raise ValueError(
+            "a population entry expands to the population's own models and takes no 'kind'; "
+            f"remove 'kind' from the entry naming {name!r}."
+        )
     try:
         population = get_glitch_population(name, **arguments)
     except KeyError as error:
         raise ValueError(error.args[0]) from error
-    except TypeError as error:
-        raise ValueError(
-            f"glitch population {name!r} does not take the arguments {sorted(arguments)}: {error}"
-        ) from error
+    except UnknownPopulationArgumentError as error:
+        raise ValueError(str(error)) from error
     if pinned is not None and population.digest() != pinned:
         raise ValueError(
             f"glitch population {name!r} built with {sorted(arguments)} has digest {population.digest()}, "

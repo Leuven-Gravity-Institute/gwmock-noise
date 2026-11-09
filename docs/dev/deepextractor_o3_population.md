@@ -25,7 +25,8 @@ the GWOSC O3 observing segments, 42,952,865 s pooled over H1 and L1.
 The selection differs in one rule. Every trigger labelled with the class above
 the Omicron threshold of SNR 7.5 is counted, at any classification confidence. A
 DeepExtractor class is defined by Gravity Spy's label, so its rate is the rate
-of that label. A cut at confidence 0.9 would keep:
+of that label. A cut at confidence 0.9 would keep (the summary's
+`label_census`):
 
 | Class               | All confidences | Confidence > 0.9 | Kept |
 | ------------------- | --------------- | ---------------- | ---- |
@@ -54,8 +55,9 @@ interferometer glitches like an average O3 LIGO interferometer.
 | **Total**           | 8.5036e-3       | 30.61    |          |          |       |
 
 The seven classes are 77 % of the O3 glitch rate (1.104e-2 Hz over every label
-except `No_Glitch`, `Chirp` and `None_of_the_Above`). The other fourteen classes
-have no DeepExtractor waveforms and are absent.
+except `No_Glitch`, `Chirp` and `None_of_the_Above`, the summary's
+`label_census`). The other fourteen classes have no DeepExtractor waveforms and
+are absent.
 
 The site ratios are the largest systematic: Fast_Scattering and Tomte are
 Livingston phenomena, and the pooled rate is half the Livingston rate.
@@ -64,10 +66,11 @@ Livingston phenomena, and the pooled rate is half the Livingston rate.
 
 Each class draws its target optimal SNR from a power law above 7.5, truncated at
 the class's largest O3 SNR (rounded up to a hundredth), with survival exponent
-α. α is the maximum-likelihood exponent of the truncated law, so the law's own
-draws have the Hill index the O3 sample has (asserted in the tests). For the
-steep classes the truncation barely matters and α equals the Hill index; for
-Koi_Fish it matters most.
+α. α is the maximum-likelihood exponent of the truncated law. Its likelihood
+equation states that the law's own draws have the Hill index the O3 sample has,
+so the tests' check of that equality is a check on α and the cap, not an
+independent test of the fit. For the steep classes the truncation barely matters
+and α equals the Hill index; for Koi_Fish it matters most.
 
 | Class               | α (registered) | Hill α | Cap       | Median, law | Median, O3 | Hill α above 30 |
 | ------------------- | -------------- | ------ | --------- | ----------- | ---------- | --------------- |
@@ -79,7 +82,8 @@ Koi_Fish it matters most.
 | Tomte               | 1.2492         | 1.3956 | 128.71    | 12.8        | 14.0       | 3.17            |
 | Whistle             | 1.7077         | 1.7097 | 1,397.99  | 11.3        | 11.1       | 2.91            |
 
-The medians agree within 10 % except for Koi_Fish (−29 %) and Tomte (−9 %).
+The medians agree within 10 % except for Koi_Fish (−29 %); Tomte is next, at −9
+%.
 
 **The loud end.** The Hill index moves with threshold for every class, so one
 power law from 7.5 upward does not describe it. Above SNR 150:

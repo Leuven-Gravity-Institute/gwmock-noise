@@ -1,12 +1,14 @@
 """Measured reference statistics the registered glitch populations are anchored to.
 
-``o3_reference_summary.json`` is the small summary of a measurement over two published data
-products -- the Gravity Spy machine-learning classifications of LIGO glitches and the
-GWOSC O3 observing segments. It ships with the package so a user can see what the
+Each registered population built from measurement has a small summary of it here, over two
+published data products -- the Gravity Spy machine-learning classifications of LIGO glitches
+and the GWOSC O3 observing segments: ``o3_reference_summary.json`` for ``et-o3-anchored-v1``
+and ``deepextractor_o3_summary.json`` for ``deepextractor-o3-v1``. It ships with the package so a user can see what the
 registered rates and amplitude laws were derived from without re-running the measurement,
 and so the tests can assert the registered constants against it.
 
-Regenerate it with ``scripts/measure_glitch_population_anchors.py --write-summary``.
+Regenerate one with
+``scripts/measure_glitch_population_anchors.py --population <name> --write-summary``.
 """
 
 from __future__ import annotations

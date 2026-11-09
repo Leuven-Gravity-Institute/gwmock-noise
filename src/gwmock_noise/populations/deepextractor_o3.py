@@ -16,7 +16,7 @@ published observing segments, under one selection:
   the maximum-likelihood exponent of the truncated law.
 
 ``scripts/measure_glitch_population_anchors.py --population deepextractor-o3-v1`` reproduces every
-number, and ``docs/dev/glitch_population.md`` records what each is and how well it describes the
+number, and ``docs/dev/deepextractor_o3_population.md`` records what each is and how well it describes the
 data.
 """
 
@@ -67,7 +67,7 @@ CLASS_PARAMETERS: dict[str, tuple[float, float, float]] = {
 
 #: One sentence per class, part of the registered definition.
 CLASS_DESCRIPTIONS: dict[str, str] = {
-    "Blip": "Short broadband transients, O(10) ms; DeepExtractor reconstructions of O3 Blip glitches.",
+    "Blip": "Short broadband transients; DeepExtractor reconstructions of O3 Blip glitches.",
     "Fast_Scattering": "Fast-scattering arches; DeepExtractor reconstructions of O3 Fast_Scattering glitches.",
     "Koi_Fish": "Loud broadband transients; DeepExtractor reconstructions of O3 Koi_Fish glitches.",
     "Low_Frequency_Burst": ("Low-frequency bursts; DeepExtractor reconstructions of O3 Low_Frequency_Burst glitches."),
@@ -134,7 +134,7 @@ DESCRIPTION = (
 def deepextractor_o3_population(
     *,
     psd_file: str | Path = DEFAULT_PSD,
-    detectors: Sequence[str] | None = None,
+    detectors: str | Sequence[str] | None = None,
     low_frequency_cutoff: float = DEFAULT_LOW_FREQUENCY_CUTOFF,
     revision: str = DATASET_REVISION,
 ) -> GlitchPopulation:
@@ -147,7 +147,8 @@ def deepextractor_o3_population(
 
     Args:
         psd_file: Noise curve the target SNRs are defined against.
-        detectors: Interferometers the classes apply to; ``None`` for every interferometer in the run.
+        detectors: One interferometer name or a list of them, the classes' scope; ``None`` for every
+            interferometer in the run.
         low_frequency_cutoff: Lower edge of the colouring and calibration band, in Hz.
         revision: DeepExtractor dataset revision.
 
@@ -155,7 +156,6 @@ def deepextractor_o3_population(
         The population, one class per Gravity Spy class, each its own Poisson process per
         interferometer.
     """
-    selector = None if detectors is None else list(detectors)
     classes = []
     for name, (rate, alpha, maximum) in CLASS_PARAMETERS.items():
         model = DeepExtractorGlitch(
@@ -166,7 +166,7 @@ def deepextractor_o3_population(
             glitch_classes=[name],
             low_frequency_cutoff=low_frequency_cutoff,
             revision=revision,
-            detectors=selector,
+            detectors=detectors,
         )
         classes.append(
             GlitchClass(

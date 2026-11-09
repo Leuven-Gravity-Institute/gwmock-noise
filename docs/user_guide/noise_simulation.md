@@ -641,8 +641,11 @@ models = [
 ]
 ```
 
-`get_glitch_population(name, **settings).digest()` prints the value to pin. A
-`population` entry can sit beside ordinary model entries.
+`get_glitch_population(name, **settings).digest()` prints the value to pin. The
+pin is also the only record that the models came from a population: after
+expansion they are ordinary models. Name the noise curve with a bundled preset
+to keep the digest the same on every machine; a file path is part of the digest.
+A `population` entry can sit beside ordinary model entries, and takes no `kind`.
 
 Three things a population adds over a bare list of models.
 

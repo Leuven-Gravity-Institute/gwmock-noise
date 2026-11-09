@@ -14,15 +14,22 @@ model does not download it.
 from __future__ import annotations
 
 import json
+import math
+import re
+from pathlib import Path
 
+import numpy as np
 import pytest
 from measure_glitch_population_anchors import (
     DEEPEXTRACTOR_CLASSES,
     DEEPEXTRACTOR_SUMMARY_PATH,
     MEASUREMENTS,
+    NON_GLITCH_LABELS,
     SNR_MINIMUM,
+    Triggers,
     expected_hill_of_truncated_draws,
     render_summary,
+    summarize,
 )
 
 from gwmock_noise.data.glitch_population import load_deepextractor_o3_summary
@@ -35,10 +42,14 @@ from gwmock_noise.populations import (
     get_glitch_population,
 )
 from gwmock_noise.populations import deepextractor_o3 as preset
+from gwmock_noise.populations.registry import UnknownPopulationArgumentError
+
+#: The population's record page, whose tables are asserted against the summary.
+RECORD_PAGE = Path(__file__).resolve().parents[1] / "docs" / "dev" / "deepextractor_o3_population.md"
 
 #: The registered population's digest, as a campaign pins it. Moving it is the act of saying
 #: that what the registered population injects has changed.
-REGISTERED_DIGEST = "sha256:2ed634893a0ba63672c644d2e4bba6d9e556f5e67cd93e873464ffba9cae43d5"
+REGISTERED_DIGEST = "sha256:bd91a26c59c817bb9310e1c223fd7d2562dd8b5bf7885e9b2a6040b74b28918c"
 
 
 @pytest.fixture(name="summary")
@@ -81,13 +92,12 @@ def test_the_bundled_summary_is_written_the_way_the_formatter_wants_it() -> None
 
 @pytest.mark.parametrize("name", DEEPEXTRACTOR_CLASSES)
 def test_registered_constants_are_the_measured_ones(summary: dict, name: str) -> None:
-    """Rate to five significant figures, exponent to four decimals, truncation rounded up to 0.01."""
+    """Rate rounded to five significant figures, exponent to four decimals, truncation up to 0.01."""
     rate, alpha, maximum = preset.CLASS_PARAMETERS[name]
     block = summary["classes"][name]
-    assert rate == pytest.approx(block["rate_hz"]["pooled"], rel=1e-4)
-    assert alpha == pytest.approx(block["snr"]["truncated_pareto_alpha"], abs=5e-5)
-    observed = block["snr"]["maximum"]
-    assert observed <= maximum < observed + 0.01
+    assert rate == float(f"{block['rate_hz']['pooled']:.5g}")
+    assert alpha == round(block["snr"]["truncated_pareto_alpha"], 4)
+    assert maximum == math.ceil(block["snr"]["maximum"] * 100.0) / 100.0
 
 
 @pytest.mark.parametrize("name", DEEPEXTRACTOR_CLASSES)
@@ -153,7 +163,7 @@ def test_the_registered_digest_is_the_one_campaigns_pin(population: GlitchPopula
     "arguments",
     [
         {"psd_file": "ET_15_full_cryo_psd"},
-        {"detectors": ["E1"]},
+        {"detectors": ["E1", "E2"]},
         {"low_frequency_cutoff": 2.0},
         {"revision": "main"},
     ],
@@ -165,6 +175,20 @@ def test_a_run_setting_reaches_every_class_and_moves_the_digest(arguments: dict)
     ((key, value),) = arguments.items()
     for glitch_class in population.classes:
         assert glitch_class.model.serialize()[key] == value
+
+
+def test_one_interferometer_name_scopes_every_class_to_it() -> None:
+    """A single name is one interferometer, as for a plain model, and digests like the one-element list."""
+    by_name = get_glitch_population(preset.POPULATION_NAME, detectors="E1")
+    assert {c.model.detectors for c in by_name.classes} == {("E1",)}
+    assert by_name.digest() == get_glitch_population(preset.POPULATION_NAME, detectors=["E1"]).digest()
+
+
+def test_the_registry_refuses_a_setting_the_builder_does_not_take() -> None:
+    """As a ``TypeError`` naming the settings it does take."""
+    with pytest.raises(UnknownPopulationArgumentError, match=r"takes the settings \['detectors'") as caught:
+        get_glitch_population(preset.POPULATION_NAME, rate=1.0)
+    assert isinstance(caught.value, TypeError)
 
 
 def test_the_registry_lists_both_populations() -> None:
@@ -213,10 +237,62 @@ def test_a_population_entry_refuses_a_digest_it_does_not_have() -> None:
     ("entry", "message"),
     [
         ({"population": "deepextractor-o3-v2"}, r"registered populations are \['deepextractor-o3-v1'"),
-        ({"population": preset.POPULATION_NAME, "rate": 1.0}, r"does not take the arguments \['rate'\]"),
+        ({"population": preset.POPULATION_NAME, "rate": 1.0}, r"not \['rate'\]"),
+        ({"population": preset.POPULATION_NAME, "kind": "deepextractor"}, r"takes no 'kind'"),
     ],
 )
-def test_a_population_entry_refuses_an_unknown_name_or_argument(entry: dict, message: str) -> None:
+def test_a_population_entry_refuses_an_unknown_name_argument_or_kind(entry: dict, message: str) -> None:
     """Both as ``ValueError``, the error every other bad glitch entry raises."""
     with pytest.raises(ValueError, match=message):
         normalize_glitch_models([entry])
+
+
+def test_a_bad_value_for_a_setting_is_reported_by_what_rejects_it() -> None:
+    """A setting the builder takes, with a wrong value, is not reported as a setting it does not take."""
+    with pytest.raises(TypeError, match="detectors must be a string or a list of strings") as caught:
+        normalize_glitch_models([{"population": preset.POPULATION_NAME, "detectors": 5}])
+    assert "takes the settings" not in str(caught.value)
+
+
+# ---------------------------------------------------------------------------------------
+# The summary and the record page
+# ---------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("population", sorted(MEASUREMENTS))
+def test_a_summary_names_its_own_record_page_and_tests(population: str) -> None:
+    """Regenerating either population's summary names the page and tests that use it."""
+    measurement = MEASUREMENTS[population]
+    snr = np.array([8.0, 9.0, 12.0, 20.0, 40.0])
+    few = Triggers(snr, np.ones(5), np.ones(5), np.ones(5), np.ones(5))
+    triggers = {(detector, name): few for detector in ("H1", "L1") for name in measurement.classes}
+    description = summarize(triggers, {"H1": 1.0, "L1": 1.0}, population)["description"]
+    assert f"quoted by {measurement.record_page}; asserted against by {measurement.test_file}." in description
+    root = Path(__file__).resolve().parents[1]
+    assert (root / measurement.record_page).is_file()
+    assert (root / measurement.test_file).is_file()
+
+
+def test_the_bundled_summary_carries_the_label_census(summary: dict) -> None:
+    """The counts behind the confidence-cut table and the share of the O3 glitch rate."""
+    census = summary["label_census"]
+    assert census["non_glitch_labels"] == ", ".join(sorted(NON_GLITCH_LABELS))
+    assert census["glitch_rate_hz"] == census["glitch_count"] / summary["livetime_seconds"]["pooled"]
+    for name, kept in census["counts_above_confidence_minimum"].items():
+        assert 0 < kept < summary["classes"][name]["counts"]["pooled"]
+
+
+def test_the_record_page_quotes_the_summary(summary: dict) -> None:
+    """The confidence-cut table, the share of the glitch rate and the rate table, as the page prints them."""
+    page = RECORD_PAGE.read_text(encoding="utf-8")
+    census = summary["label_census"]
+    for name, block in summary["classes"].items():
+        total, kept = block["counts"]["pooled"], census["counts_above_confidence_minimum"][name]
+        row = rf"\| {name} +\| {total:,} +\| {kept:,} +\| {kept / total:.0%} ?\|".replace("%", " %")
+        assert re.search(row, page), row
+        rate = preset.CLASS_PARAMETERS[name][0]
+        written = f"{rate:.4e}".replace("e-0", "e-")
+        assert re.search(rf"\| {name} +\| {written} +\| {rate * 3600.0:.2f} ", page), name
+    share = sum(b["rate_hz"]["pooled"] for b in summary["classes"].values()) / census["glitch_rate_hz"]
+    assert f"The seven classes are {share:.0%}".replace("%", " %") in page
+    assert f"({census['glitch_rate_hz']:.3e} Hz over every label".replace("e-0", "e-") in page

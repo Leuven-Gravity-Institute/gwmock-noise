@@ -8,6 +8,7 @@ campaign carrying a copy of the definition.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -18,6 +19,10 @@ _REGISTERED: dict[str, Callable[..., GlitchPopulation]] = {
     et_o3_anchored.POPULATION_NAME: et_o3_anchored.et_o3_anchored_population,
     deepextractor_o3.POPULATION_NAME: deepextractor_o3.deepextractor_o3_population,
 }
+
+
+class UnknownPopulationArgumentError(TypeError):
+    """A population builder was given a setting it does not take."""
 
 
 def available_glitch_populations() -> list[str]:
@@ -43,11 +48,19 @@ def get_glitch_population(name: str, **arguments: Any) -> GlitchPopulation:
         KeyError: If no population is registered under that name. The message lists the
             names that are, because a typo is the likeliest cause and a bare ``KeyError``
             does not say what to type instead.
-        TypeError: If the population's builder does not take one of ``arguments``.
+        UnknownPopulationArgumentError: If the population's builder does not take one of
+            ``arguments``. A setting it takes but cannot use raises whatever the builder raises.
     """
     builder = _REGISTERED.get(name)
     if builder is None:
         raise KeyError(
             f"unknown glitch population {name!r}; registered populations are {available_glitch_populations()}."
         )
+    try:
+        inspect.signature(builder).bind(**arguments)
+    except TypeError as error:
+        raise UnknownPopulationArgumentError(
+            f"glitch population {name!r} takes the settings {sorted(inspect.signature(builder).parameters)}, "
+            f"not {sorted(set(arguments) - set(inspect.signature(builder).parameters))}."
+        ) from error
     return builder(**arguments)

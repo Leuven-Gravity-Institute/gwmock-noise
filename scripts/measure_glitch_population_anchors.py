@@ -14,8 +14,8 @@ products rather than chosen by hand:
 This script downloads both (about 560 MB, cached), measures one population's classes under
 that population's selection, prints everything, and optionally rewrites the small summary the
 package bundles for it under ``src/gwmock_noise/data/glitch_population/``. That summary is what
-``docs/dev/glitch_population.md`` quotes and what the tests assert the registered constants
-against, so the page, this printout and the assertions cannot drift apart.
+the population's record page under ``docs/dev/`` quotes and what the tests assert the registered
+constants against, so the page, this printout and the assertions cannot drift apart.
 
 It is a measurement harness, not a test: it needs the network, it takes a few minutes on a
 cold cache, and it changes nothing unless asked to.
@@ -77,6 +77,9 @@ PERCENTILES = (1.0, 5.0, 25.0, 50.0, 75.0, 95.0, 99.0)
 #: Where the ``deepextractor-o3-v1`` summary is bundled.
 DEEPEXTRACTOR_SUMMARY_PATH = SUMMARY_PATH.parent / "deepextractor_o3_summary.json"
 
+#: Gravity Spy labels that are not a glitch class: no glitch, a chirp, or an unclassifiable trigger.
+NON_GLITCH_LABELS = frozenset({"No_Glitch", "Chirp", "None_of_the_Above"})
+
 #: The seven Gravity Spy classes the DeepExtractor glitch reconstructions cover.
 DEEPEXTRACTOR_CLASSES = (
     "Blip",
@@ -93,18 +96,37 @@ class Measurement(NamedTuple):
     """Which classes one population is measured over, under which selection, and where its summary goes.
 
     ``confidence_minimum`` of ``None`` keeps every trigger the classifier labelled with the class,
-    whatever its confidence.
+    whatever its confidence. ``record_page`` and ``test_file`` are the page that quotes the summary
+    and the tests that assert against it, named in the summary's description. ``census`` adds
+    the counts that compare the selection with a confidence cut and the classes with every glitch
+    label.
     """
 
     classes: tuple[str, ...]
     confidence_minimum: float | None
     summary_path: Path
+    record_page: str
+    test_file: str
+    census: bool = False
 
 
 #: The registered populations this harness measures, by name.
 MEASUREMENTS = {
-    "et-o3-anchored-v1": Measurement(MEASURED_CLASSES, CONFIDENCE_MINIMUM, SUMMARY_PATH),
-    "deepextractor-o3-v1": Measurement(DEEPEXTRACTOR_CLASSES, None, DEEPEXTRACTOR_SUMMARY_PATH),
+    "et-o3-anchored-v1": Measurement(
+        MEASURED_CLASSES,
+        CONFIDENCE_MINIMUM,
+        SUMMARY_PATH,
+        record_page="docs/dev/glitch_population.md",
+        test_file="tests/test_glitch_population.py",
+    ),
+    "deepextractor-o3-v1": Measurement(
+        DEEPEXTRACTOR_CLASSES,
+        None,
+        DEEPEXTRACTOR_SUMMARY_PATH,
+        record_page="docs/dev/deepextractor_o3_population.md",
+        test_file="tests/test_deepextractor_o3_population.py",
+        census=True,
+    ),
 }
 
 #: Thresholds the Hill index is reported at, so its threshold dependence -- the statement
@@ -355,10 +377,45 @@ def _percentiles(values: np.ndarray) -> dict[str, float]:
     }
 
 
+def label_census(data_dir: Path, classes: tuple[str, ...]) -> dict[str, Any]:
+    """Count every glitch label above the SNR threshold, and the given classes above the confidence cut.
+
+    Args:
+        data_dir: Cache directory for the classification files.
+        classes: The classes whose counts above ``CONFIDENCE_MINIMUM`` are reported.
+
+    Returns:
+        The pooled count of every trigger above ``SNR_MINIMUM`` whose label is a glitch class
+        (every label except ``NON_GLITCH_LABELS``), and each class's pooled count with confidence
+        above ``CONFIDENCE_MINIMUM``.
+    """
+    glitches = 0
+    confident = dict.fromkeys(classes, 0)
+    for (detector, run), filename in sorted(CLASSIFICATION_FILES.items()):
+        url = f"https://zenodo.org/api/records/{ZENODO_RECORD}/files/{filename}/content"
+        path = _download(url, data_dir / filename)
+        print(f"  counting labels in {detector} {run}", file=sys.stderr)
+        with path.open(newline="") as handle:
+            for row in csv.DictReader(handle):
+                label = row["ml_label"]
+                if float(row["snr"]) <= SNR_MINIMUM or label in NON_GLITCH_LABELS:
+                    continue
+                glitches += 1
+                if label in confident and float(row["ml_confidence"]) > CONFIDENCE_MINIMUM:
+                    confident[label] += 1
+    return {
+        "non_glitch_labels": ", ".join(sorted(NON_GLITCH_LABELS)),
+        "glitch_count": glitches,
+        "confidence_minimum": CONFIDENCE_MINIMUM,
+        "counts_above_confidence_minimum": confident,
+    }
+
+
 def summarize(
     triggers: dict[tuple[str, str], Triggers],
     livetime: dict[str, float],
     population: str = "et-o3-anchored-v1",
+    census: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the bundled summary from the raw triggers and the observing time.
 
@@ -366,6 +423,8 @@ def summarize(
         triggers: The selected triggers per ``(interferometer, class)``.
         livetime: Observing time per interferometer, in seconds.
         population: The registered population the summary is for.
+        census: :func:`label_census`'s counts, for a population that reports them; its glitch
+            rate over the pooled livetime is added.
 
     Returns:
         The summary, in the shape the bundled JSON has.
@@ -376,7 +435,7 @@ def summarize(
         "description": (
             f"Measured reference statistics for the {population} glitch population. "
             "Regenerated by scripts/measure_glitch_population_anchors.py; quoted by "
-            "docs/dev/glitch_population.md; asserted against by the tests."
+            f"{measurement.record_page}; asserted against by {measurement.test_file}."
         ),
         "sources": {
             "classifications": "doi:10.5281/zenodo.5649212 (Gravity Spy machine-learning classifications, O1-O3b)",
@@ -427,6 +486,8 @@ def summarize(
             "central_frequency_hz": {"median": float(np.median(pooled.central_frequency))},
             "bandwidth_hz": {"median": float(np.median(pooled.bandwidth))},
         }
+    if census is not None:
+        summary["label_census"] = {**census, "glitch_rate_hz": census["glitch_count"] / pooled_livetime}
     return summary
 
 
@@ -500,6 +561,18 @@ def report(summary: dict[str, Any]) -> None:
             f"bandwidth median {block['bandwidth_hz']['median']:.1f} Hz"
         )
 
+    census = summary.get("label_census")
+    if census is not None:
+        rate = sum(block["rate_hz"]["pooled"] for block in summary["classes"].values())
+        print("\n== Label census ==")
+        print(
+            f"  every glitch label: n={census['glitch_count']} rate={census['glitch_rate_hz']:.6e} Hz; "
+            f"these classes are {rate / census['glitch_rate_hz']:.2%} of it"
+        )
+        for name, kept in census["counts_above_confidence_minimum"].items():
+            total = summary["classes"][name]["counts"]["pooled"]
+            print(f"  {name}: {kept} of {total} above confidence {census['confidence_minimum']:g} ({kept / total:.0%})")
+
 
 def main(argv: list[str] | None = None) -> int:
     """Measure the anchors, print them, and optionally rewrite the bundled summary."""
@@ -527,7 +600,8 @@ def main(argv: list[str] | None = None) -> int:
     print("== Fetching inputs ==", file=sys.stderr)
     livetime = observing_livetime(arguments.data_dir)
     triggers = read_triggers(arguments.data_dir, measurement)
-    summary = summarize(triggers, livetime, arguments.population)
+    census = label_census(arguments.data_dir, measurement.classes) if measurement.census else None
+    summary = summarize(triggers, livetime, arguments.population, census)
     report(summary)
 
     if arguments.write_summary:
