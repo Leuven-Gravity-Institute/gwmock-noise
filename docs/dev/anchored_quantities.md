@@ -33,8 +33,8 @@ here:
   `aLIGO_O3_actual_L1_psd`), real detector spectra on a uniform 0.25 Hz grid
   which still carry instrumental lines; and
 - the **design or forecast** curves (the O4 projections and the nine Einstein
-  Telescope curves), smooth models that nevertheless tabulate a small number of
-  lines each.
+  Telescope curves), smooth models. All but the two ET2026a curves tabulate a
+  small number of lines each; the ET2026a curves tabulate none.
 
 Every measurement is made at a 4096 Hz sampling frequency, over 20 Hz to 2000 Hz
 for the Advanced LIGO curves and 5 Hz to 2000 Hz for the Einstein Telescope
@@ -57,11 +57,11 @@ being explicit about where it is soft. Narrow isolated features are labelled
 identically by any reasonable window: the Advanced LIGO violin-mode fundamental
 near 500 Hz and its harmonics near 1000, 1500 and 2000 Hz, the 60.01 Hz mains
 harmonic and the 306.33 Hz calibration line in the O4 projections, the 166.75 Hz
-line in every Einstein Telescope curve, the 420.28 Hz line in ET-D. Broad
-low-frequency structure is not: a few of the 20-25 Hz features in the measured
-O3 curves move in and out of the list as the window widens, and the numbers
-below inherit that ambiguity. Over the thirteen presets the criterion labels 96
-lines, 94 of which have a measurable width.
+line in each of the seven earlier Einstein Telescope curves, the 420.28 Hz line
+in ET-D. Broad low-frequency structure is not: a few of the 20-25 Hz features in
+the measured O3 curves move in and out of the list as the window widens, and the
+numbers below inherit that ambiguity. Over the thirteen presets the criterion
+labels 96 lines, 94 of which have a measurable width.
 
 ## 1. The per-band fit tolerances
 

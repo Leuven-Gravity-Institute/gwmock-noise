@@ -75,10 +75,12 @@ from is not documented here.
 
 ### ET2026a
 
-`ET2026a_10km_psd` and `ET2026a_15km_psd` are the ET2026a curves, which the
-Einstein Telescope recommends for new work: one preset per arm length, each the
-combination of that arm length's low-frequency (LF) and high-frequency (HF)
-interferometers.
+`ET2026a_10km_psd` and `ET2026a_15km_psd` are the ET2026a curves: one preset per
+arm length, each the combination of that arm length's low-frequency (LF) and
+high-frequency (HF) interferometers. The Einstein Telescope's page for
+scientists, <https://einsteintelescope.eu/get-involved/for-scientists/>,
+recommends them for new work: "We recommend the use of this curve for future
+works".
 
 Source: the public repository
 [`pub/et-sensitivity-curves`](https://gitlab.et-gw.eu/pub/et-sensitivity-curves)
@@ -112,9 +114,9 @@ four files, checks their digests and rebuilds both presets byte for byte. It
 also checks two properties of the source files the presets rely on:
 
 - Below 50 Hz, column 3 is column 2 (the displacement noise) divided by the arm
-  length, to 2e-5 (10 km) and 4e-5 (15 km). The column is therefore strain.
+  length, to 1.9e-5 (10 km) and 4.2e-5 (15 km). The column is therefore strain.
 - Above 300 Hz, where the LF interferometer contributes nothing, the combination
-  equals the HF curve, to 4e-6 (10 km) and 8e-4 (15 km).
+  equals the HF curve, to 4.2e-6 (10 km) and 8.2e-4 (15 km).
 
 Column 4 is the same correction for a signal at zenith. It departs from column 3
 by 1.2e-6 (10 km) and 2.8e-6 (15 km) at 100 Hz, growing to 2.0e-3 and 4.0e-3 at
@@ -122,8 +124,10 @@ by 1.2e-6 (10 km) and 2.8e-6 (15 km) at 100 Hz, growing to 2.0e-3 and 4.0e-3 at
 
 **Not anchored.** No published figure for the absolute level of these curves was
 found to check them against. For comparison only: the 1.4+1.4 solar-mass
-inspiral range the tests compute, a Euclidean figure from 10 Hz with no
-cosmology, is 2824 Mpc for `ET2026a_10km_psd` and 3745 Mpc for
-`ET2026a_15km_psd`, against 2468 Mpc and 3404 Mpc for `ET_10_full_cryo_psd` and
-`ET_15_full_cryo_psd`. Between 5 and 30 Hz the ET2026a PSDs are about half the
-`full_cryo` ones (median ratio 0.49 for 10 km, 0.54 for 15 km).
+inspiral range, a Euclidean figure from 10 Hz with no cosmology computed by
+`_bns_inspiral_range_mpc` in `tests/test_psd_presets.py` (which asserts the two
+ET2026a values and so guards the presets' absolute scale), is 2824 Mpc for
+`ET2026a_10km_psd` and 3745 Mpc for `ET2026a_15km_psd`, against 2468 Mpc and
+3404 Mpc for `ET_10_full_cryo_psd` and `ET_15_full_cryo_psd`. Between 5 and 30
+Hz the ET2026a PSDs are about half the `full_cryo` ones (median ratio 0.49 for
+10 km, 0.54 for 15 km).

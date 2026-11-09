@@ -76,7 +76,7 @@ DEFAULT_MAX_LINES = 8
 #: against the lines the bundled presets tabulate, scored over the candidates
 #: that reach a preset's top :data:`DEFAULT_MAX_LINES` -- the only ones this
 #: simulator can place, and so the only population the threshold decides. Over
-#: those eleven curves the largest such candidate that is *not* a tabulated
+#: those thirteen curves the largest such candidate that is *not* a tabulated
 #: line scores 12.18, and the weakest tabulated one standing above that floor
 #: scores 18.63, so the two populations separate and this is the round value
 #: inside the gap. It gives precision 1.000 and recall 0.935, against 0.750 and

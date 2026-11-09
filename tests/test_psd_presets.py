@@ -227,6 +227,21 @@ def test_et2026a_preset_is_a_usable_psd_table_on_the_et_grid(preset: str) -> Non
     np.testing.assert_allclose(frequencies, grid, rtol=1e-15, atol=0.0)
 
 
+#: The 1.4+1.4 solar-mass inspiral range :func:`_bns_inspiral_range_mpc` gives for each ET2026a
+#: preset, as PROVENANCE.md records it. Not a published figure: it guards the presets' absolute
+#: scale, which a wrong column, a missed squaring or a wrong combination would move.
+ET2026A_RANGE_MPC = {"ET2026a_10km_psd": 2824.0, "ET2026a_15km_psd": 3745.0}
+
+
+@pytest.mark.parametrize("preset", ET2026A_PRESETS)
+def test_et2026a_preset_has_the_recorded_inspiral_range(preset: str) -> None:
+    """The range PROVENANCE.md records, to the megaparsec it is written to."""
+    frequencies, values = load_spectral_series(preset, kind="PSD")
+    assert round(_bns_inspiral_range_mpc(frequencies, values)) == ET2026A_RANGE_MPC[preset]
+    provenance = resources.files(PSD_PACKAGE).joinpath("PROVENANCE.md").read_text(encoding="utf-8")
+    assert f"{ET2026A_RANGE_MPC[preset]:.0f} Mpc for `{preset}`" in " ".join(provenance.split())
+
+
 @pytest.mark.parametrize("preset", ET2026A_PRESETS)
 def test_et2026a_preset_is_written_in_the_bundled_format(preset: str) -> None:
     """The builder's renderer reproduces the file byte for byte, as it does the older presets."""
