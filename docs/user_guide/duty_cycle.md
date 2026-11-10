@@ -59,6 +59,64 @@ layout is LIGO's; Virgo's state vector is laid out differently.
 The samples are `uint32`, wide enough for bit 16 (gwpy's `StateVector` offers as
 many bits as the type has). A sample outside the realization's span is 0.
 
+## Reading the state vector in a pipeline
+
+A pipeline that reads a state-vector channel selects observing time with the
+LIGO flags above. These examples are run by this package's tests with each
+pipeline's current release, so a change on either side is caught there. They
+build the state vector from a realization; in a gwmock run it comes from frame
+files, with the segment files beside it: see gwmock's
+[Analysing Data with a Duty Cycle](https://leuven-gravity-institute.github.io/gwmock/user-guide/analysis-pipelines/).
+
+**gwpy** names the bits and turns each into segments. Those of `HOFT_OK` and
+`OBS_INTENT` together are the observing time, to within one sample:
+
+<!-- example: gwpy -->
+
+```python
+import numpy as np
+from gwpy.timeseries import StateVector
+
+from gwmock_noise.duty_cycle import DAY, DutyCycleModel, simulate_duty_cycle
+
+start, rate = 1_000_000_000, 16.0
+realization = simulate_duty_cycle(DutyCycleModel(), ["E1", "E2", "E3"], start=start, duration=2 * DAY, seed=1)
+samples = realization.state_vector("E1", start=start, sampling_frequency=rate, n_samples=int(2 * DAY * rate))
+
+bits = ["HOFT_OK", "OBS_INTENT", "OBS_READY"] + [None] * 13 + ["MAINTENANCE"]
+state = StateVector(samples, t0=start, sample_rate=rate, bits=bits)
+flags = state.to_dqflags()
+observing = (flags["HOFT_OK"] & flags["OBS_INTENT"]).active
+
+exact = realization.observing["E1"]
+assert len(observing) == len(exact)
+for (a, b), (c, d) in zip(observing, exact):
+    assert abs(float(a) - c) <= 1 / rate and abs(float(b) - d) <= 1 / rate
+```
+
+**PyCBC**'s low-latency search takes the flags by name,
+`--analyze-flags E1:HOFT_OK,SCIENCE_INTENT`, turns them into a mask, and
+analyses a block of data only when every sample of the block has all of the
+mask's bits set:
+
+<!-- example: pycbc -->
+
+```python
+import numpy as np
+from pycbc.frame import flag_names_to_bitmask
+
+from gwmock_noise.duty_cycle import DAY, DutyCycleModel, simulate_duty_cycle
+
+start, rate = 1_000_000_000, 16.0
+realization = simulate_duty_cycle(DutyCycleModel(), ["E1", "E2", "E3"], start=start, duration=2 * DAY, seed=1)
+samples = realization.state_vector("E1", start=start, sampling_frequency=rate, n_samples=int(2 * DAY * rate))
+
+mask = flag_names_to_bitmask("HOFT_OK,SCIENCE_INTENT".split(","))
+analysable = np.bitwise_and(samples.astype(np.int32), mask) == mask  # PyCBC reads the channel as int32
+times = start + np.arange(samples.size) / rate
+assert np.array_equal(analysable, realization.is_observing("E1", times))
+```
+
 ## The model
 
 The model follows Negri et al., _Impact of the Einstein Telescope's duty cycle

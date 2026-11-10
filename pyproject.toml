@@ -116,7 +116,7 @@ branch = true
 fail_under = 0
 
 [tool.pytest.ini_options]
-addopts = "--cov-report xml:coverage.xml --cov src --cov-append -m 'not integration' --cov-report=term-missing"
+addopts = "--cov-report xml:coverage.xml --cov src --cov-append -m 'not integration and not pipelines' --cov-report=term-missing"
 pythonpath = ["src", "scripts"]
 testpaths = "tests"
 junit_family = "xunit2"
@@ -128,6 +128,9 @@ markers = [
   "slow: marks tests as slow",
   "unit: fast offline tests",
   "requires_h5py: needs h5py (the hdf5 extra); skipped where it is not installed",
+  # Needs the analysis pipelines (PyCBC, gwpy), which are not in `dev`. Excluded from the default run
+  # above; the `pipelines` CI job installs them and runs these.
+  "pipelines: checks the state vector against the analysis pipelines that read it",
 ]
 
 [tool.ruff]
