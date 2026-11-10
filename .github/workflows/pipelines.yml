@@ -1,11 +1,12 @@
 name: Pipelines
 
 # Runs the duty-cycle guide's state-vector examples (docs/user_guide/duty_cycle.md) and PyCBC's
-# low-latency state buffer with the current release of each pipeline: PyCBC, and gwpy. They are
-# upgraded on top of the locked environment rather than locked with it, because the point is to
-# meet each pipeline's newest release, and PyCBC is too heavy for the dev group. The weekly run
-# catches a pipeline release that changes what it accepts, which no change to this repository would
-# trigger.
+# low-latency state buffer with the current release of PyCBC, gwpy and lalsuite. They are upgraded
+# on top of the locked environment rather than locked with it: the point is to meet each one's newest
+# release; PyCBC is too heavy for the dev group; and the pins a release carries (PyCBC 2.11.0 caps
+# numpy below the locked version) then move only this job's environment, not every environment that
+# installs the lock. The weekly run catches a pipeline release that changes what it accepts, which no
+# change to this repository would trigger.
 on:
     push:
         branches: [main]
