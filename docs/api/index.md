@@ -52,6 +52,14 @@ that paired arms of a comparison share.
 
 ::: gwmock_noise.populations
 
+## Duty cycle
+
+When each interferometer of a network observes: a continuous-time Markov chain
+of unplanned unlocks with correlated unlocks, and planned maintenance,
+coincident or rotating, laid over it.
+
+::: gwmock_noise.duty_cycle
+
 ## Simulators
 
 Simulator implementations, the `NoiseSimulator` protocol, the optional
