@@ -10,10 +10,19 @@ import numpy as np
 
 from gwmock_noise.duty_cycle.model import CORRELATED_MINIMUM, DutyCycleModel, stationary_distribution
 
-#: Bit of a state-vector sample set while the interferometer observes.
-OBSERVING_BIT = 1
-#: Bit of a state-vector sample set while the interferometer is in planned maintenance.
-MAINTENANCE_BIT = 2
+#: Bits of a state-vector sample set while the interferometer observes: bits 0, 1 and 2, which in LIGO's
+#: calibrated state vector mean that h(t) was computed, that the interferometer is in observation-intent
+#: mode, and that it is in observation-ready mode (``HOFT_OK``, ``OBS_INTENT``, ``OBS_READY``; PyCBC
+#: names them ``HOFT_OK``, ``SCIENCE_INTENT``, ``SCIENCE_QUALITY``). A pipeline that selects analysable
+#: data by requiring bits 0 and 1, or 0 to 2, selects observing time. No other bit is ever set while
+#: observing: the realization sets no calibration-health, data-quality veto, gap or hardware-injection
+#: flag, so bit 0 here marks observing time and does not vouch for a calibration. Meanings from Viets et
+#: al., Class. Quantum Grav. 35, 095015 (2018), arXiv:1710.09973, Table III.
+OBSERVING_MASK = 0b111
+#: Bit of a state-vector sample set while the interferometer is in planned maintenance: bit 16, not in
+#: use in LIGO's O2 calibrated state vector and outside the calibrated state-vector flags PyCBC names
+#: (bits 0 to 14).
+MAINTENANCE_BIT = 1 << 16
 
 
 @dataclass(frozen=True, eq=False)
@@ -74,8 +83,9 @@ class DutyCycleRealization:
     def state_vector(self, detector: str, start: float, sampling_frequency: float, n_samples: int) -> np.ndarray:
         """The interferometer's state at each sample of a uniform grid.
 
-        Bit 0 (:data:`OBSERVING_BIT`) is set while it observes; bit 1 (:data:`MAINTENANCE_BIT`) while it is
-        in planned maintenance. A sample takes the state at its own time. A sample outside the
+        Bits 0 to 2 (:data:`OBSERVING_MASK`) are set while it observes, as LIGO's calibrated state vector
+        sets them while a detector's data can be analysed; bit 16 (:data:`MAINTENANCE_BIT`) is set while it
+        is in planned maintenance. A sample takes the state at its own time. A sample outside the
         realization's span is ``0``, the same value as an interferometer that is down and not in
         maintenance: the realization says nothing about it.
 
@@ -86,7 +96,8 @@ class DutyCycleRealization:
             n_samples: Number of samples.
 
         Returns:
-            A ``uint8`` array of ``n_samples`` states.
+            A ``uint32`` array of ``n_samples`` states: wide enough for bit 16, which gwpy's ``StateVector``
+            only offers for a type of more than 16 bits.
 
         Raises:
             ValueError: If the sampling frequency is not positive and finite.
@@ -94,9 +105,9 @@ class DutyCycleRealization:
         if not (math.isfinite(sampling_frequency) and sampling_frequency > 0.0):
             raise ValueError(f"sampling_frequency must be positive and finite, not {sampling_frequency!r}.")
         times = start + np.arange(n_samples) / sampling_frequency
-        state = np.where(_inside(self.observing[detector], times), OBSERVING_BIT, 0)
+        state = np.where(_inside(self.observing[detector], times), OBSERVING_MASK, 0)
         state |= np.where(_inside(self.maintenance[detector], times), MAINTENANCE_BIT, 0)
-        return state.astype(np.uint8)
+        return state.astype(np.uint32)
 
     def fraction_with_n_observing(self) -> np.ndarray:
         """Fraction of the span with ``0, ..., N`` interferometers observing at once."""

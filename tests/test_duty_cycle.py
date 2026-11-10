@@ -18,7 +18,7 @@ import pytest
 from gwmock_noise.duty_cycle import (
     DEFAULT_MAINTENANCE_OFFSET,
     MAINTENANCE_BIT,
-    OBSERVING_BIT,
+    OBSERVING_MASK,
     DutyCycleModel,
     MaintenanceSchedule,
     correlated_unlock_share,
@@ -262,18 +262,43 @@ def test_segments_are_sorted_disjoint_and_inside_the_span() -> None:
         assert segments[-1, 1] <= realization.end
 
 
-def test_the_state_vector_carries_both_bits_at_each_samples_own_time() -> None:
-    """Bit 0 is observing at the sample time; bit 1 is maintenance, never together with bit 0."""
+def _inside_any(intervals: np.ndarray, times: np.ndarray) -> np.ndarray:
+    """Whether each sorted time lies in one of the ``[start, end)`` intervals, by a sweep over the times.
+
+    A different computation from the module's own, so the test does not check the code against itself.
+    """
+    assert np.all(np.diff(times) >= 0), "the sweep needs sorted times"
+    delta = np.zeros(times.size + 1, dtype=np.int64)
+    np.add.at(delta, np.searchsorted(times, intervals[:, 0], side="left"), 1)
+    np.add.at(delta, np.searchsorted(times, intervals[:, 1], side="left"), -1)
+    return np.cumsum(delta)[:-1] > 0
+
+
+def test_the_state_vector_bits_are_the_ones_a_ligo_pipeline_reads() -> None:
+    """The layout is a contract with other software, so its values are pinned, not only its names.
+
+    LIGO's calibrated state vector sets bits 0 (``HOFT_OK``), 1 (``OBS_INTENT``) and 2 (``OBS_READY``)
+    while the data can be analysed; bit 16 is not in use in its O2 layout, and PyCBC names its flags from
+    bit 0 to bit 14.
+    """
+    assert OBSERVING_MASK == 0b111
+    assert MAINTENANCE_BIT == 1 << 16
+
+
+def test_the_state_vector_carries_its_bits_at_each_samples_own_time() -> None:
+    """Every sample is observing (bits 0 to 2), maintenance (bit 16) or neither, at its own time."""
     realization = simulate_duty_cycle(DutyCycleModel(), TRIANGLE, START, 2 * WEEK, seed=8)
     sampling_frequency, n_samples = 1.0, int(2 * WEEK)
     times = START + np.arange(n_samples) / sampling_frequency
     for name in TRIANGLE:
         state = realization.state_vector(name, START, sampling_frequency, n_samples)
-        assert state.dtype == np.uint8
-        np.testing.assert_array_equal((state & OBSERVING_BIT) > 0, realization.is_observing(name, times))
-        maintained = (state & MAINTENANCE_BIT) > 0
-        assert maintained.any()
-        assert not ((state & OBSERVING_BIT) > 0)[maintained].any()
+        assert state.dtype == np.uint32
+        assert set(np.unique(state).tolist()) == {0, OBSERVING_MASK, MAINTENANCE_BIT}
+        observing = realization.is_observing(name, times)
+        np.testing.assert_array_equal(state == OBSERVING_MASK, observing)
+        # What a pipeline that requires HOFT_OK and SCIENCE_INTENT (mask 3) would select.
+        np.testing.assert_array_equal((state & 0b11) == 0b11, observing)
+        np.testing.assert_array_equal(state == MAINTENANCE_BIT, _inside_any(realization.maintenance[name], times))
 
 
 def test_the_fraction_with_n_observing_adds_up() -> None:
