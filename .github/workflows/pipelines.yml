@@ -2,7 +2,7 @@ name: Pipelines
 
 # Runs the duty-cycle guide's state-vector examples (docs/user_guide/duty_cycle.md) and PyCBC's
 # low-latency state buffer with the current release of each pipeline: PyCBC, and gwpy. They are
-# installed on top of the locked environment rather than locked with it, because they constrain
+# upgraded on top of the locked environment rather than locked with it, because they constrain
 # shared dependencies (numpy among them) more tightly than this package does, and because the point
 # is to meet each pipeline's newest release. The weekly run catches a pipeline release that changes
 # what it accepts, which no change to this repository would trigger.
@@ -33,8 +33,8 @@ jobs:
 
             - name: Install dependencies and the analysis pipelines
               run: |
-                  uv sync --group dev --all-extras
-                  uv pip install pycbc gwpy lalsuite
+                  uv sync --frozen --group dev --all-extras
+                  uv pip install --upgrade pycbc gwpy lalsuite
 
             - name: Record the pipeline versions
               run: >-

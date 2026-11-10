@@ -43,8 +43,8 @@ injections, which the realization does not model.
 
 That paper advises analysing data where bits 0 and 1 are both set. Bit 2 is set
 too, so that a pipeline that also requires it (PyCBC's `SCIENCE_QUALITY`) still
-selects observing time. PyCBC's low-latency search, for example, analyses the
-data when given `--analyze-flags <ifo>:HOFT_OK <ifo>:SCIENCE_INTENT`.
+selects observing time. PyCBC's low-latency search, for example, selects it with
+`--analyze-flags <ifo>:HOFT_OK,SCIENCE_INTENT`; see below.
 
 Only these bits are ever set. In LIGO's vector bit 0 is the logical AND of bits
 2 to 4, 11, 13, 17 and 25. Of those this realization sets only bit 2; the rest
@@ -90,14 +90,24 @@ observing = (flags["HOFT_OK"] & flags["OBS_INTENT"]).active
 
 exact = realization.observing["E1"]
 assert len(observing) == len(exact)
-for (a, b), (c, d) in zip(observing, exact):
+for (a, b), (c, d) in zip(observing, exact):  # within one sample: gwpy's segments are sample-quantized
     assert abs(float(a) - c) <= 1 / rate and abs(float(b) - d) <= 1 / rate
 ```
 
-**PyCBC**'s low-latency search takes the flags by name,
-`--analyze-flags E1:HOFT_OK,SCIENCE_INTENT`, turns them into a mask, and
-analyses a block of data only when every sample of the block has all of the
-mask's bits set:
+**PyCBC**'s low-latency search reads the state vector from the channel
+`--state-channel` names, and the flags `--analyze-flags` names, as in
+
+<!-- example: pycbc-live -->
+
+```bash
+pycbc_live --state-channel E1:STATE_VECTOR --analyze-flags E1:HOFT_OK,SCIENCE_INTENT
+```
+
+It needs both: with `--analyze-flags` alone it reads no state vector. The flags
+of one interferometer go in one comma-separated value, because repeating the
+interferometer keeps only the last. It turns the flags into a mask and analyses
+a block of data only when every sample of the block has all of the mask's bits
+set:
 
 <!-- example: pycbc -->
 
