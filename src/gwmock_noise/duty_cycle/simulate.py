@@ -11,12 +11,15 @@ import numpy as np
 from gwmock_noise.duty_cycle.model import CORRELATED_MINIMUM, DutyCycleModel, stationary_distribution
 
 #: Bits of a state-vector sample set while the interferometer observes: bits 0, 1 and 2, which in LIGO's
-#: calibrated state vector mean that h(t) is good, that the detector is meant to observe, and that the
-#: data are of science quality (``HOFT_OK``, ``SCIENCE_INTENT`` and ``SCIENCE_QUALITY`` in PyCBC). A
-#: pipeline that selects analysable data by requiring bits 0 and 1, or 0 to 2, selects observing time.
+#: calibrated state vector mean that h(t) was computed, that the interferometer is in observation-intent
+#: mode, and that it is in observation-ready mode (``HOFT_OK``, ``OBS_INTENT``, ``OBS_READY``; PyCBC
+#: names them ``HOFT_OK``, ``SCIENCE_INTENT``, ``SCIENCE_QUALITY``). A pipeline that selects analysable
+#: data by requiring bits 0 and 1, or 0 to 2, selects observing time. No other bit is ever set while
+#: observing: the realization models no data-quality vetoes, gaps or hardware injections.
 OBSERVING_MASK = 0b111
-#: Bit of a state-vector sample set while the interferometer is in planned maintenance: bit 16, which
-#: none of the LIGO calibrated state-vector flags PyCBC knows (bits 0 to 14) uses.
+#: Bit of a state-vector sample set while the interferometer is in planned maintenance: bit 16, not in
+#: use in LIGO's O2 calibrated state vector and outside the calibrated state-vector flags PyCBC names
+#: (bits 0 to 14).
 MAINTENANCE_BIT = 1 << 16
 
 
@@ -91,7 +94,8 @@ class DutyCycleRealization:
             n_samples: Number of samples.
 
         Returns:
-            A ``uint32`` array of ``n_samples`` states, the type of LIGO's calibrated state vector.
+            A ``uint32`` array of ``n_samples`` states: wide enough for bit 16, which gwpy's ``StateVector``
+            only offers for a type of more than 16 bits.
 
         Raises:
             ValueError: If the sampling frequency is not positive and finite.

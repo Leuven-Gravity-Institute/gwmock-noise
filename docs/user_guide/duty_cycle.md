@@ -19,21 +19,34 @@ realization.state_vector("E1", start=1_000_000_000, sampling_frequency=1.0, n_sa
 The realization does not change the strain. It is a record laid over it: segment
 lists, flags in an injection catalogue, or a state-vector channel.
 
-The state vector is `uint32`, and its bits follow LIGO's calibrated state
-vector, so a pipeline that selects analysable data from that channel selects
-observing time here too:
+The state vector's bits follow LIGO's calibrated state vector, so a pipeline
+that selects analysable LIGO data by its first bits selects observing time here
+too:
 
-| Bit | Value | Set while                            | LIGO meaning (PyCBC name)           |
-| --- | ----- | ------------------------------------ | ----------------------------------- |
-| 0   | 1     | the interferometer observes          | h(t) good (`HOFT_OK`)               |
-| 1   | 2     | the interferometer observes          | observing intent (`SCIENCE_INTENT`) |
-| 2   | 4     | the interferometer observes          | science quality (`SCIENCE_QUALITY`) |
-| 16  | 65536 | the interferometer is in maintenance | none                                |
+| Bit | Value | Set while                            | LIGO meaning (LIGO name; PyCBC name)                     |
+| --- | ----- | ------------------------------------ | -------------------------------------------------------- |
+| 0   | 1     | the interferometer observes          | h(t) was computed (`HOFT_OK`; `HOFT_OK`)                 |
+| 1   | 2     | the interferometer observes          | observation-intent mode (`OBS_INTENT`; `SCIENCE_INTENT`) |
+| 2   | 4     | the interferometer observes          | observation-ready mode (`OBS_READY`; `SCIENCE_QUALITY`)  |
+| 16  | 65536 | the interferometer is in maintenance | not in use in LIGO's O2 vector; outside PyCBC's list     |
 
-`OBSERVING_MASK` (`0b111`) and `MAINTENANCE_BIT` name them. PyCBC's low-latency
-search, for example, analyses the data when given
-`--analyze-flags <ifo>:HOFT_OK <ifo>:SCIENCE_INTENT`. Bit 16 is outside every
-flag PyCBC names (bits 0 to 14). A sample outside the realization's span is 0.
+`OBSERVING_MASK` (`0b111`) and `MAINTENANCE_BIT` name them. The LIGO meanings
+are those of Table III of Viets et al.,
+[LIGO-P1700236](https://dcc.ligo.org/LIGO-P1700236/public), for O2; PyCBC's
+names are in
+[`pycbc/frame/__init__.py`](https://github.com/gwastro/pycbc/blob/master/pycbc/frame/__init__.py).
+PyCBC's low-latency search, for example, analyses the data when given
+`--analyze-flags <ifo>:HOFT_OK <ifo>:SCIENCE_INTENT`.
+
+Only these bits are ever set. The realization models no data-quality vetoes,
+data gaps or hardware injections, so a mask that also requires one of LIGO's
+other bits, such as `NO_GAP` or the `NO_*_HW_INJ` bits, selects nothing: ask
+only for bits 0 to 2. Bit 2 says the interferometer is ready to observe, not
+that its data are free of glitches. The layout is LIGO's; Virgo's state vector
+is laid out differently.
+
+The samples are `uint32`, wide enough for bit 16 (gwpy's `StateVector` offers as
+many bits as the type has). A sample outside the realization's span is 0.
 
 ## The model
 

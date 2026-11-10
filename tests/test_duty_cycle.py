@@ -262,11 +262,23 @@ def test_segments_are_sorted_disjoint_and_inside_the_span() -> None:
         assert segments[-1, 1] <= realization.end
 
 
+def _inside_any(intervals: np.ndarray, times: np.ndarray) -> np.ndarray:
+    """Whether each sorted time lies in one of the ``[start, end)`` intervals, by a sweep over the times.
+
+    A different computation from the module's own, so the test does not check the code against itself.
+    """
+    delta = np.zeros(times.size + 1, dtype=np.int64)
+    np.add.at(delta, np.searchsorted(times, intervals[:, 0], side="left"), 1)
+    np.add.at(delta, np.searchsorted(times, intervals[:, 1], side="left"), -1)
+    return np.cumsum(delta)[:-1] > 0
+
+
 def test_the_state_vector_bits_are_the_ones_a_ligo_pipeline_reads() -> None:
     """The layout is a contract with other software, so its values are pinned, not only its names.
 
-    LIGO's calibrated state vector sets bits 0 (``HOFT_OK``), 1 (``SCIENCE_INTENT``) and 2
-    (``SCIENCE_QUALITY``) while the data can be analysed; PyCBC names its flags from bit 0 to bit 14.
+    LIGO's calibrated state vector sets bits 0 (``HOFT_OK``), 1 (``OBS_INTENT``) and 2 (``OBS_READY``)
+    while the data can be analysed; bit 16 is not in use in its O2 layout, and PyCBC names its flags from
+    bit 0 to bit 14.
     """
     assert OBSERVING_MASK == 0b111
     assert MAINTENANCE_BIT == 1 << 16
@@ -286,10 +298,6 @@ def test_the_state_vector_carries_its_bits_at_each_samples_own_time() -> None:
         # What a pipeline that requires HOFT_OK and SCIENCE_INTENT (mask 3) would select.
         np.testing.assert_array_equal((state & 0b11) == 0b11, observing)
         np.testing.assert_array_equal(state == MAINTENANCE_BIT, _inside_any(realization.maintenance[name], times))
-
-
-def _inside_any(intervals: np.ndarray, times: np.ndarray) -> np.ndarray:
-    return np.array([bool(((intervals[:, 0] <= t) & (t < intervals[:, 1])).any()) for t in times])
 
 
 def test_the_fraction_with_n_observing_adds_up() -> None:
