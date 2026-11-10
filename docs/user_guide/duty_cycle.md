@@ -17,9 +17,23 @@ realization.state_vector("E1", start=1_000_000_000, sampling_frequency=1.0, n_sa
 ```
 
 The realization does not change the strain. It is a record laid over it: segment
-lists, flags in an injection catalogue, or a state-vector channel. Bit 0 of a
-state-vector sample is set while the interferometer observes, and bit 1 while it
-is in planned maintenance. A sample outside the realization's span is 0.
+lists, flags in an injection catalogue, or a state-vector channel.
+
+The state vector is `uint32`, and its bits follow LIGO's calibrated state
+vector, so a pipeline that selects analysable data from that channel selects
+observing time here too:
+
+| Bit | Value | Set while                            | LIGO meaning (PyCBC name)           |
+| --- | ----- | ------------------------------------ | ----------------------------------- |
+| 0   | 1     | the interferometer observes          | h(t) good (`HOFT_OK`)               |
+| 1   | 2     | the interferometer observes          | observing intent (`SCIENCE_INTENT`) |
+| 2   | 4     | the interferometer observes          | science quality (`SCIENCE_QUALITY`) |
+| 16  | 65536 | the interferometer is in maintenance | none                                |
+
+`OBSERVING_MASK` (`0b111`) and `MAINTENANCE_BIT` name them. PyCBC's low-latency
+search, for example, analyses the data when given
+`--analyze-flags <ifo>:HOFT_OK <ifo>:SCIENCE_INTENT`. Bit 16 is outside every
+flag PyCBC names (bits 0 to 14). A sample outside the realization's span is 0.
 
 ## The model
 

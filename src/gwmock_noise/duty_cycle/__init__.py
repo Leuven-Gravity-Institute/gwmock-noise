@@ -19,7 +19,7 @@ from gwmock_noise.duty_cycle.model import (
 )
 from gwmock_noise.duty_cycle.simulate import (
     MAINTENANCE_BIT,
-    OBSERVING_BIT,
+    OBSERVING_MASK,
     DutyCycleRealization,
     simulate_duty_cycle,
 )
@@ -33,7 +33,7 @@ __all__ = [
     "DEFAULT_MEAN_UPTIME",
     "HOUR",
     "MAINTENANCE_BIT",
-    "OBSERVING_BIT",
+    "OBSERVING_MASK",
     "WEEK",
     "DutyCycleModel",
     "DutyCycleRealization",
