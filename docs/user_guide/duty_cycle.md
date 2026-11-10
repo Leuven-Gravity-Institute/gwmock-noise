@@ -25,25 +25,35 @@ too:
 
 | Bit | Value | Set while                            | LIGO meaning (LIGO name; PyCBC name)                     |
 | --- | ----- | ------------------------------------ | -------------------------------------------------------- |
-| 0   | 1     | the interferometer observes          | h(t) was computed (`HOFT_OK`; `HOFT_OK`)                 |
+| 0   | 1     | the interferometer observes          | h(t) was successfully computed (`HOFT_OK`; `HOFT_OK`)    |
 | 1   | 2     | the interferometer observes          | observation-intent mode (`OBS_INTENT`; `SCIENCE_INTENT`) |
 | 2   | 4     | the interferometer observes          | observation-ready mode (`OBS_READY`; `SCIENCE_QUALITY`)  |
 | 16  | 65536 | the interferometer is in maintenance | not in use in LIGO's O2 vector; outside PyCBC's list     |
 
 `OBSERVING_MASK` (`0b111`) and `MAINTENANCE_BIT` name them. The LIGO meanings
-are those of Table III of Viets et al.,
-[LIGO-P1700236](https://dcc.ligo.org/LIGO-P1700236/public), for O2; PyCBC's
-names are in
-[`pycbc/frame/__init__.py`](https://github.com/gwastro/pycbc/blob/master/pycbc/frame/__init__.py).
-PyCBC's low-latency search, for example, analyses the data when given
-`--analyze-flags <ifo>:HOFT_OK <ifo>:SCIENCE_INTENT`.
+are those of Table III of Viets et al., _Reconstructing the calibrated strain
+signal in the Advanced LIGO detectors_, Class. Quantum Grav. 35, 095015 (2018),
+[arXiv:1710.09973](https://arxiv.org/abs/1710.09973), for O2. PyCBC's names are
+in
+[`pycbc/frame/__init__.py`](https://github.com/gwastro/pycbc/blob/master/pycbc/frame/__init__.py);
+they come from a later revision of the vector, and the two lists agree only up
+to bit 8 (bit 9 is `NO_GAP` in O2 and `KAPPA_A_OK` in PyCBC). That is why only
+bits 0 to 2 are used.
 
-Only these bits are ever set. The realization models no data-quality vetoes,
-data gaps or hardware injections, so a mask that also requires one of LIGO's
-other bits, such as `NO_GAP` or the `NO_*_HW_INJ` bits, selects nothing: ask
-only for bits 0 to 2. Bit 2 says the interferometer is ready to observe, not
-that its data are free of glitches. The layout is LIGO's; Virgo's state vector
-is laid out differently.
+That paper advises analysing data where bits 0 and 1 are both set. Bit 2 is set
+too, so that a pipeline that also requires it (PyCBC's `SCIENCE_QUALITY`) still
+selects observing time. PyCBC's low-latency search, for example, analyses the
+data when given `--analyze-flags <ifo>:HOFT_OK <ifo>:SCIENCE_INTENT`.
+
+Only these bits are ever set. In LIGO's vector bit 0 is the logical AND of bits
+2 to 4, 11, 13, 17 and 25, calibration-health bits this realization does not
+model and never sets; here bit 0 marks observing time, so that a pipeline
+selects it, and does not vouch for a calibration. Likewise the realization sets
+no data-quality veto, gap or hardware-injection flag, so a mask that also
+requires one of LIGO's other bits, such as `NO_GAP` or the `NO_*_HW_INJ` bits,
+selects nothing: ask only for bits 0 to 2. Bit 2 says the interferometer is
+ready to observe, not that its data are free of glitches. The layout is LIGO's;
+Virgo's state vector is laid out differently.
 
 The samples are `uint32`, wide enough for bit 16 (gwpy's `StateVector` offers as
 many bits as the type has). A sample outside the realization's span is 0.

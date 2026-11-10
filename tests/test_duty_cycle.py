@@ -267,6 +267,7 @@ def _inside_any(intervals: np.ndarray, times: np.ndarray) -> np.ndarray:
 
     A different computation from the module's own, so the test does not check the code against itself.
     """
+    assert np.all(np.diff(times) >= 0), "the sweep needs sorted times"
     delta = np.zeros(times.size + 1, dtype=np.int64)
     np.add.at(delta, np.searchsorted(times, intervals[:, 0], side="left"), 1)
     np.add.at(delta, np.searchsorted(times, intervals[:, 1], side="left"), -1)

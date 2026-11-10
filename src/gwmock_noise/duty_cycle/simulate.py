@@ -15,7 +15,9 @@ from gwmock_noise.duty_cycle.model import CORRELATED_MINIMUM, DutyCycleModel, st
 #: mode, and that it is in observation-ready mode (``HOFT_OK``, ``OBS_INTENT``, ``OBS_READY``; PyCBC
 #: names them ``HOFT_OK``, ``SCIENCE_INTENT``, ``SCIENCE_QUALITY``). A pipeline that selects analysable
 #: data by requiring bits 0 and 1, or 0 to 2, selects observing time. No other bit is ever set while
-#: observing: the realization models no data-quality vetoes, gaps or hardware injections.
+#: observing: the realization sets no calibration-health, data-quality veto, gap or hardware-injection
+#: flag, so bit 0 here marks observing time and does not vouch for a calibration. Meanings from Viets et
+#: al., Class. Quantum Grav. 35, 095015 (2018), arXiv:1710.09973, Table III.
 OBSERVING_MASK = 0b111
 #: Bit of a state-vector sample set while the interferometer is in planned maintenance: bit 16, not in
 #: use in LIGO's O2 calibrated state vector and outside the calibrated state-vector flags PyCBC names
